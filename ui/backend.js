@@ -45,6 +45,18 @@
   /** Latency math shared by both backends (ms). */
   class BaseBackend extends Emitter {
     frameMs(n) { return (n / this.settings.sampleRate) * 1000; }
+    /** Frames per packet we send. Setting 0 = automatic: what the engine uses now, else
+     *  what fits the device buffer (the same rule as the engine's auto_packet_frames: the
+     *  buffer itself up to 64, else its largest equal part that is not bigger). */
+    packetFrames() {
+      const s = this.settings;
+      if (s.packetSize) return s.packetSize;
+      if (this._packetFrames) return this._packetFrames;
+      const b = s.bufferSize || 64;
+      if (b <= 64) return Math.max(8, b);
+      for (let d = 64; d >= 16; d--) if (b % d === 0) return d;
+      return 64;
+    }
     localMs() { return this.frameMs(this.settings.bufferSize) * 2; }
   }
 
@@ -58,7 +70,7 @@
       this._listen = listen;
       this.settings = {
         device: '', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
-        quality: 'pcm24', packetSize: 32, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
+        quality: 'pcm24', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
         metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device',
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true };
@@ -71,6 +83,7 @@
           if (ev === 'stats' && typeof e.payload.localMs === 'number') this._localMs = e.payload.localMs;
           // the device's real format (it decides: ASIO panel / Windows settings)
           if (ev === 'stats' && e.payload.bufferFrames) this._bufferFrames = this.settings.bufferSize = e.payload.bufferFrames;
+          if (ev === 'stats' && e.payload.packetFrames) this._packetFrames = e.payload.packetFrames;
           if (ev === 'stats' && e.payload.sampleRate) this._sampleRate = this.settings.sampleRate = e.payload.sampleRate;
           // the device's real input/output latency (the driver's report, or block-based)
           if (ev === 'stats' && e.payload.latency) this._latency = e.payload.latency;
@@ -175,7 +188,7 @@
       this._sampleRate = 48000; this._bufferFrames = 64;
       this.settings = {
         device: 'focusrite', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
-        quality: 'pcm24', packetSize: 32, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
+        quality: 'pcm24', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
         name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device',
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true };
@@ -207,7 +220,7 @@
 
     /* ── latency model (ms) ── */
     autoPackets(p) {
-      const pkt = this.frameMs(this.settings.packetSize);
+      const pkt = this.frameMs(this.packetFrames());
       return Math.min(12, Math.max(1, Math.ceil((p.jitterMs * 2.5) / pkt)));
     }
     _view(p) {
@@ -218,7 +231,7 @@
       const b = {
         inBuf: (64 / 48000) * 1000, // peer's own input buffer (reported by peer)
         net: p.netNow,
-        jitter: packets * this.frameMs(s.packetSize),
+        jitter: packets * this.frameMs(this.packetFrames()),
         outBuf: this.frameMs(s.bufferSize),
       };
       const total = Object.values(b).reduce((a, v) => a + v, 0);
@@ -318,12 +331,12 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.1.1'; }
+    async appVersion() { return '0.1.2'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.1.2' };
+      return { version: '0.1.3' };
     }
     openRelease() {}
     async setPreview() {}

@@ -1241,8 +1241,18 @@ impl Session {
         self.rec_names.lock().unwrap().insert(SELF_TRACK, name.to_string());
     }
 
+    /// Frames per packet we send: what the engine uses now (automatic follows the device's
+    /// block), else the setting.
+    pub fn my_packet_frames(&self) -> u32 {
+        match self.engine.as_ref().map(|e| e.packet_frames()) {
+            Some(n) if n > 0 => n,
+            _ if self.packet_frames > 0 => self.packet_frames as u32,
+            _ => gachi_engine::auto_packet_frames(self.buffer_size as usize) as u32,
+        }
+    }
+
     fn packet_ms(&self) -> f32 {
-        self.packet_frames as f32 / self.sample_rate as f32 * 1000.0
+        self.my_packet_frames() as f32 / self.sample_rate as f32 * 1000.0
     }
 
     /// The length of this peer's packets (ms): what its jitter buffer counts in. Ours until
@@ -1847,6 +1857,7 @@ async fn ticker(app: AppHandle) {
                         json!({ "inMs": i, "outMs": o, "reported": reported })
                     }),
                     "bufferFrames": s.real_buffers().0.max(s.real_buffers().1),
+                    "packetFrames": s.my_packet_frames(),
                     "sampleRate": s.sample_rate,
                     "plugin": s.engine.as_ref().and_then(|e| e.plugin_connected()),
                     "pluginWaiting": s.engine.as_ref().is_some_and(|e| e.plugin_waiting()),

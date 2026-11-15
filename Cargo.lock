@@ -1445,7 +1445,7 @@ dependencies = [
 
 [[package]]
 name = "gachi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "futures-util",
@@ -1472,14 +1472,14 @@ dependencies = [
 
 [[package]]
 name = "gachi-bridge"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "gachi-engine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "asio-sys",
  "cpal",
@@ -1493,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "gachi-net"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aes-gcm",
  "arc-swap",
@@ -1515,7 +1515,7 @@ dependencies = [
 
 [[package]]
 name = "gachi-plugin"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "gachi-bridge",
  "vst3",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "gachi-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",

@@ -348,9 +348,9 @@
         <div class="setting">
           <div class="setting-head"><span class="label">패킷 크기</span><span class="aside num" id="pkt-ms"></span></div>
           <div class="seg" data-key="packetSize" data-num>
-            <button data-v="16">16</button><button data-v="32">32</button><button data-v="64">64</button>
+            <button data-v="0">자동 (권장)</button><button data-v="16">16</button><button data-v="32">32</button><button data-v="64">64</button>
           </div>
-          <p class="note">작을수록 빠르지만 업로드 패킷 수가 늘어요. 유선이면 32를 권장해요.</p>
+          <p class="note">자동은 장치 버퍼 크기에 맞춰 보내요(64보다 크면 똑같이 나눠서). 직접 고를 때는 작을수록 빠르지만 업로드 패킷 수가 늘고, 장치 버퍼보다 작게 해도 더 빨라지지는 않아요.</p>
         </div>
         <div class="setting">
           <div class="setting-head"><span class="label">지터 버퍼</span></div>

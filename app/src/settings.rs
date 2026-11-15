@@ -96,7 +96,8 @@ impl Default for Settings {
             buffer_size: 64,
             input_channel: "1-2".into(),
             quality: "pcm24".into(),
-            packet_size: 32,
+            // automatic: as long as the device's block (see gachi_engine::auto_packet_frames)
+            packet_size: 0,
             jitter_mode: "auto".into(),
             jitter_packets: 3,
             name: "나".into(),

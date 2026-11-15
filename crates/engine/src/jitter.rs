@@ -1221,6 +1221,52 @@ mod tests {
         assert!(down.underruns <= 1, "{down:?}");
     }
 
+    /// Packets of sizes the settings never offered (48 from a 96 or 144 block, 60 from a
+    /// 480 one), read in blocks of 64: the sound comes out whole and in order, and the
+    /// buffer neither runs dry nor piles up.
+    #[test]
+    fn plays_packets_of_any_size() {
+        for size in [48usize, 60, 63] {
+            // (without the time-scaling: it reshapes the wave on purpose, which the ramp check would take for a fault)
+            let mut jb = raw(JitterBuffer::new(4));
+            let mut out = vec![0.0f32; 64 * 2];
+            let (mut seq, mut made, mut read, mut last, mut started) = (0u32, 0usize, 0usize, 0.0f32, false);
+            // a steady ramp, so that a frame out of place shows as a jump
+            let ramp = |n: usize| (n + 1) as f32 * 1e-6;
+            for _ in 0..3000 {
+                // the sender is as far along as the reader (same clock)
+                while made < read + 64 {
+                    let mut f = Frame { seq, channels: 2, frames: size as u16, ..Frame::EMPTY };
+                    for k in 0..size {
+                        f.data[k * 2] = ramp(made + k);
+                        f.data[k * 2 + 1] = ramp(made + k);
+                    }
+                    jb.push(f);
+                    seq += 1;
+                    made += size;
+                }
+                jb.read_stereo(&mut out);
+                read += 64;
+                for s in out.chunks_exact(2) {
+                    if started {
+                        let step = s[0] - last;
+                        // (the clock-drift correction stretches a step a little; a frame out of
+                        // place would be a jump of a whole packet: 48e-6 and more, or backwards)
+                        assert!((0.0..3e-6).contains(&step), "size {size}: a jump of {step} after {read} frames");
+                    }
+                    if s[0] != 0.0 {
+                        started = true;
+                    }
+                    last = s[0];
+                }
+            }
+            let st = jb.stats();
+            assert!(started, "size {size}: played");
+            assert!(st.underruns <= 1 && st.late == 0 && st.concealed == 0, "size {size}: {st:?}");
+            assert!((st.depth as i64 - 4).abs() <= 2, "size {size}: {st:?}");
+        }
+    }
+
     #[test]
     fn follows_a_sender_that_restarted_its_stream() {
         let mut jb = raw(JitterBuffer::new(2));

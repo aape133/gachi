@@ -560,7 +560,7 @@
   backend.on('stats', ({ peers: list }) => {
     // settings screen: the real buffer as the device runs it
     noteWaitingPlugin();
-    if ($('#modal-settings').classList.contains('open')) { syncBuffer(backend.getSettings()); syncPluginStatus(); }
+    if ($('#modal-settings').classList.contains('open')) { syncBuffer(backend.getSettings()); syncPacket(backend.getSettings()); syncPluginStatus(); }
     // the home screen's status line follows the plugin as it connects / goes away
     if (!room) { renderHomeStatus(); return; }
     noteFeedback(!!backend._feedback);
@@ -1376,6 +1376,24 @@
   }
 
   /** The device's format, as it runs right now (set in the ASIO panel / Windows). */
+  /** What follows from the packet size in use (automatic: it follows the device's block,
+   *  so this is drawn again as the device's figures come in). */
+  function syncPacket(s) {
+    const frames = backend.packetFrames();
+    const pkt = backend.frameMs(frames);
+    $('#pkt-ms').textContent = s.packetSize ? `${f1(pkt)} ms / 패킷` : `자동 · ${frames} · ${f1(pkt)} ms / 패킷`;
+    // what one stream really costs on the wire: payload + audio header (12) + encryption (28) + IP/UDP (28)
+    const ch = s.inputChannel.includes('-') ? 2 : 1; // a pair (or mic + pair) is stereo
+    const pps = s.sampleRate / frames;
+    const payload = frames * ch * (s.quality === 'pcm16' ? 2 : 3);
+    const bw = (payload + 68) * 8 * pps;
+    $('#q-bw').textContent = `상대 1명당 ${bw >= 1e6 ? f1(bw / 1e6) + ' Mbps' : Math.round(bw / 1000) + ' kbps'}`;
+    // upload grows with the room: everyone sends to everyone
+    const all = bw * 7;
+    $('#q-note').textContent = `압축 없이 그대로 보내요 (코덱 지연 0 ms). 8명 방이면 업로드가 약 ${f1(all / 1e6)} Mbps 필요해요. 업로드가 부족하면 16bit로 줄여 보세요.`;
+    $('#jb-val').textContent = `${s.jitterPackets} · ${f1(s.jitterPackets * pkt)}ms`;
+  }
+
   function syncBuffer(s) {
     const rate = backend._sampleRate, frames = backend._bufferFrames;
     $('#fmt-rate').textContent = rate ? `${rate % 1000 ? (rate / 1000).toFixed(1) : rate / 1000} kHz` : '-';
@@ -1414,22 +1432,10 @@
     metroVol.value = s.metronomeVolume ?? 60; paintRange(metroVol);
     $('#metro-vol-val').textContent = metroVol.value + '%';
     syncBuffer(s);
-    const pkt = backend.frameMs(s.packetSize);
-    $('#pkt-ms').textContent = `${f1(pkt)} ms / 패킷`;
-    // what one stream really costs on the wire: payload + audio header (12) + encryption (28) + IP/UDP (28)
-    const ch = s.inputChannel.includes('-') ? 2 : 1; // a pair (or mic + pair) is stereo
-    const frames = s.packetSize;
-    const pps = s.sampleRate / frames;
-    const payload = frames * ch * (s.quality === 'pcm16' ? 2 : 3);
-    const bw = (payload + 68) * 8 * pps;
-    $('#q-bw').textContent = `상대 1명당 ${bw >= 1e6 ? f1(bw / 1e6) + ' Mbps' : Math.round(bw / 1000) + ' kbps'}`;
-    // upload grows with the room: everyone sends to everyone
-    const all = bw * 7;
-    $('#q-note').textContent = `압축 없이 그대로 보내요 (코덱 지연 0 ms). 8명 방이면 업로드가 약 ${f1(all / 1e6)} Mbps 필요해요. 업로드가 부족하면 16bit로 줄여 보세요.`;
+    syncPacket(s);
     $('#jb-manual').hidden = s.jitterMode !== 'manual';
     $('#jb-style').hidden = s.jitterMode === 'manual';
     jbRange.value = s.jitterPackets; paintRange(jbRange);
-    $('#jb-val').textContent = `${s.jitterPackets} · ${f1(s.jitterPackets * pkt)}ms`;
     $('#set-nearby').checked = s.showNearby !== false;
     $('#set-gpu').checked = s.gpu !== false;
     $('#set-verbose').checked = s.verboseLog === true;

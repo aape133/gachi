@@ -363,6 +363,7 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
                             "peers": [],
                             "localMs": e.local_latency_ms(),
                             "bufferFrames": i.max(o),
+                            "packetFrames": e.packet_frames(),
                             "sampleRate": e.info.sample_rate,
                             "plugin": e.plugin_connected(),
                             "pluginWaiting": e.plugin_waiting(),

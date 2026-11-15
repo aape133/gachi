@@ -26,7 +26,7 @@ pub mod meter;
 pub mod params;
 
 pub use device::{list_devices, open_asio_control_panel, DeviceInfo, HostChoice, ASIO_AVAILABLE};
-pub use engine::{DriverCheck, Engine, EngineConfig, EngineError, InputChannels, PacketSink, PeerHandle, StreamInfo};
+pub use engine::{auto_packet_frames, DriverCheck, Engine, EngineConfig, EngineError, InputChannels, PacketSink, PeerHandle, StreamInfo};
 pub use extras::{MetronomeParams, RecordingResult, SELF_TRACK};
 pub use frame::Frame;
 pub use jitter::{JitterBuffer, JitterStats};

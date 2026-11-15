@@ -81,9 +81,34 @@ pub struct EngineConfig {
     pub output_device: Option<String>,
     pub sample_rate: u32,
     pub buffer_size: u32,
-    /// frames per network packet
+    /// frames per network packet; 0 = follow the device's block (see [`auto_packet_frames`])
     pub packet_frames: u16,
     pub input: InputChannels,
+}
+
+/// The largest packet "automatic" makes: a lost packet is a hole this long (1.3 ms at
+/// 48 kHz) and the jitter buffer counts in these, so bigger blocks are sent in parts.
+pub const AUTO_PACKET_MAX: usize = 64;
+
+/// The packet size that fits a device block of `block` frames: the block itself up to
+/// [`AUTO_PACKET_MAX`], else the largest equal part of it that is not bigger (96 → 48,
+/// 128 → 64, 144 → 48, 480 → 60). A packet as long as the block leaves when the block
+/// arrives: a smaller one gains nothing (the block's packets leave together) and costs
+/// packets, a bigger or uneven one waits for the next block. Blocks with no usable equal
+/// part (a prime number of frames, say) get the maximum.
+pub fn auto_packet_frames(block: usize) -> usize {
+    const MIN: usize = 8;
+    if block == 0 {
+        return AUTO_PACKET_MAX;
+    }
+    if block <= AUTO_PACKET_MAX {
+        // (tiny blocks: several to a packet)
+        return if block >= MIN { block } else { block * MIN.div_ceil(block) };
+    }
+    match (MIN * 2..=AUTO_PACKET_MAX).rev().find(|d| block.is_multiple_of(*d)) {
+        Some(d) => d,
+        None => AUTO_PACKET_MAX,
+    }
 }
 
 /// What the device actually gave us (may differ from what was asked).
@@ -134,6 +159,9 @@ pub struct CallbackStats {
     pub min: AtomicU32,
     pub max: AtomicU32,
     pub count: AtomicU32,
+    /// input side: frames per network packet in use now (it follows the block when the
+    /// packet size is automatic)
+    pub packet: AtomicU32,
     /// how long our processing takes per callback (incl. sending, on the input side)
     pub load: crate::load::CallbackLoad,
 }
@@ -145,6 +173,7 @@ impl Default for CallbackStats {
             min: AtomicU32::new(u32::MAX),
             max: AtomicU32::new(0),
             count: AtomicU32::new(0),
+            packet: AtomicU32::new(0),
             load: Default::default(),
         }
     }
@@ -606,6 +635,11 @@ impl Engine {
         (ms(i), ms(o), unpack_latency(self.driver_latency_now.load(Relaxed)).is_some())
     }
 
+    /// Frames per network packet we send now.
+    pub fn packet_frames(&self) -> u32 {
+        self.input_cb.packet.load(Relaxed)
+    }
+
     /// (input, output) frames per callback: measured when known, else what was asked for.
     pub fn real_buffers(&self) -> (u32, u32) {
         let asked = self.info.buffer_size.unwrap_or(480);
@@ -782,7 +816,10 @@ fn processors(
     // your own sound, frame by frame (interleaved stereo), input → output: same device,
     // same clock, same buffer switch: no packets and no jitter buffer in between
     let (monitor_tx, monitor_rx) = rtrb::RingBuffer::new(MONITOR_RING);
-    let packet_frames = (cfg.packet_frames as usize).clamp(8, MAX_FRAMES);
+    // automatic: what fits the buffer asked for, until the callbacks show the real block
+    let auto = cfg.packet_frames == 0;
+    let packet_frames = if auto { auto_packet_frames(cfg.buffer_size as usize) } else { (cfg.packet_frames as usize).clamp(8, MAX_FRAMES) };
+    input_cb.packet.store(packet_frames as u32, Relaxed);
     let input = InputProcessor {
         channels: in_channels,
         map: cfg.input,
@@ -790,6 +827,9 @@ fn processors(
         gain: f32::NAN,
         glide: glide_step(sample_rate),
         packet_frames,
+        auto,
+        want: packet_frames,
+        block: (0, 0),
         acc: Frame::EMPTY,
         acc_pos: 0,
         seq: 0,
@@ -1102,6 +1142,12 @@ struct InputProcessor {
     gain: f32,
     glide: f32,
     packet_frames: usize,
+    /// the packet size follows the block
+    auto: bool,
+    /// the packet size to go on with, from the next packet that starts
+    want: usize,
+    /// (frames, how many in a row) of the blocks as they come
+    block: (usize, u32),
     acc: Frame,
     acc_pos: usize,
     seq: u32,
@@ -1116,7 +1162,30 @@ struct InputProcessor {
     fb: (crate::feedback::Decimator, rtrb::Producer<f32>),
 }
 
+/// Blocks of one size in a row before the automatic packet size goes by it.
+const AUTO_STEADY_BLOCKS: u32 = 4;
+
 impl InputProcessor {
+    /// At the start of a block: go on with the packet size wanted. What is left of the
+    /// last packet goes out short, once, so that from here on packets end where blocks end
+    /// (carried over, that rest would ride along for good: every packet that much late).
+    #[inline]
+    fn follow(&mut self, out_ch: usize) {
+        if self.packet_frames == self.want {
+            return;
+        }
+        if self.acc_pos > 0 {
+            self.acc.seq = self.seq;
+            self.acc.frames = self.acc_pos as u16;
+            self.acc.channels = out_ch as u8;
+            self.sink.send(&self.acc);
+            self.seq = self.seq.wrapping_add(1);
+            self.acc_pos = 0;
+        }
+        self.packet_frames = self.want;
+        self.cb.packet.store(self.want as u32, Relaxed);
+    }
+
     fn process(&mut self, data: &[f32]) {
         // a new channel choice takes effect at once, without reopening the device
         let code = self.params.input_map.load(Relaxed);
@@ -1129,6 +1198,16 @@ impl InputProcessor {
         let target = if self.params.muted.load(Relaxed) { 0.0 } else { self.params.input_gain.load() };
         let steady = settled(&mut self.gain, target);
         let ch = self.channels;
+        if self.auto {
+            // the block the device (or the DAW) really hands over: the buffer asked for is
+            // not always the one given, and a DAW changes it as it likes. One that holds
+            // for a few blocks counts; a host that varies it block by block keeps what it had
+            let n = data.len() / ch;
+            self.block = if n == self.block.0 { (n, self.block.1.saturating_add(1)) } else { (n, 1) };
+            if self.block.1 == AUTO_STEADY_BLOCKS {
+                self.want = auto_packet_frames(n).min(MAX_FRAMES);
+            }
+        }
         let at = |i: usize| i.min(ch - 1);
         // (channels sent, left source, right source, centered mono source, its gain)
         let (out_ch, a, b, m, mg) = match self.map {
@@ -1137,6 +1216,7 @@ impl InputProcessor {
             // mic panned center at equal power, pair at unity on top
             InputChannels::Mix { mono, pair: (i, j) } => (2, at(i), at(j), at(mono), std::f32::consts::FRAC_1_SQRT_2),
         };
+        self.follow(out_ch);
         let (mut peak_l, mut peak_r) = (0f32, 0f32);
         let metered = ch.min(MAX_INPUT_METERS);
         let mut ch_peaks = [0f32; MAX_INPUT_METERS];
@@ -1564,6 +1644,96 @@ mod monitor_tests {
             fb_sent: rtrb::RingBuffer::new(4096).0,
             fb_played: rtrb::RingBuffer::new(4096).0,
         }
+    }
+
+    #[test]
+    fn automatic_packet_size_fits_the_block() {
+        for (block, packet) in [(16, 16), (32, 32), (48, 48), (64, 64), (96, 48), (128, 64), (144, 48), (256, 64), (480, 60), (441, 63), (1024, 64)] {
+            assert_eq!(auto_packet_frames(block), packet, "block {block}");
+        }
+        // nothing fits: the biggest; tiny blocks: several to a packet
+        assert_eq!(auto_packet_frames(127), 64);
+        assert_eq!(auto_packet_frames(4), 8);
+        assert_eq!(auto_packet_frames(0), 64);
+    }
+
+    /// The sizes of the packets sent, block by block.
+    struct Sizes(Arc<std::sync::Mutex<Vec<u16>>>);
+    impl PacketSink for Sizes {
+        fn send(&mut self, f: &Frame) {
+            self.0.lock().unwrap().push(f.frames);
+        }
+    }
+
+    /// Automatic: every block leaves whole, in equal packets, whatever the device's block
+    /// is (not the buffer that was asked for), and a block size that changes is followed.
+    #[test]
+    fn automatic_packets_follow_the_real_block() {
+        let cfg = EngineConfig {
+            host: HostChoice::Asio,
+            input_device: None,
+            output_device: None,
+            sample_rate: 48_000,
+            buffer_size: 64, // asked for
+            packet_frames: 0,
+            input: InputChannels::Stereo(0, 1),
+        };
+        let sh = shared();
+        let stats = sh.input_cb.clone();
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (_cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
+        let (garbage_tx, _garbage_rx) = rtrb::RingBuffer::new(8);
+        let (mut input, _output) = processors(&cfg, Box::new(Sizes(sent.clone())), cmd_rx, garbage_tx, sh, (48_000, 2, 2, 64), true);
+        assert_eq!(stats.packet.load(Relaxed), 64, "until the device shows its block: what fits the buffer asked for");
+        let mut run = |block: usize, blocks: usize| -> Vec<Vec<u16>> {
+            let data = vec![0.1f32; block * 2];
+            (0..blocks)
+                .map(|_| {
+                    input.process(&data);
+                    std::mem::take(&mut *sent.lock().unwrap())
+                })
+                .collect()
+        };
+        // the device gives 96 (not the 64 asked for)
+        let got = run(96, 40);
+        assert!(got[10..].iter().all(|b| b == &[48, 48]), "96 → two of 48 per block: {:?}", &got[..12]);
+        assert_eq!(stats.packet.load(Relaxed), 48);
+        // nothing was lost over the change: every frame handed in was sent
+        assert_eq!(got.iter().flatten().map(|&n| n as usize).sum::<usize>(), 96 * 40);
+        // the block becomes 144, then 32
+        let got = run(144, 40);
+        assert!(got[10..].iter().all(|b| b == &[48, 48, 48]), "{:?}", &got[..12]);
+        let got = run(32, 40);
+        assert!(got[10..].iter().all(|b| b == &[32]), "{:?}", &got[..12]);
+        assert_eq!(stats.packet.load(Relaxed), 32);
+        // a host that hands over blocks of all sizes: the packet size stays where it was
+        for k in 0..60 {
+            run(20 + (k * 7) % 40, 1);
+        }
+        assert_eq!(stats.packet.load(Relaxed), 32);
+    }
+
+    /// A chosen packet size is kept whatever the block.
+    #[test]
+    fn a_chosen_packet_size_is_kept() {
+        let cfg = EngineConfig {
+            host: HostChoice::Asio,
+            input_device: None,
+            output_device: None,
+            sample_rate: 48_000,
+            buffer_size: 96,
+            packet_frames: 64,
+            input: InputChannels::Stereo(0, 1),
+        };
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (_cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
+        let (garbage_tx, _garbage_rx) = rtrb::RingBuffer::new(8);
+        let (mut input, _output) = processors(&cfg, Box::new(Sizes(sent.clone())), cmd_rx, garbage_tx, shared(), (48_000, 2, 2, 96), true);
+        let data = vec![0.1f32; 96 * 2];
+        for _ in 0..20 {
+            input.process(&data);
+        }
+        assert!(sent.lock().unwrap().iter().all(|&n| n == 64));
     }
 
     /// Frames the software monitor adds on top of the device's own buffers: input and output
