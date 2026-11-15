@@ -125,6 +125,60 @@ gachi는 사람들끼리 직접 연결하려고 네트워크 주소를 여러 �
 - 직접 연결이라 같은 방 사람들끼리는 서로의 IP를 알 수 있어요.
 - 프로그램을 켤 때 새 버전이 나왔는지 GitHub에 한 번 물어봐요(설정 → 일반에서 끌 수 있어요). 이때 GitHub가 IP를 볼 수 있어요. 내려받기와 설치는 스스로 하지 않아요.
 
+## 🛠 소스에서 빌드하기
+
+이 저장소에 앱, VST3 플러그인, 연결 서버의 소스와 빌드·설치 스크립트가 모두 들어 있어요. 릴리스마다 같은 이름의 태그(`v0.1.2` 등)가 그 릴리스를 만든 소스예요.
+
+### 준비물 (Windows 10 / 11, 64비트)
+
+- [Rust](https://rustup.rs) (stable, MSVC 도구 모음)
+- Visual Studio 또는 Build Tools의 **C++ 데스크톱 개발**과 **C++ Clang 도구** 구성 요소
+  - ASIO 바인딩을 만들 때 libclang을 써요. 경로는 [.cargo/config.toml](.cargo/config.toml)에 적혀 있고, 다른 곳에 있으면 `LIBCLANG_PATH` 환경 변수로 알려 주세요.
+- [Node.js](https://nodejs.org) (설치 파일을 만들 때와 연결 서버에 필요해요)
+- Steinberg ASIO SDK는 처음 빌드할 때 Steinberg 사이트에서 자동으로 내려받아요. 이 저장소에는 들어 있지 않아요.
+
+### 앱 실행
+
+```bash
+cargo run -p gachi --release
+```
+
+ASIO 없이 빌드하려면 `--no-default-features`를 붙여요.
+
+### 설치 파일과 VST3 플러그인
+
+처음 한 번 Tauri CLI를 `app` 폴더에 설치해요.
+
+```bash
+cd app && npm install
+```
+
+그다음 아래 명령이 플러그인과 설치 파일을 한 번에 만들어요.
+
+```bash
+cd app && npm run build:installer
+```
+
+- 설치 파일: `target/release/bundle/nsis/gachi_버전_x64-setup.exe`
+- 플러그인: `target/release/vst3/gachi.vst3` (폴더)와 `target/release/vst3/gachi_버전_vst3.zip`
+- 설치 스크립트는 [app/installer.nsi](app/installer.nsi)와 [app/installer-hooks.nsh](app/installer-hooks.nsh), 플러그인 묶음 스크립트는 [crates/plugin/bundle.ps1](crates/plugin/bundle.ps1)이에요.
+
+플러그인만 만들려면:
+
+```bash
+powershell -ExecutionPolicy Bypass -File crates/plugin/bundle.ps1
+```
+
+### 테스트
+
+```bash
+cargo test --workspace
+```
+
+### 연결 서버
+
+방에 들어갈 때만 쓰는 작은 서버(Cloudflare Worker)예요. 직접 띄우거나 배포하는 방법은 [worker/README.md](worker/README.md)에 있어요. 앱이 다른 서버를 쓰게 하려면 `GACHI_SERVER` 환경 변수를 주거나 `app/src/settings.rs`의 `DEFAULT_SERVER`를 바꿔 빌드해요.
+
 ## 📄 라이선스
 
 gachi는 자유 소프트웨어예요. **GNU General Public License 버전 3**(GPLv3)에 따라 쓰고, 고치고, 다시 배포할 수 있어요. 전문은 [LICENSE](LICENSE)에 있어요. 보증은 없어요.
