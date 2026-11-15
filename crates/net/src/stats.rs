@@ -33,6 +33,11 @@ pub struct PeerNetStats {
     /// the sender's packet length (ms; 0 until its first packet). The jitter buffer counts
     /// in the sender's packets, which need not be the size we send.
     pub packet_ms: f32,
+    /// what the sender's packets carry, as its last one said: bits per sample, channels,
+    /// frames per packet (0 until its first packet)
+    pub bits: u8,
+    pub channels: u8,
+    pub packet_frames: u16,
     pub received: u64,
     pub lost: u64,
     /// the peer's clock minus ours (µs), from the fastest ping round trips

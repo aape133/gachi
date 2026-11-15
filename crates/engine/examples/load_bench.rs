@@ -6,7 +6,9 @@
 //! thread. The input side's network send is not in here (a counting sink): see gachi-net's
 //! `send_cost` example for that part.
 //!
-//! cargo run -p gachi-engine --release --example load_bench [seconds per case] [--stress]
+//! cargo run -p gachi-engine --release --example load_bench [seconds per case] [--stress] [--send | --send=copies]
+//!
+//! --send: the sink takes as long as sending to the room really does (see `send_time`).
 //!
 //! --stress: 7 others, with the CPU kept busy (normal or audio priority threads), and how
 //! often the mix comes back later than the plugin waits for it.
@@ -32,11 +34,28 @@ mod imp {
     const RATE: u32 = 48_000;
     const PACKET: usize = 32;
 
-    struct Count(Arc<AtomicUsize>);
+    /// Counts the packets; with `--send`, takes as long over each as sending it to the
+    /// room does (about 5.5 µs a peer, doubled links 9.5: gachi-net's `send_cost`).
+    struct Count(Arc<AtomicUsize>, Duration);
     impl PacketSink for Count {
         fn send(&mut self, _: &Frame) {
             self.0.fetch_add(1, Relaxed);
+            let t = Instant::now();
+            while t.elapsed() < self.1 {
+                std::hint::spin_loop();
+            }
         }
+    }
+
+    /// `--send`: the time a real send takes, per peer and packet; `--send=copies`: with
+    /// every link doubled.
+    fn send_time(peers: usize) -> Duration {
+        let per_peer = match std::env::args().find(|a| a.starts_with("--send")).as_deref() {
+            None => 0.0,
+            Some("--send=copies") => 9.5,
+            Some(_) => 5.5,
+        };
+        Duration::from_secs_f64(per_peer * peers as f64 * 1e-6)
     }
 
     fn show(w: &LoadWindow) -> String {
@@ -63,7 +82,7 @@ mod imp {
             input: InputChannels::Stereo(0, 1),
         };
         let sent = Arc::new(AtomicUsize::new(0));
-        let mut engine = Engine::start(cfg, Box::new(Count(sent.clone()))).expect("engine");
+        let mut engine = Engine::start(cfg, Box::new(Count(sent.clone(), send_time(peers)))).expect("engine");
         let mut plugin = PluginEnd::open(name, 1).expect("bridge");
         plugin.set_format(RATE, block as u32);
         let mut txs: Vec<_> = (0..peers)
@@ -192,7 +211,7 @@ mod imp {
         println!("µs, p50 p99 p99.9 max (engine's own processing; round trip = plugin hands over → mix back)");
         let name = format!("gachi-load-bench-{}", std::process::id());
         for block in [32, 64, 128] {
-            for peers in [1, 4, 7] {
+            for peers in [1, 4, 7, 11, 15] {
                 case(&format!("{name}-{block}-{peers}"), peers, block, secs);
             }
         }

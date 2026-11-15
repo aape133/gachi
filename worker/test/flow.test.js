@@ -114,6 +114,24 @@ test("host admits and rejects; the newcomer only ever talks to the Worker briefl
   host.close();
 });
 
+test("a room for 16: open until the sixteenth is in; a bigger size is cut to 16", async () => {
+  const { host, code } = await openRoom(16);
+  host.send({ t: "capacity", max_peers: 16, members: 15 });
+  await sleep(100);
+  const fifteen = await joiner(code);
+  fifteen.close();
+  host.send({ t: "capacity", max_peers: 16, members: 16 });
+  await sleep(100);
+  const full = await connect(`/ws/join/${code}`);
+  assert.equal((await full.next()).kind, "full");
+  // asked for 40: kept at 16, so 16 members still fill it
+  host.send({ t: "capacity", max_peers: 40, members: 16 });
+  await sleep(100);
+  const still = await connect(`/ws/join/${code}`);
+  assert.equal((await still.next()).kind, "full");
+  host.send({ t: "close" });
+});
+
 test("full rooms, turned-off codes and unknown codes are refused by the Worker", async () => {
   const { host, code, key } = await openRoom(2);
   host.send({ t: "capacity", max_peers: 2, members: 2 });
@@ -299,6 +317,29 @@ test("a code nobody holds is refused, whatever is asked of it", async () => {
   again.send(hostOpen());
   assert.equal((await again.next()).t, "opened");
   again.send({ t: "close" });
+});
+
+test("a host connection that floods is cut off; an ordinary one is not", async () => {
+  const host = await connect("/ws/host");
+  host.send(hostOpen({ max_peers: 8 }));
+  const { code } = await host.next();
+  // what a busy room sends: nothing happens
+  for (let i = 0; i < 40; i++) host.send({ t: "capacity", max_peers: 8, members: 1 + (i % 7) });
+  await sleep(300);
+  assert.equal(host.closed, false);
+  (await joiner(code)).close(); // (the room still answers)
+  // far more than any room: refused, and the connection goes
+  for (let i = 0; i < 200; i++) host.send({ t: "capacity", max_peers: 8, members: 1 + (i % 7) });
+  let m;
+  do m = await host.next(4000);
+  while (m && m !== "timeout" && m.t !== "error");
+  assert.equal(m?.kind, "rate_limited");
+  await sleep(2500);
+  assert.equal(host.closed, true);
+  // (nobody holds the code now)
+  const late = await connect(`/ws/join/${code}`);
+  assert.equal((await late.next()).kind, "not_found");
+  late.close();
 });
 
 test("invite page and health", async () => {

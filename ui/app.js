@@ -291,6 +291,8 @@
     $('#chat-list').innerHTML = '';
     sysMsg(r.isHost ? '방을 만들었어요. 코드를 공유해 친구를 초대하세요.' : `'${r.name}'에 들어왔어요.`);
     r.peers.forEach((p) => addPeer(p));
+    qualityAdvised = false;
+    adviseQuality();
     updateRoomChrome();
     syncSelfControls();
     clearInterval(clockTimer);
@@ -323,7 +325,7 @@
       <article class="strip self" data-id="self">
         <div class="strip-top">
           <span class="top-tags"><span class="tag me-tag">나</span><span class="tag host-tag" hidden>호스트</span></span>
-          <button class="net-chip q-accent" data-act="local" title="오디오 설정 열기"><i class="dot"></i><span>내 장치 <b class="num" data-f="local"></b> ms</span></button>
+          <button class="net-chip q-accent" data-act="local" title="오디오 설정 열기"><i class="dot"></i><span><span data-f="local"></span> ms</span></button>
         </div>
         <div class="who-big">
           <button class="avatar lg" type="button" data-act="color" title="내 색 바꾸기" style="--hue:${myHue()}">${esc(initial(s.name))}</button>
@@ -369,7 +371,7 @@
     $('[data-f=monitor-db]', el).textContent = dbText(self.monitorDb ?? 0) + ' dB';
     $('[data-act=local]', el).title = (daw
       ? `DAW 블록 기준 입력+출력 (DAW 자체 지연 제외) · ${s.bufferSize} samples · ${s.sampleRate / 1000}kHz`
-      : `내 장치 입력+출력 (드라이버 보고) · ${s.bufferSize} samples · ${s.sampleRate / 1000}kHz`) + ' · 누르면 오디오 설정';
+      : `내 장치 입력+출력 (드라이버 보고) · ${s.bufferSize} samples · ${s.sampleRate / 1000}kHz`) + ` · 보내는 소리: ${streamText(myStream())} · 누르면 오디오 설정`;
     const mute = $('[data-act=mute]', el);
     mute.className = 'pill' + (self.muted ? ' muted' : '');
     mute.innerHTML = icon(self.muted ? 'mic-off' : 'mic') + `<span>${self.muted ? '음소거됨' : '마이크'}</span>`;
@@ -458,6 +460,25 @@
     peers.forEach((p) => strips.get(p.id)?.el.classList.toggle('dim', p.mute || (anySolo && !p.solo)));
   }
 
+  /** The biggest cards with which everyone fits the window without scrolling: big, medium
+   *  (8 people in the default window), small (a full room of 16 in it); if not even the
+   *  small ones fit, the stage scrolls. Looked at again whenever the people or the window
+   *  change. */
+  function fitStage() {
+    const stage = $('#stage');
+    const fits = () => stage.scrollHeight <= stage.clientHeight + 1;
+    stage.classList.remove('mid', 'many');
+    if (fits()) return;
+    stage.classList.add('mid');
+    if (fits()) return;
+    stage.classList.replace('mid', 'many');
+  }
+  // (the stage's own size: the window, the chat panel opening; and the window itself, which
+  // is also heard of while nothing is being drawn)
+  new ResizeObserver(() => { if (room) fitStage(); }).observe($('#stage'));
+  // (a moment later: at the event itself the page is not always laid out at the new size yet)
+  let fitTimer = 0;
+  window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(() => { if (room) fitStage(); }, 60); });
   function updateRoomChrome() {
     if (!room) return;
     // only the host can put people out
@@ -479,6 +500,7 @@
         $('#stage').append(slot);
       }
     } else slot?.remove();
+    fitStage();
     updateSummary();
     updateDim();
   }
@@ -549,7 +571,7 @@
   });
 
   /* ── backend events ── */
-  backend.on('peer-joined', ({ peer, silent }) => { if (room) addPeer(peer, !silent); });
+  backend.on('peer-joined', ({ peer, silent }) => { if (room) { addPeer(peer, !silent); adviseQuality(); } });
   backend.on('peer-left', ({ id }) => removePeer(id));
   // the host put us out
   backend.on('kicked', () => {
@@ -648,6 +670,7 @@
       <dl class="kv">
         <dt>경로</dt><dd data-f="path"></dd>
         <dt>상대 연결</dt><dd data-f="link"></dd>
+        <dt>보내는 소리</dt><dd data-f="stream"></dd>
         <dt>보안</dt><dd data-f="sec"></dd>
         <dt>왕복 (RTT)</dt><dd data-f="rtt"></dd>
         <dt>패킷 손실</dt><dd data-f="loss"></dd>
@@ -680,6 +703,18 @@
     pop.style.left = clamp(left, 12, innerWidth - pw - 12) + 'px';
     pop.style.top = clamp(top, 12, innerHeight - ph - 12) + 'px';
   }
+  /** "24bit · 48 kHz · 스테레오 · 패킷 64": what someone sends (as their packets say) */
+  function streamText(st) {
+    if (!st || !st.bits) return '';
+    const khz = st.sampleRate ? `${st.sampleRate % 1000 ? (st.sampleRate / 1000).toFixed(1) : st.sampleRate / 1000} kHz` : '';
+    return [`${st.bits}bit`, khz, st.channels === 1 ? '모노' : '스테레오', st.packetFrames ? `패킷 ${st.packetFrames}` : ''].filter(Boolean).join(' · ');
+  }
+  /** the same for what we send ourselves, from our settings */
+  function myStream() {
+    const s = backend.getSettings();
+    const daw = s.connection === 'daw';
+    return { bits: s.quality === 'pcm16' ? 16 : 24, channels: daw || s.inputChannel.includes('-') ? 2 : 1, sampleRate: s.sampleRate, packetFrames: backend.packetFrames() };
+  }
   function updatePop() {
     const p = peers.get(popFor); if (!p) return closePop();
     const b = p.breakdown, [qc, ql] = p.measured === false ? ['accent', '측정 중…'] : quality(p.total);
@@ -690,6 +725,7 @@
       .map(([k, l, c]) => `<div class="legend-row"><i style="background:${c}"></i><span>${l}</span><span class="v">${f1(b[k])} ms</span></div>`).join('');
     $('[data-f=path]', pop).textContent = p.conn.type === 'relay' ? '릴레이 서버 경유' : `P2P 직결${p.conn.ipv6 ? ' · IPv6' : ' · 홀펀칭'}`;
     $('[data-f=link]', pop).innerHTML = { wifi: '<span class="q-warn">Wi-Fi</span>', wired: '유선' }[p.conn.link] || '알 수 없음';
+    $('[data-f=stream]', pop).textContent = streamText(p.stream) || '확인 중…';
     $('[data-f=sec]', pop).innerHTML = p.conn.encrypted
       ? (p.conn.cipher?.startsWith('AES') ? 'AES-256' : 'ChaCha20')
       : '<span class="q-warn">키 교환 중…</span>';
@@ -875,6 +911,28 @@
     chatList.append(el);
     if (atBottom) chatList.scrollTop = chatList.scrollHeight;
   }
+  /** What we send to one person, bits per second: payload + audio header (12) + encryption
+   *  (28) + IP/UDP (28) per packet. `bits`: 16 or 24 (default: the setting). */
+  function streamBps(bits) {
+    const s = backend.getSettings();
+    const me = myStream();
+    const frames = me.packetFrames || 64;
+    return (frames * me.channels * ((bits || me.bits) / 8) + 68) * 8 * (s.sampleRate / frames);
+  }
+  /** A big room (9 people and up) while we send 24-bit: say once what it takes and that
+   *  16-bit takes less. Nothing is changed for the user. */
+  const BIG_ROOM = 9;
+  let qualityAdvised = false;
+  function adviseQuality() {
+    if (!room || qualityAdvised) return;
+    const others = peers.size;
+    if (others + 1 < BIG_ROOM || myStream().bits !== 24) return;
+    qualityAdvised = true;
+    const mbps = (bits) => f1((streamBps(bits) * others) / 1e6);
+    const text = `방에 ${others + 1}명이 있어요. 지금 24bit로 보내고 있어서 업로드가 약 ${mbps(24)} Mbps 필요해요. 설정 → 오디오 → 음질에서 16bit로 바꾸면 약 ${mbps(16)} Mbps로 줄어요.`;
+    sysMsg(text);
+    if (!chatOpen()) toast(text);
+  }
   function sysMsg(text) { pushMsg(h(`<div class="msg sys">${esc(text)}</div>`)); }
   function addMsg({ from, text }) {
     if (from === 'me') { pushMsg(h(`<div class="msg me"><div class="bubble">${esc(text)}</div></div>`)); return; }
@@ -929,7 +987,7 @@
     $('#rm-size').textContent = `${room.maxPeers}명`;
     $('#rm-size-note').textContent = `지금 ${count}명 · ${count >= room.maxPeers ? '가득 참' : `${room.maxPeers - count}자리 남음`}`;
     $('#rm-dec').disabled = !room.isHost || room.maxPeers <= Math.max(2, count);
-    $('#rm-inc').disabled = !room.isHost || room.maxPeers >= 8;
+    $('#rm-inc').disabled = !room.isHost || room.maxPeers >= (room.maxCap || 16);
     $('#rm-new').disabled = !room.isHost || !open;
     $('#rm-open').disabled = !room.isHost;
     renderSafety();
@@ -1389,8 +1447,9 @@
     const bw = (payload + 68) * 8 * pps;
     $('#q-bw').textContent = `상대 1명당 ${bw >= 1e6 ? f1(bw / 1e6) + ' Mbps' : Math.round(bw / 1000) + ' kbps'}`;
     // upload grows with the room: everyone sends to everyone
-    const all = bw * 7;
-    $('#q-note').textContent = `압축 없이 그대로 보내요 (코덱 지연 0 ms). 8명 방이면 업로드가 약 ${f1(all / 1e6)} Mbps 필요해요. 업로드가 부족하면 16bit로 줄여 보세요.`;
+    const mb = (n) => f1((bw * (n - 1)) / 1e6);
+    const here = room ? `지금 방(${peers.size + 1}명)은 약 ${mb(peers.size + 1)} Mbps, ` : '';
+    $('#q-note').textContent = `압축 없이 그대로 보내요 (코덱 지연 0 ms). 업로드가 ${here}8명 방이면 약 ${mb(8)} Mbps, 16명 방이면 약 ${mb(16)} Mbps 필요해요. 업로드가 부족하면 16bit로 줄여 보세요.`;
     $('#jb-val').textContent = `${s.jitterPackets} · ${f1(s.jitterPackets * pkt)}ms`;
   }
 

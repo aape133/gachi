@@ -214,6 +214,8 @@ pub async fn install(app: &AppHandle, o: Opened) {
     s.room_state.host_key = Some(o.host_key);
     s.room_state.open = true;
     s.gate = Some(o.gate);
+    // (a code we took over from the last host counts from now, too)
+    s.code_since = Some(Instant::now());
     s.broadcast_room_state();
     let _ = app.emit("room", s.room_view());
 }
@@ -230,7 +232,7 @@ pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Optio
         }
         if let Some(n) = max_peers {
             // never below the people already here
-            s.room_state.max_peers = n.clamp(s.member_count().max(2), 8);
+            s.room_state.max_peers = n.clamp(s.member_count().max(2), s.room_cap().max(s.member_count()));
             if let Some(g) = &s.gate {
                 g.send(ToWorker::Capacity { max_peers: s.room_state.max_peers, members: s.member_count() });
             }

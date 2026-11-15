@@ -1132,3 +1132,34 @@ input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top:
 .about-update { display: flex; align-items: center; gap: 10px; margin-top: 6px; min-height: 30px; }
 .update-versions { font-size: 15px; color: var(--text-2); margin-bottom: 10px; }
 .update-versions b { color: var(--text); }
+
+/* ─────────────────────────  big rooms  ───────────────────────── */
+/* the card sizes fitStage chooses from. Medium: the same card, tighter (8 people fit the
+   default window in two rows of four) */
+.stage.mid { padding: 16px 28px; gap: 12px; }
+.stage.mid .strip { padding: 11px 16px 12px; gap: 9px; }
+.stage.mid .who-big { gap: 8px; padding: 0; }
+.stage.mid .avatar.lg { width: 46px; height: 46px; font-size: 18px; margin: 2px; }
+.stage.mid .avatar.lg::after { inset: -5px; }
+.stage.mid .who-big .who .name { font-size: 15px; }
+/* small: the person in one line; 16 fit the default window in three rows of six, and
+   smaller windows scroll */
+.stage.many { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 10px 16px; align-content: safe center; }
+.stage.many .strip { padding: 9px 12px 10px; gap: 7px; }
+.stage.many .who-big { flex-direction: row; align-items: center; gap: 10px; padding: 0; text-align: left; }
+.stage.many .who-big .who { align-items: flex-start; }
+.stage.many .who-big .who .name { justify-content: flex-start; font-size: 14px; }
+.stage.many .who-big .who .inst { font-size: 12px; }
+.stage.many .who-big .inst-edit { justify-content: flex-start; }
+.stage.many .avatar.lg { width: 34px; height: 34px; font-size: 14px; margin: 3px; }
+.stage.many .avatar.lg::after { inset: -3px; border-width: 2px; box-shadow: 0 0 calc(var(--lv) * 8px) hsl(var(--hue) 85% 62% / .5); transform: none; }
+/* the sliders: in proportion to the small card (thumb, labels, figures) */
+.stage.many .ctrl { grid-template-columns: 26px 1fr 42px; gap: 6px; font-size: 11.5px; }
+.stage.many input[type=range]::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -4px; }
+.stage.many input[type=range]::-moz-range-thumb { width: 12px; height: 12px; }
+.stage.many .meter { margin-top: 1px; }
+/* (the input channel is in the settings too) */
+.stage.many .strip.self [data-act=input-ch] { display: none; }
+.stage.many .strip-top { flex-wrap: nowrap; }
+.stage.many .top-tags { flex: none; }
+.stage.many .net-chip { min-width: 0; white-space: nowrap; overflow: hidden; }

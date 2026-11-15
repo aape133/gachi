@@ -363,7 +363,7 @@ fn main() {
         println!("(no AES in hardware here: ChaCha20 only)");
         vec![Cipher::ChaCha20Poly1305]
     };
-    for others in [1, 4, 7] {
+    for others in [1, 7, 11, 15] {
         for doubled in [false, true] {
             for &c in &ciphers {
                 case(&stun, c, others, doubled, secs);

@@ -33,6 +33,22 @@ pub struct Profile {
 /// lightness per theme, so they read on a dark and on a light background alike.
 pub const COLOR_HUES: [u16; 10] = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320];
 
+/// The most people a room holds.
+pub const ROOM_MAX: u8 = 16;
+
+/// The room size the versions up to 0.1.2 can take part in (they mix 8 others at most, and
+/// say nothing about it): what a missing `seats` means.
+pub const ROOM_MAX_BEFORE: u8 = 8;
+
+/// The biggest room a member can be in, from the `seats` it gave (0: an older version).
+pub fn seats_of(seats: u8) -> u8 {
+    if seats == 0 {
+        ROOM_MAX_BEFORE
+    } else {
+        seats
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PeerInfo {
     pub id: PeerId,
@@ -52,6 +68,9 @@ pub struct PeerInfo {
     /// The peer's audio setup, once it has reported it.
     #[serde(default)]
     pub audio: Option<AudioInfo>,
+    /// The biggest room this peer's version can be in (see [`seats_of`]).
+    #[serde(default)]
+    pub seats: u8,
 }
 
 /// What each peer tells the others about its own setup, so latency breakdowns
@@ -91,6 +110,9 @@ pub struct JoinRequest {
     /// AES in hardware (see [`PeerInfo::aes`])
     #[serde(default)]
     pub aes: bool,
+    /// The biggest room the newcomer's version can be in (see [`seats_of`])
+    #[serde(default)]
+    pub seats: u8,
 }
 
 /// A [`JoinRequest`] sealed to the host's join key, as the server passes it on.

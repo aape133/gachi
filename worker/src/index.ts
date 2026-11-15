@@ -52,7 +52,7 @@ const HOST_CHECK_MS = 3600_000;
 /** a host that has not sent its keepalive ("ping", every 20 s) for this long is gone: its
  *  PC lost power or its network, and the connection was never closed */
 const HOST_STALE_MS = 5 * 60_000;
-const MAX_ROOM = 8;
+const MAX_ROOM = 16;
 /** join/open attempts per IP per minute (codes are short: no guessing sprees) */
 const ATTEMPTS_PER_MIN = 20;
 
@@ -151,8 +151,8 @@ export default {
     // the caller's address, as far as it goes: a shard, a tag, a key (see `whereOf`)
     const at = await whereOf(req.headers.get("CF-Connecting-IP") ?? "local");
     if (nearby) {
-      // one Durable Object call per lookup (the lobby counts the attempts itself): the home
-      // screen asks every 30 s, and the free plan allows 100,000 calls a day in all
+      // one Durable Object call per lookup (the lobby counts the attempts itself): the free
+      // plan allows 100,000 calls a day in all
       const lan = cleanLan(url.searchParams.get("lan"));
       const gw = cleanGw(url.searchParams.get("gw"));
       const rooms = await env.LOBBY.get(env.LOBBY.idFromName(`nearby-${at.shard}`)).list(at.tag, gw, lan, at.key);
@@ -207,8 +207,9 @@ const SHARDS = 64;
  * say which one it was (a longer tag would; a shorter one would show strangers each other's
  * rooms: that is what the router value is for, see `cleanGw`).
  *
- * `key` tells one address from another while attempts are counted. It is only ever held in
- * memory, for a minute.
+ * `key` tells one caller from another while attempts are counted: an IPv4 address, or an
+ * IPv6 /64 (one home has all of its /64 to pick addresses from: counted per address, it
+ * would never run out of attempts). It is only ever held in memory, for a minute.
  */
 export async function whereOf(ip: string): Promise<{ shard: number; tag: string; net: string; key: string }> {
   const hex = async (text: string) =>
@@ -217,7 +218,7 @@ export async function whereOf(ip: string): Promise<{ shard: number; tag: string;
   const bits = parseInt(n.slice(0, 6), 16); // 24 bits, of which 22 are used
   const shard = bits >> 18;
   const tag = ((bits >> 2) & 0xffff).toString(16).padStart(4, "0");
-  return { shard, tag, net: `${shard}.${tag}`, key: (await hex("gachi attempt v1 " + ip)).slice(0, 16) };
+  return { shard, tag, net: `${shard}.${tag}`, key: (await hex("gachi attempt v1 " + networkOf(ip))).slice(0, 16) };
 }
 
 /** "17.a3f0" (see `whereOf`) back into its parts; null for anything else (an older room's). */
@@ -296,12 +297,19 @@ interface Attachment {
   at?: number;
   /** it has been told all it will hear (an error, or the welcome) and is on its way out */
   done?: number;
+  /** for hosts: messages in the minute that began at `since` (ms) */
+  n?: number;
+  since?: number;
 }
 
 /** what a newcomer is told when no host holds the code: it was mistyped, the room is over,
  *  or the host's connection dropped a moment ago (which of these is not looked up) */
 const NO_HOST: [string, string] = ["not_found", "방을 찾을 수 없어요. 코드를 다시 확인해 주세요. 방장 연결이 잠시 끊긴 것이라면 조금 뒤에 다시 시도해 주세요."];
 
+/** messages a host connection may send per minute. A room sends a few when someone comes or
+ *  goes; each one wakes the object, and most write the room down again: without a limit one
+ *  connection could use up the day's writes for everybody */
+const HOST_MSGS_PER_MIN = 120;
 /** newcomers waiting for the host's answer, per room */
 const MAX_WAITING = 16;
 /** a newcomer waits this long at most */
@@ -423,7 +431,21 @@ export class Jam extends DurableObject<Env> {
     }
     const att = ws.deserializeAttachment() as Attachment;
     if (att.done) return;
-    if (att.role === "host") return this.onHost(ws, att, msg);
+    if (att.role === "host") {
+      const now = Date.now();
+      const fresh = !att.since || now - att.since > 60_000;
+      att.since = fresh ? now : att.since;
+      att.n = fresh ? 1 : (att.n ?? 0) + 1;
+      ws.serializeAttachment(att);
+      if (att.n > HOST_MSGS_PER_MIN) {
+        // (its room goes the way of any host whose connection ended: kept 30 s, then forgotten)
+        const held = att.open === true;
+        this.fail(ws, "rate_limited", "요청이 너무 많아요. 잠시 후 다시 해 주세요.");
+        if (held) await this.hostLeft(ws);
+        return;
+      }
+      return this.onHost(ws, att, msg);
+    }
     return this.onJoin(ws, att, msg);
   }
 
@@ -468,8 +490,11 @@ export class Jam extends DurableObject<Env> {
       }
       case "capacity": {
         if (!att.open || !room) return;
-        room.maxPeers = clampSize(msg.max_peers);
-        room.members = clampMembers(msg.members);
+        const [size, members] = [clampSize(msg.max_peers), clampMembers(msg.members)];
+        // (told again what is already written down: nothing to write)
+        if (size === room.maxPeers && members === room.members) return;
+        room.maxPeers = size;
+        room.members = members;
         await this.ctx.storage.put("room", room);
         await this.list(room);
         return;
@@ -477,6 +502,9 @@ export class Jam extends DurableObject<Env> {
       case "lobby": {
         if (!att.open || !room) return;
         const entry = cleanEntry(msg.lobby);
+        // (the same listing again, from the same network: nothing to write)
+        const was = room.lobby;
+        if ((!was && !entry) || (was && entry && was.net === (att.net ?? "local") && JSON.stringify(was.entry) === JSON.stringify(entry))) return;
         if (room.lobby && (!entry || room.lobby.net !== att.net)) await this.unlist(room);
         room.lobby = entry ? { net: att.net ?? "local", entry } : undefined;
         await this.ctx.storage.put("room", room);
@@ -537,13 +565,17 @@ export class Jam extends DurableObject<Env> {
     // the host vanished without turning the code off: keep the code for a while (the next
     // host takes it over), but off the nearby list until then: nobody could get in meanwhile.
     // A takeover lists it again (host_open keeps the room's lobby entry).
-    if (wasHost && this.hosts().filter((h) => h !== ws).length === 0) {
-      await this.ctx.storage.setAlarm(Date.now() + GRACE_MS);
-      const room = await this.ctx.storage.get<Stored>("room");
-      if (room) await this.unlist(room);
-    }
+    if (wasHost) await this.hostLeft(ws);
     // (a host connection that never opened a room has not touched the storage, and its
     // closing does not either)
+  }
+
+  /** The host's connection `ws` is over, and no other holds the code: see `webSocketClose`. */
+  private async hostLeft(ws: WebSocket) {
+    if (this.hosts().filter((h) => h !== ws).length > 0) return;
+    await this.ctx.storage.setAlarm(Date.now() + GRACE_MS);
+    const room = await this.ctx.storage.get<Stored>("room");
+    if (room) await this.unlist(room);
   }
 
   async webSocketError(ws: WebSocket) {

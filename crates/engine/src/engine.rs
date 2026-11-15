@@ -16,7 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 /// Max peers mixed at once (slots are preallocated).
-pub const MAX_PEERS: usize = 8;
+pub const MAX_PEERS: usize = 16;
 /// Callback blocks are processed in chunks of this many frames (scratch buffers are this big).
 const CHUNK: usize = 2048;
 /// Per-peer ring between the network thread and the output callback: as many packets as
@@ -1072,13 +1072,15 @@ fn start_bridge(
     let stereo = InputChannels::Stereo(0, 1);
     params.input_map.store(stereo.encode(), Relaxed);
     let cfg = EngineConfig { input: stereo, ..cfg.clone() };
-    let (input, output) = processors(&cfg, sink, cmd_rx, garbage_tx, shared, (sample_rate, 2, 2, block), false);
+    // (a block is at most `CHUNK` frames and a packet at least 8: every packet of a block fits)
+    let (hold_tx, hold_rx) = rtrb::RingBuffer::<Frame>::new(CHUNK / 8);
+    let (input, output) = processors(&cfg, Box::new(Held(hold_tx)), cmd_rx, garbage_tx, shared, (sample_rate, 2, 2, block), false);
     let stop = Arc::new(AtomicBool::new(false));
     let thread = {
         let (end, stop) = (end.clone(), stop.clone());
         thread::Builder::new()
             .name("gachi-bridge".into())
-            .spawn(move || run_bridge(&end, input, output, &stop, &params))
+            .spawn(move || run_bridge(&end, input, output, &stop, &params, hold_rx, sink))
             .map_err(|e| EngineError::Thread(e.to_string()))?
     };
     let name = "DAW (gachi 플러그인)".to_string();
@@ -1098,7 +1100,15 @@ fn start_bridge(
 /// same number of frames (output processing) and hand the mix straight back, so the plugin
 /// can play it in the same DAW block.
 #[cfg(windows)]
-fn run_bridge(end: &gachi_bridge::AppEnd, mut input: InputProcessor, mut output: OutputProcessor, stop: &AtomicBool, params: &SelfParams) {
+fn run_bridge(
+    end: &gachi_bridge::AppEnd,
+    mut input: InputProcessor,
+    mut output: OutputProcessor,
+    stop: &AtomicBool,
+    params: &SelfParams,
+    mut held: rtrb::Consumer<Frame>,
+    mut sink: Box<dyn PacketSink>,
+) {
     if !gachi_bridge::pro_audio() {
         tracing::info!("MMCSS unavailable for the bridge thread");
     }
@@ -1122,13 +1132,35 @@ fn run_bridge(end: &gachi_bridge::AppEnd, mut input: InputProcessor, mut output:
             let t = input.cb.load.begin();
             input.cb.record(n as u32);
             input.process(&up[..n * 2]);
-            input.cb.load.end(t);
+            let took_in = crate::load::CallbackLoad::now().saturating_sub(t);
             let t = output.cb.load.begin();
             output.cb.record(n as u32);
             output.process(&mut down[..n * 2]);
             output.cb.load.end(t);
             end.write_down(&down[..n * 2]);
+            // the mix is on its way: now the block's packets (their time counts as input)
+            let t = crate::load::CallbackLoad::now();
+            while let Ok(f) = held.pop() {
+                sink.send(&f);
+            }
+            input.cb.load.record(took_in + crate::load::CallbackLoad::now().saturating_sub(t));
         }
+    }
+}
+
+/// The input processing's sink in DAW mode: the block's packets wait here until the mix has
+/// gone back to the plugin, then `run_bridge` sends them. The plugin waits only a moment for
+/// the mix (a quarter of the block, 167 µs at 32 frames), and sending to a full room of 15
+/// takes 80-100 µs, twice that with copies for lossy links (measured: gachi-net's
+/// `send_cost`): sent first, as a device's input callback does, the mix would miss that
+/// wait. The packets leave in the same block, some tens of µs later.
+#[cfg(windows)]
+struct Held(rtrb::Producer<Frame>);
+
+#[cfg(windows)]
+impl PacketSink for Held {
+    fn send(&mut self, frame: &Frame) {
+        let _ = self.0.push(*frame);
     }
 }
 

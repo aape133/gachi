@@ -599,6 +599,9 @@ impl Receiver {
                     tracing::trace!(sender, "peer ring full, dropping packet");
                 }
                 p.tracker.on_packet(header.seq, header.frames, &mut p.stats);
+                p.stats.bits = (header.format.bytes() * 8) as u8;
+                p.stats.channels = header.channels;
+                p.stats.packet_frames = header.frames;
                 // out to the app every few packets, if nobody is reading just now
                 if p.stats.received % 8 == 0 {
                     if let Ok(mut shared) = self.stats.try_lock() {

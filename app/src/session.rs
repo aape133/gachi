@@ -72,11 +72,45 @@ pub struct PeerEntry {
     pub copies_worse: u8,
     /// copies made it worse: not again before this
     pub copies_blocked: Option<Instant>,
+    /// chat messages taken from it since when (see `CHAT_MAX`)
+    pub chats: (Instant, u8),
 }
 
 /// Addresses taken from one peer (LAN, other adapters, public, guessed ports, IPv6, the
 /// port the router opened): we knock on each.
 const MAX_CANDIDATES: usize = 12;
+
+/// Chat messages taken from one member in `CHAT_WINDOW`: more than anyone types, and an
+/// end to a member's app filling everybody's chat (and screen) as fast as it can send.
+const CHAT_MAX: u8 = 20;
+const CHAT_WINDOW: Duration = Duration::from_secs(10);
+
+/// The code is turned off this long after it was opened: a room left on overnight does not
+/// keep its code (and its place on the connection server) for ever. The room itself goes
+/// on, and the host can turn the code on again.
+const CODE_OPEN_FOR: Duration = Duration::from_secs(12 * 3600);
+
+/// A room's name as shown (and passed on): plain text, of a sensible length.
+const ROOM_NAME_MAX: usize = 40;
+fn clip_room_name(name: &str) -> String {
+    let name: String = gachi_proto::peer::clean_text(name).trim().chars().take(ROOM_NAME_MAX).collect();
+    if name.is_empty() { "새 합주실".into() } else { name }
+}
+
+/// The room as the host says it is, within what a room can be. The host is a member like
+/// any other (whoever has been in longest): its word decides, but a broken or hostile one
+/// must not hand us a room of 255, a name that fills the screen, or a list without end
+/// (we keep all of it, and run the room by it if we become host).
+fn clean_room_state(mut state: RoomState, ours: &RoomState) -> RoomState {
+    state.name = clip_room_name(&state.name);
+    state.max_peers = state.max_peers.clamp(2, gachi_proto::signal::ROOM_MAX);
+    state.code = gachi_proto::code::normalize(&state.code).unwrap_or_else(|| ours.code.clone());
+    state.host_key = state.host_key.filter(|k| k.len() == 32 && k.bytes().all(|b| b.is_ascii_hexdigit()));
+    state.password = state.password.filter(|p| p.len() <= 256);
+    let over = state.banned.len().saturating_sub(MAX_BANNED);
+    state.banned.drain(..over);
+    state
+}
 
 /// The peer reports this much loss of our audio (percent): start sending it copies.
 const COPIES_ON_LOSS: f32 = 0.3;
@@ -196,6 +230,8 @@ pub struct Session {
     reopen_at: Option<Instant>,
     /// host: recent join attempts with a wrong password (limits guessing)
     bad_tries: Vec<Instant>,
+    /// host: since when the code has been on (see `CODE_OPEN_FOR`)
+    pub code_since: Option<Instant>,
     /// host: members just put out, still here for a moment so the message reaches them
     kicked: Vec<(PeerId, Instant)>,
     tasks: Vec<JoinHandle<()>>,
@@ -402,10 +438,20 @@ pub const ENGINE_KEYS: &[&str] =
     &["device", "inputChannel", "quality", "packetSize", "connection"];
 
 impl Session {
-    pub fn add_peer(&mut self, info: PeerInfo) {
+    pub fn add_peer(&mut self, mut info: PeerInfo) {
         if info.id == self.me || self.peers.contains_key(&info.id) {
             return;
         }
+        // members come by the host's word (the welcome, `Introduce`). No room is bigger than
+        // this, whatever the host says: every member costs a mixer slot, and packets sent to
+        // each of its addresses, which a hostile host could point anywhere
+        if self.peers.len() + 1 >= gachi_proto::signal::ROOM_MAX as usize {
+            tracing::warn!(id = info.id, "the room is full: member not added");
+            return;
+        }
+        // (the same limits as for someone we let in ourselves)
+        info.profile = clip_profile(info.profile);
+        info.candidates.truncate(MAX_CANDIDATES);
         let handle = self.engine.as_mut().map(|e| {
             let (tx, handle) = e.add_peer(info.id);
             self.net.add_peer(info.id, tx);
@@ -443,6 +489,7 @@ impl Session {
                 copies_worse: 0,
                 copies_blocked: None,
                 clean_since: None,
+                chats: (now, 0),
             },
         );
         self.apply_peer_rate(id);
@@ -599,6 +646,24 @@ impl Session {
         !gone.is_empty() || !never.is_empty()
     }
 
+    /// Host: the code has been on for `CODE_OPEN_FOR`: turn it off (as the switch in the room
+    /// panel does) and say so. true if it was.
+    pub fn close_old_code(&mut self, app: &AppHandle) -> bool {
+        if !self.is_host || !self.room_state.open || !self.code_since.is_some_and(|t| t.elapsed() > CODE_OPEN_FOR) {
+            return false;
+        }
+        self.code_since = None;
+        if let Some(g) = self.gate.take() {
+            g.send(ToWorker::Close); // forget the code right away
+        }
+        self.room_state.open = false;
+        self.broadcast_room_state();
+        let _ = app.emit("room", self.room_view());
+        tracing::info!("the code was on for 12 hours: turned off");
+        notice(app, "입장 코드를 켠 지 12시간이 지나서 껐어요. 합주는 그대로 계속돼요. 사람을 더 부르려면 방 설정에서 코드를 다시 켜 주세요.".into());
+        true
+    }
+
     /// People in the room, us included.
     pub fn member_count(&self) -> u8 {
         (self.peers.len() + 1).min(u8::MAX as usize) as u8
@@ -644,7 +709,14 @@ impl Session {
             key: Some(self.net.public_key),
             aes: gachi_net::crypto::aes_in_hardware(),
             audio: Some(self.my_audio()),
+            seats: gachi_proto::signal::ROOM_MAX,
         }
+    }
+
+    /// The biggest this room can be made: what every member's version can take part in
+    /// (versions up to 0.1.2 mix 8 others at most).
+    pub fn room_cap(&self) -> u8 {
+        self.peers.values().map(|p| gachi_proto::signal::seats_of(p.info.seats)).min().unwrap_or(gachi_proto::signal::ROOM_MAX).min(gachi_proto::signal::ROOM_MAX)
     }
 
     /// Host: a sealed join request (passed on by the connection server). Opens it with our
@@ -685,6 +757,11 @@ impl Session {
         let Ok(join) = serde_json::from_slice::<JoinRequest>(&plain) else {
             return reject(ErrorKind::BadRequest, "잘못된 요청이에요.");
         };
+        // a room opened for more than an older version can mix: it would hear only some
+        if self.room_state.max_peers > gachi_proto::signal::seats_of(join.seats) {
+            tracing::info!(room = self.room_state.max_peers, "join refused: the newcomer's version is too old for a room this big");
+            return reject(ErrorKind::Full, "이 방은 8명보다 크게 열려 있어서 gachi 새 버전이 필요해요. 업데이트한 뒤 다시 들어와 주세요.");
+        }
         if join.candidates.iter().any(|a| self.is_banned(a.ip())) {
             tracing::info!("join refused: put out of this room before");
             return reject(ErrorKind::NotFound, "이 방에는 들어갈 수 없어요.");
@@ -708,6 +785,7 @@ impl Session {
             key: Some(join.key),
             aes: join.aes,
             audio: None,
+            seats: join.seats,
         };
         // everyone already here (us first), for the newcomer to connect to
         let mut peers = vec![self.my_info()];
@@ -773,6 +851,14 @@ impl Session {
     fn on_peer_msg(&mut self, app: &AppHandle, from: PeerId, msg: PeerMsg) {
         match msg {
             PeerMsg::Chat { text } => {
+                let Some(p) = self.peers.get_mut(&from) else { return };
+                if p.chats.0.elapsed() > CHAT_WINDOW {
+                    p.chats = (Instant::now(), 0);
+                }
+                p.chats.1 = p.chats.1.saturating_add(1);
+                if p.chats.1 > CHAT_MAX {
+                    return;
+                }
                 let _ = app.emit("chat", json!({ "from": from.to_string(), "text": clip_chat(&text) }));
             }
             PeerMsg::Profile { profile } => self.on_peer_profile(app, from, profile),
@@ -781,7 +867,7 @@ impl Session {
                 // only the host's word counts
                 if from == self.host_id() {
                     let was_open = self.room_state.open;
-                    self.room_state = state;
+                    self.room_state = clean_room_state(state, &self.room_state);
                     if was_open != self.room_state.open {
                         notice(
                             app,
@@ -1487,6 +1573,12 @@ impl Session {
                 encrypted: p.info.key.is_some() && p.route.is_some(),
                 cipher: Cipher::pick(gachi_net::crypto::aes_in_hardware(), p.info.aes).label(),
             },
+            stream: crate::view::StreamView {
+                bits: st.bits,
+                channels: st.channels,
+                sample_rate: p.info.audio.map_or(0, |a| a.sample_rate),
+                packet_frames: st.packet_frames,
+            },
             loss: st.loss_pct,
             outage_ms: st.last_outage.filter(|(at, _)| at.elapsed() < Duration::from_secs(30)).map_or(0.0, |(_, ms)| ms),
             jitter_ms: st.jitter_ms,
@@ -1515,6 +1607,7 @@ impl Session {
             code: self.room_state.code.clone(),
             name: self.room_state.name.clone(),
             max_peers: self.room_state.max_peers,
+            max_cap: self.room_cap(),
             open: self.room_state.open,
             is_host: self.is_host,
             started_at: self.started_at,
@@ -1614,7 +1707,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
 
     let (me, room_state, peers, gate, media) = match &intent {
         Intent::Create { name, max_peers, password } => {
-            let max = (*max_peers).clamp(2, 8);
+            let max = (*max_peers).clamp(2, gachi_proto::signal::ROOM_MAX);
             // the code request travels to a far server: open UDP and audio meanwhile
             let code_task = {
                 let (app, server) = (app.clone(), settings.server.clone());
@@ -1632,7 +1725,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
             let room_state = RoomState {
                 banned: Vec::new(),
                 code: o.code.clone(),
-                name: name.clone(),
+                name: clip_room_name(name),
                 open: true,
                 max_peers: max,
                 password: password.clone(),
@@ -1671,6 +1764,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
                 token: gathered.token,
                 key: gathered.public_key,
                 aes: gachi_net::crypto::aes_in_hardware(),
+                seats: gachi_proto::signal::ROOM_MAX,
             };
             // seal it to the host (the password goes into the key, never on the wire)
             let code = code.clone();
@@ -1700,9 +1794,9 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
             let room_state = RoomState {
                 banned: Vec::new(),
                 code: welcome.room.code.clone(),
-                name: welcome.room.name.clone(),
+                name: clip_room_name(&welcome.room.name),
                 open: true,
-                max_peers: welcome.room.max_peers,
+                max_peers: welcome.room.max_peers.clamp(2, gachi_proto::signal::ROOM_MAX),
                 password: None,
                 host_key: None,
                 next_id: 0,
@@ -1758,6 +1852,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         driver_hung: false,
         reopen_at: None,
         bad_tries: Vec::new(),
+        code_since: matches!(intent, Intent::Create { .. }).then(Instant::now),
         kicked: Vec::new(),
         tasks: Vec::new(),
     };
@@ -1819,7 +1914,7 @@ async fn ticker(app: AppHandle) {
         let state = app.state::<AppState>();
         let mut guard = state.session.lock().await;
         let Some(s) = guard.as_mut() else { return };
-        let changed = s.poll_net_events(&app) | s.drop_silent_peers(&app);
+        let changed = s.poll_net_events(&app) | s.drop_silent_peers(&app) | s.close_old_code(&app);
         if let Some(e) = s.engine.as_mut() {
             e.collect_garbage();
         }
@@ -2014,9 +2109,37 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn the_hosts_room_state_is_kept_within_what_a_room_can_be() {
+        let ours = RoomState { code: "K7MQ2X".into(), name: "합주".into(), open: true, max_peers: 4, password: None, host_key: None, next_id: 3, banned: vec![] };
+        let wild = RoomState {
+            code: "<script>".into(),
+            name: format!("  {}\u{202E}\n", "가".repeat(500)),
+            open: false,
+            max_peers: 255,
+            password: Some("p".repeat(5000)),
+            host_key: Some("not a key".into()),
+            next_id: 9,
+            banned: (0..200u8).map(|n| std::net::IpAddr::from([203, 0, 113, n])).collect(),
+        };
+        let got = clean_room_state(wild, &ours);
+        assert_eq!(got.code, "K7MQ2X", "a code that is none: ours stays");
+        assert_eq!(got.name, "가".repeat(ROOM_NAME_MAX));
+        assert_eq!(got.max_peers, gachi_proto::signal::ROOM_MAX);
+        assert_eq!((got.password, got.host_key), (None, None));
+        assert_eq!(got.banned.len(), MAX_BANNED);
+        assert_eq!(got.banned.last(), Some(&std::net::IpAddr::from([203, 0, 113, 199])), "the latest are kept");
+        assert!(!got.open);
+        // an ordinary one passes as it is
+        let fine = RoomState { code: "ABCDEF".into(), host_key: Some("0f".repeat(16)), password: Some("pw".into()), max_peers: 16, ..ours.clone() };
+        assert_eq!(clean_room_state(fine.clone(), &ours), fine);
+        assert_eq!(clip_room_name("   "), "새 합주실");
+    }
+
     fn entry(now: Instant) -> PeerEntry {
         PeerEntry {
             info: PeerInfo {
+                seats: 0,
                 id: 2,
                 profile: Profile { name: "B".into(), instrument: "기타".into(), color: None },
                 is_host: false,
@@ -2027,6 +2150,7 @@ mod tests {
                 audio: None,
             },
             handle: None,
+            chats: (now, 0),
             ui: PeerUi::default(),
             route: None,
             added: Instant::now(),

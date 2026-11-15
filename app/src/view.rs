@@ -30,6 +30,17 @@ pub struct ConnView {
     pub cipher: &'static str,
 }
 
+/// What a member sends, as its packets say (zeros until the first one): shown in the
+/// details so that a mixed room can be read at a glance.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamView {
+    pub bits: u8,
+    pub channels: u8,
+    pub sample_rate: u32,
+    pub packet_frames: u16,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerView {
@@ -40,6 +51,7 @@ pub struct PeerView {
     pub is_host: bool,
     pub connected: bool,
     pub conn: ConnView,
+    pub stream: StreamView,
     pub loss: f32,
     /// the stream stopped for a moment within the last 30 s: how long (ms), else 0
     pub outage_ms: f32,
@@ -67,6 +79,9 @@ pub struct RoomView {
     pub code: String,
     pub name: String,
     pub max_peers: u8,
+    /// the biggest the room can be made with the people in it (an older version among
+    /// them: 8)
+    pub max_cap: u8,
     /// the code is on: people with it can join
     pub open: bool,
     pub is_host: bool,

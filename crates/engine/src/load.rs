@@ -76,7 +76,18 @@ impl CallbackLoad {
 
     #[inline]
     pub fn end(&self, start: u64) {
-        let took = now_ns().saturating_sub(start);
+        self.record(now_ns().saturating_sub(start));
+    }
+
+    /// The clock [`begin`](Self::begin) reads, for a callback that is timed in parts.
+    #[inline]
+    pub fn now() -> u64 {
+        now_ns()
+    }
+
+    /// A callback that took `took` ns in all (timed in parts with [`now`](Self::now)).
+    #[inline]
+    pub fn record(&self, took: u64) {
         let step = ((took / STEP_NS) as usize).min(STEPS - 1);
         self.hist[step].fetch_add(1, Relaxed);
         self.max_ns.fetch_max(took, Relaxed);

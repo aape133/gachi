@@ -260,6 +260,7 @@ mod tests {
             let Some(FromWorker::Host { join_key, locked: true }) = joiner_rx.recv().await else { panic!("host key") };
             let host_pub = gachi_proto::key_from_hex(&join_key).unwrap();
             let join = JoinRequest {
+                seats: 0,
                 profile: Profile { name: "B".into(), instrument: "건반".into(), color: None },
                 candidates: vec!["192.168.0.7:5555".parse().unwrap()],
                 token: 42,
@@ -280,6 +281,7 @@ mod tests {
                 you: 2,
                 room: RoomInfo { code: code.clone(), name: "r".into(), max_peers: 4, has_password: true },
                 peers: vec![PeerInfo {
+                    seats: 0,
                     id: 1,
                     profile: Profile { name: "A".into(), instrument: "기타".into(), color: None },
                     is_host: true,

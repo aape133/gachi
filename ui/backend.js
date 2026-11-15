@@ -236,7 +236,8 @@
       };
       const total = Object.values(b).reduce((a, v) => a + v, 0);
       const { speed, base, netNow, ...rest } = p;
-      return { ...rest, packets, autoPackets: this.autoPackets(p), breakdown: b, total, rtt: netNow * 2 };
+      const stream = { bits: 24, channels: 2, sampleRate: 48000, packetFrames: 64 };
+      return { ...rest, stream, packets, autoPackets: this.autoPackets(p), breakdown: b, total, rtt: netNow * 2 };
     }
 
     /* ── rooms ── */
@@ -247,6 +248,17 @@
       let code = '';
       for (let i = 0; i < 6; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
       this._openRoom({ code, name: name || '새 합주실', maxPeers, isHost: true, hasPassword: !!password });
+      // ?peers=15: a full room at once (to look at big rooms)
+      const many = +new URLSearchParams(location.search).get('peers') || 0;
+      if (many) {
+        const names = ['지민', '현우', '서연', '도윤', '하은', '준서', '수아', '민재', '예린', '태오', '유나', '시우', '채원', '건우', '다인'];
+        const insts = ['보컬', '베이스', '드럼', '기타', '건반', '색소폰', '바이올린', '코러스'];
+        for (let i = 0; i < many; i++) {
+          const d = DEMO_PEERS[i % DEMO_PEERS.length];
+          this._later(300 + i * 120, () => this._addPeer({ ...d, id: 'p' + (i + 1), name: names[i % names.length], instrument: insts[i % insts.length], hue: (i * 47 + 20) % 360 }));
+        }
+        return this.getRoom();
+      }
       this._later(3000, () => this._addPeer(DEMO_PEERS[0]));
       this._later(6500, () => this._addPeer(DEMO_PEERS[1]));
       this._later(10000, () => this.emit('chat', { from: 'p1', text: '다들 들려요? 한 곡 가볼까요' }));
@@ -331,12 +343,12 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.1.2'; }
+    async appVersion() { return '0.2.0'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.1.3' };
+      return { version: '0.2.1' };
     }
     openRelease() {}
     async setPreview() {}
@@ -345,7 +357,7 @@
     async setRoom({ open, maxPeers, newCode } = {}) {
       if (!this.room) return;
       const count = this.peers.size + 1;
-      if (maxPeers != null) this.room.maxPeers = Math.min(8, Math.max(count, 2, maxPeers));
+      if (maxPeers != null) this.room.maxPeers = Math.min(16, Math.max(count, 2, maxPeers));
       if (open != null) this.room.open = open;
       if (newCode) this.room.code = Array.from({ length: 6 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
       this.emit('room', this.getRoom());
