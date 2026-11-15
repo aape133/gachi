@@ -1,0 +1,11 @@
+# libclang for the ASIO bindings (asio-sys → bindgen). Comes with Visual Studio's
+# "C++ Clang tools" component. A LIBCLANG_PATH set in your environment takes precedence.
+[env]
+LIBCLANG_PATH = { value = "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/Llvm/x64/bin", force = false }
+
+# poly1305 (in ChaCha20-Poly1305): its AVX2 path spends ~0.8 µs setting up every message,
+# which for our 150-800-byte packets makes it 2.5-3x slower than its plain path (measured:
+# `cargo run -p gachi-net --release --example send_cost -- 1 --crypto`). Only the ChaCha20
+# cipher uses it (peers without AES in hardware); AES-256-GCM is not affected.
+[build]
+rustflags = ["--cfg", "poly1305_force_soft"]

@@ -1,0 +1,20 @@
+[package]
+name = "gachi-plugin"
+description = "The gachi DAW plugin (VST3): hands the track's sound to the gachi app and plays back the other players"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[lib]
+# bundled as gachi.vst3 (the name "gachi" alone would collide with the app's gachi.pdb)
+name = "gachi_plugin"
+crate-type = ["cdylib"]
+
+[dependencies]
+vst3 = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+gachi-bridge.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }

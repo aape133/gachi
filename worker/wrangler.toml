@@ -1,0 +1,77 @@
+# gachi connection server. Deploy: `npx wrangler login`, then `npx wrangler deploy`.
+name = "gachi"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+# served at https://gachi.<account>.workers.dev (the app connects here)
+workers_dev = true
+# no per-version preview URLs: only the deployed version should be reachable
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Jam"
+
+[[durable_objects.bindings]]
+name = "LIMITER"
+class_name = "Counts"
+
+# SQLite-backed Durable Objects (the kind the free plan offers)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room", "Limiter"]
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Local"
+
+# nearby rooms (open rooms per network)
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Lobby"]
+
+# no object is named after an address any more: a fixed set of shards takes over from the
+# two classes that had one object per address
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Attempts", "Nearby"]
+
+# the two old classes go, with every object they had (one per address) and what it held.
+# (In a deploy of its own, after the one above went live: Cloudflare refuses to delete a
+# class the live version binds to, and to take a version that just drops one.)
+[[migrations]]
+tag = "v4"
+deleted_classes = ["Limiter", "Lobby"]
+
+# rooms move to a new class, so that the old one can be deleted with everything older
+# versions left in it (next deploy)
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["Stage"]
+
+# the rooms' old class goes, with everything older versions left in its objects
+[[migrations]]
+tag = "v6"
+deleted_classes = ["Room"]
+
+# all three classes move to new ones, so that the old ones can be deleted with every
+# object they ever had (next deploy). Rooms open at that moment end: their hosts open
+# them again under a new code.
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = ["Hall", "Around", "Tally"]
+
+# the three old classes go, with every object they ever had and what was left in it
+[[migrations]]
+tag = "v8"
+deleted_classes = ["Stage", "Nearby", "Attempts"]
+
+# once more, all three classes move to new ones, so that the old ones can be deleted with
+# every object they had (next deploy). Rooms open at that moment end.
+[[migrations]]
+tag = "v9"
+new_sqlite_classes = ["Jam", "Local", "Counts"]
+
+# the three old classes go, with every object they had and what was left in it
+[[migrations]]
+tag = "v10"
+deleted_classes = ["Hall", "Around", "Tally"]

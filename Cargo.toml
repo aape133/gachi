@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = ["crates/proto", "crates/engine", "crates/net", "crates/bridge", "crates/plugin", "app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# GNU General Public License, version 3 (see LICENSE). The app is built with Steinberg's
+# ASIO SDK under that SDK's GPLv3 option, so the whole work is under the GPLv3.
+license = "GPL-3.0-only"
+repository = "https://github.com/aape133/gachi"
+
+[workspace.dependencies]
+gachi-proto = { path = "crates/proto" }
+gachi-engine = { path = "crates/engine" }
+gachi-net = { path = "crates/net" }
+gachi-bridge = { path = "crates/bridge" }
+
+anyhow = "1"
+arc-swap = "1"
+cpal = "0.15"
+futures-util = "0.3"
+rand = "0.8"
+rtrb = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.dev.package."*"]
+# audio code is unusable unoptimized; keep deps fast even in debug builds
+opt-level = 2
+
+# Our real-time crates too: generic code (e.g. ChaCha20-Poly1305) is compiled where it is
+# used, so an unoptimized gachi-net would seal packets ~100x slower on the audio thread.
+[profile.dev.package.gachi-net]
+opt-level = 2
+
+[profile.dev.package.gachi-engine]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

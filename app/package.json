@@ -1,0 +1,11 @@
+{
+  "name": "gachi-app",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "build:installer": "powershell -ExecutionPolicy Bypass -File ../crates/plugin/bundle.ps1 && tauri build --bundles nsis"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}

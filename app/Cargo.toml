@@ -1,0 +1,37 @@
+[package]
+name = "gachi"
+description = "gachi desktop app (Tauri shell around the web UI + native audio engine)"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["asio"]
+# Steinberg ASIO on Windows (no-op elsewhere). Needs libclang; the SDK is downloaded by the build.
+asio = ["gachi-engine/asio"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+gachi-proto.workspace = true
+gachi-engine.workspace = true
+gachi-net.workspace = true
+rtrb.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tokio.workspace = true
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+netdev = "0.47.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+rustls-native-certs = "0.8"
+# (already in the tree through tokio-tungstenite; named here for the update check's one HTTPS request)
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }

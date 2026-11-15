@@ -1,0 +1,18 @@
+[package]
+name = "gachi-bridge"
+description = "Same-PC audio path between the gachi DAW plugin and the gachi app: shared memory rings + a wake-up event"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Memory",
+    "Win32_System_Performance",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }

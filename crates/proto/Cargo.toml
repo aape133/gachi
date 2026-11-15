@@ -1,0 +1,12 @@
+[package]
+name = "gachi-proto"
+description = "Wire formats shared by the gachi client and server"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+

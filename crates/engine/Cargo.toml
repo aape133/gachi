@@ -1,0 +1,24 @@
+[package]
+name = "gachi-engine"
+description = "Low-latency audio engine: device I/O, jitter buffers, mixer"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[features]
+# Steinberg ASIO on Windows. Needs the ASIO SDK (CPAL_ASIO_DIR) and LLVM/clang. See README.
+asio = ["cpal/asio", "dep:asio-sys"]
+
+[dependencies]
+gachi-proto.workspace = true
+cpal.workspace = true
+rtrb.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+hound = "3.5.1"
+# the same ASIO bindings cpal uses: only for the channel names cpal does not expose
+asio-sys = { version = "0.2.6", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+# DAW mode: the plugin's blocks drive the engine instead of an audio device
+gachi-bridge.workspace = true

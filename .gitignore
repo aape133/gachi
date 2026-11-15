@@ -1,0 +1,12 @@
+# build output (also the installer and the manual backups in target/)
+/target
+/app/gen
+
+# dependencies
+node_modules/
+
+# local Worker dev state
+.wrangler/
+
+# per-machine Claude Code settings
+.claude/settings.local.json
