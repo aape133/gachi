@@ -170,8 +170,15 @@ impl Metronome {
 /// Track id used for your own input.
 pub const SELF_TRACK: PeerId = 0;
 const BLOCK: usize = 256;
-/// ~2.5 s of 9 tracks at 48 kHz between the audio thread and the writer
-const RING_BLOCKS: usize = 4096;
+/// ~2.5 s of 17 tracks (a full room) at 48 kHz between the audio thread and the writer: a
+/// disk that stops for a moment (an antivirus scan, a drive waking up) loses nothing
+const RING_BLOCKS: usize = 8192;
+/// A WAV file holds 4 GB at most, and past that its length field wraps around: the file
+/// then reads as a few minutes, the rest of the recording unreachable. So a track goes on
+/// in a new file every this many frames (32-bit float stereo is 8 bytes a frame: 3.6 GB;
+/// 2 h 46 min at 48 kHz, 41 min at 192 kHz). Every track changes files at the same places
+/// on the timeline, so the parts line up like the first files do.
+const PART_FRAMES: u64 = 480_000_000;
 
 #[derive(Clone, Copy)]
 pub(crate) struct RecBlock {
@@ -267,13 +274,24 @@ impl Recorder {
         names: Arc<Mutex<HashMap<PeerId, String>>>,
         slots: usize,
     ) -> Result<(RecTap, Recorder), String> {
+        Self::start_parts(dir, sample_rate, names, slots, PART_FRAMES)
+    }
+
+    /// (`part_frames`: see [`PART_FRAMES`]; tests use small parts)
+    fn start_parts(
+        dir: PathBuf,
+        sample_rate: u32,
+        names: Arc<Mutex<HashMap<PeerId, String>>>,
+        slots: usize,
+        part_frames: u64,
+    ) -> Result<(RecTap, Recorder), String> {
         std::fs::create_dir_all(&dir).map_err(|e| format!("녹음 폴더를 만들 수 없어요 ({e})"))?;
         let (tx, rx) = rtrb::RingBuffer::new(RING_BLOCKS);
         let dropped = Arc::new(AtomicU64::new(0));
         let tap = RecTap { tx, acc: vec![RecBlock::EMPTY; slots].into_boxed_slice(), pos: 0, dropped: dropped.clone() };
         let thread = thread::Builder::new()
             .name("gachi-rec-writer".into())
-            .spawn(move || write_loop(rx, dir, sample_rate, names, dropped))
+            .spawn(move || write_loop(rx, dir, sample_rate, names, dropped, part_frames))
             .map_err(|e| e.to_string())?;
         Ok((tap, Recorder { thread }))
     }
@@ -290,17 +308,73 @@ fn safe_name(s: &str) -> String {
     if s.is_empty() { "track".into() } else { s }
 }
 
+type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
+
+/// One track of a recording: its files (one per part of the timeline, see [`PART_FRAMES`]).
 struct Track {
-    writer: hound::WavWriter<std::io::BufWriter<std::fs::File>>,
+    /// the file being written (opened with the first frame that goes into it)
+    writer: Option<Wav>,
+    /// which part of the timeline that file is
+    part: u64,
+    /// frames of the timeline this track is written up to
     written: u64,
-    path: PathBuf,
+    /// its number and name in the file names
+    n: usize,
+    name: String,
+    files: Vec<PathBuf>,
 }
 
-fn open_track(dir: &Path, n: usize, name: &str, sample_rate: u32) -> Result<Track, String> {
-    let path = dir.join(format!("{n:02}-{}.wav", safe_name(name)));
-    let spec = hound::WavSpec { channels: 2, sample_rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-    let writer = hound::WavWriter::create(&path, spec).map_err(|e| format!("파일을 만들 수 없어요 ({e})"))?;
-    Ok(Track { writer, written: 0, path })
+impl Track {
+    /// A track whose first sound is at `pos`: it starts with the part `pos` is in (a track
+    /// that joins hours in has no files of silence for the hours before).
+    fn new(n: usize, name: String, pos: u64, part_frames: u64) -> Self {
+        Self { writer: None, part: pos / part_frames, written: pos - pos % part_frames, n, name, files: Vec::new() }
+    }
+
+    /// Writes `frames` frames at the track's end, into the part (or parts) they fall in:
+    /// `data` (interleaved stereo), or silence.
+    fn put(&mut self, dir: &Path, sample_rate: u32, part_frames: u64, data: Option<&[f32]>, frames: u64) -> Result<(), String> {
+        let cannot = |e: hound::Error| format!("녹음 파일에 쓸 수 없어요 ({e})");
+        let mut done = 0;
+        while done < frames {
+            let part = self.written / part_frames;
+            if self.writer.is_none() || part != self.part {
+                self.close()?;
+                let name = safe_name(&self.name);
+                let file = if part == 0 { format!("{:02}-{name}.wav", self.n) } else { format!("{:02}-{name} ({}).wav", self.n, part + 1) };
+                let path = dir.join(file);
+                let spec = hound::WavSpec { channels: 2, sample_rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+                self.writer = Some(hound::WavWriter::create(&path, spec).map_err(|e| format!("파일을 만들 수 없어요 ({e})"))?);
+                self.part = part;
+                self.files.push(path);
+            }
+            let Some(w) = self.writer.as_mut() else { break };
+            let n = (frames - done).min((part + 1) * part_frames - self.written);
+            match data {
+                Some(d) => {
+                    for &s in &d[done as usize * 2..(done + n) as usize * 2] {
+                        w.write_sample(s).map_err(cannot)?;
+                    }
+                }
+                None => {
+                    for _ in 0..n * 2 {
+                        w.write_sample(0.0f32).map_err(cannot)?;
+                    }
+                }
+            }
+            self.written += n;
+            done += n;
+        }
+        Ok(())
+    }
+
+    /// Finishes the file being written (its header gets the length).
+    fn close(&mut self) -> Result<(), String> {
+        match self.writer.take() {
+            Some(w) => w.finalize().map_err(|e| format!("녹음 파일을 마무리할 수 없어요 ({e})")),
+            None => Ok(()),
+        }
+    }
 }
 
 fn write_loop(
@@ -309,6 +383,7 @@ fn write_loop(
     sample_rate: u32,
     names: Arc<Mutex<HashMap<PeerId, String>>>,
     dropped: Arc<AtomicU64>,
+    part_frames: u64,
 ) -> Result<RecordingResult, String> {
     let mut tracks: HashMap<PeerId, Track> = HashMap::new();
     let mut order: Vec<PeerId> = Vec::new();
@@ -321,35 +396,22 @@ fn write_loop(
             if err.is_some() {
                 continue;
             }
-            if let std::collections::hash_map::Entry::Vacant(e) = tracks.entry(b.track) {
-                let name = names.lock().unwrap().get(&b.track).cloned().unwrap_or_else(|| format!("peer{}", b.track));
+            let t = tracks.entry(b.track).or_insert_with(|| {
+                let name = names.lock().ok().and_then(|n| n.get(&b.track).cloned()).unwrap_or_else(|| format!("peer{}", b.track));
                 let n = if b.track == SELF_TRACK { 0 } else { order.iter().filter(|&&t| t != SELF_TRACK).count() + 1 };
-                match open_track(&dir, n, &name, sample_rate) {
-                    Ok(t) => {
-                        e.insert(t);
-                        order.push(b.track);
-                    }
-                    Err(e) => {
-                        err = Some(e);
-                        continue;
-                    }
-                }
+                order.push(b.track);
+                Track::new(n, name, b.pos, part_frames)
+            });
+            // a track that joins late (or had a gap) gets silence there, so all files line up
+            let gap = b.pos.saturating_sub(t.written);
+            let frames = b.frames as usize;
+            let wrote = t
+                .put(&dir, sample_rate, part_frames, None, gap)
+                .and_then(|_| t.put(&dir, sample_rate, part_frames, Some(&b.data[..frames * 2]), frames as u64));
+            match wrote {
+                Ok(()) => end = end.max(t.written),
+                Err(e) => err = Some(e),
             }
-            let t = tracks.get_mut(&b.track).expect("inserted above");
-            // a track that joins late (or had a gap) starts with silence, so all files line up
-            while t.written < b.pos {
-                let _ = t.writer.write_sample(0.0f32);
-                let _ = t.writer.write_sample(0.0f32);
-                t.written += 1;
-            }
-            for &s in &b.data[..b.frames as usize * 2] {
-                if let Err(e) = t.writer.write_sample(s) {
-                    err = Some(format!("녹음 파일에 쓸 수 없어요 ({e})"));
-                    break;
-                }
-            }
-            t.written += b.frames as u64;
-            end = end.max(t.written);
         }
         if !got {
             if rx.is_abandoned() && rx.is_empty() {
@@ -358,20 +420,26 @@ fn write_loop(
             thread::sleep(Duration::from_millis(20));
         }
     }
-    if let Some(e) = err {
-        return Err(e);
-    }
+    // every file is finished, also when writing failed along the way (a full disk): what
+    // was written until then stays a file that plays. Left unfinished, its header said
+    // "empty", and the whole recording was lost with the last minute
     let mut files = Vec::new();
     for id in order {
-        let mut t = tracks.remove(&id).expect("listed");
-        // pad every track to the same length
-        while t.written < end {
-            let _ = t.writer.write_sample(0.0f32);
-            let _ = t.writer.write_sample(0.0f32);
-            t.written += 1;
+        let Some(mut t) = tracks.remove(&id) else { continue };
+        if err.is_none() {
+            // every track as long as the longest (within its last file: one that ended parts
+            // ago is not filled up with files of silence)
+            let part_end = (t.written.max(1) - 1) / part_frames * part_frames + part_frames;
+            let pad = end.min(part_end).saturating_sub(t.written);
+            err = t.put(&dir, sample_rate, part_frames, None, pad).err();
         }
-        t.writer.finalize().map_err(|e| format!("녹음 파일을 마무리할 수 없어요 ({e})"))?;
-        files.push(t.path);
+        if let Err(e) = t.close() {
+            err.get_or_insert(e);
+        }
+        files.append(&mut t.files);
+    }
+    if let Some(e) = err {
+        return Err(if files.is_empty() { e } else { format!("{e}. 그때까지 녹음된 부분은 파일로 남아 있어요.") });
     }
     Ok(RecordingResult { dir, files, seconds: end as f32 / sample_rate as f32, dropped_blocks: dropped.load(Relaxed) })
 }
@@ -454,5 +522,37 @@ mod tests {
         }
         assert_eq!(left.load(Relaxed), 0);
         assert!((990..=1000).contains(&total), "{total}");
+    }
+
+    /// A long recording goes on in new files (a WAV holds 4 GB at most), every track at the
+    /// same places, and a track that joins late starts in the part it joined in.
+    #[test]
+    fn a_long_recording_goes_on_in_parts_that_line_up() {
+        let dir = std::env::temp_dir().join(format!("gachi-rec-parts-{}", std::process::id()));
+        let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "me".to_string()), (7, "late".to_string())])));
+        // parts of 1000 frames; blocks of 64 do not end where the parts do
+        let (mut tap, rec) = Recorder::start_parts(dir.clone(), 48_000, names, 3, 1000).unwrap();
+        let block = [0.5f32; 128];
+        for i in 0..40 {
+            tap.write(0, SELF_TRACK, &block);
+            if i >= 20 {
+                tap.write(1, 7, &block); // joins at frame 1280: in the second part
+            }
+            tap.pos += 64;
+        }
+        tap.flush_all();
+        drop(tap);
+        let r = rec.finish().unwrap();
+        let len = |name: &str| hound::WavReader::open(dir.join(name)).map(|w| w.duration()).unwrap_or(u32::MAX);
+        // 2560 frames: two whole parts and 560 of the third
+        assert_eq!((len("00-me.wav"), len("00-me (2).wav"), len("00-me (3).wav")), (1000, 1000, 560));
+        assert_eq!((len("01-late (2).wav"), len("01-late (3).wav")), (1000, 560));
+        assert!(!dir.join("01-late.wav").exists(), "no file of silence for the part before it joined");
+        assert_eq!(r.files.len(), 5);
+        let late: Vec<f32> = hound::WavReader::open(dir.join("01-late (2).wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
+        assert_eq!((late[279 * 2], late[280 * 2]), (0.0, 0.5), "its sound starts at frame 1280 of the timeline");
+        let me: Vec<f32> = hound::WavReader::open(dir.join("00-me (2).wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
+        assert!(me.iter().all(|&s| s == 0.5), "nothing missing where a block is split between two files");
+        std::fs::remove_dir_all(dir).ok();
     }
 }

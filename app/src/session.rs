@@ -1907,6 +1907,10 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
 /// ~30 Hz meters, ~2 Hz stats (immediately when a peer connects).
 async fn ticker(app: AppHandle) {
     let mut iv = tokio::time::interval(Duration::from_millis(33));
+    // held up for a while (reopening a device takes a second, the PC slept): go on from now.
+    // Making up for every tick missed sent the meters dozens of times in a row, and after a
+    // sleep thousands of times
+    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut n: u32 = 0;
     loop {
         iv.tick().await;

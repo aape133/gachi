@@ -2,6 +2,7 @@
 ; changes, each marked "gachi:" below:
 ; - choosing "uninstall" on the page shown when gachi is already installed uninstalls and
 ;   ends, instead of coming back to install again.
+; - a newer version is installed over an older one without that page.
 ; When the Tauri CLI is updated, take its new template and add those parts again.
 Unicode true
 ManifestDPIAware true
@@ -249,6 +250,14 @@ Function PageReinstall
 
   nsis_tauri_utils::SemverCompare "${VERSION}" $R0
   Pop $R0
+
+  ; gachi: a newer version over an older one is installed over it, without asking whether
+  ; to uninstall first (the files are replaced, the settings stay). The page is still shown
+  ; for the same version (reinstall or uninstall) and for an older one over a newer one.
+  ${If} $R0 = 1
+  ${AndIf} $WixMode <> 1
+    Abort
+  ${EndIf}
 
   ; Read the install choice header through $R5 so a custom language file that only
   ; defines the misspelled `choowHowToInstall` still shows its own text

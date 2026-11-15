@@ -42,6 +42,11 @@ impl ControlChannel {
         true
     }
 
+    /// Nothing waits to be sent or acknowledged (the usual state).
+    pub fn idle(&self) -> bool {
+        self.outbox.is_empty()
+    }
+
     /// Calls `send(seq, data)` for every message due now (new or waiting too long for an ack).
     /// Returns how many messages were given up on.
     pub fn send_due(&mut self, now: Instant, mut send: impl FnMut(u32, &[u8])) -> usize {

@@ -343,12 +343,12 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.2.0'; }
+    async appVersion() { return '0.2.1'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.2.1' };
+      return { version: '0.2.2' };
     }
     openRelease() {}
     async setPreview() {}

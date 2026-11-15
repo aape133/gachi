@@ -1247,7 +1247,7 @@ mod tests {
                 }
                 jb.read_stereo(&mut out);
                 read += 64;
-                for s in out.chunks_exact(2) {
+                for s in out.as_chunks::<2>().0 {
                     if started {
                         let step = s[0] - last;
                         // (the clock-drift correction stretches a step a little; a frame out of

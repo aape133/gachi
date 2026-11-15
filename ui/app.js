@@ -283,7 +283,7 @@
   function enterRoom(r) {
     room = r;
     peers.clear(); strips.clear();
-    $('#room-name').textContent = r.name;
+    $('#room-name').textContent = r.name; $('#room-name').title = r.name; // (a long name is cut short in the bar)
     $('#room-code').textContent = fmtCode(r.code);
     const stage = $('#stage');
     stage.innerHTML = '';
@@ -906,9 +906,13 @@
     $('#btn-chat').classList.toggle('on', open);
     if (open) { unread = 0; updateBadge(); $('#chat-input').focus(); chatList.scrollTop = chatList.scrollHeight; }
   }
+  const CHAT_KEEP = 500;
   function pushMsg(el) {
     const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
     chatList.append(el);
+    // the latest only: a room open all day (or someone's app sending chat as fast as it is
+    // taken) would otherwise grow the page without end
+    while (chatList.childElementCount > CHAT_KEEP) chatList.firstElementChild.remove();
     if (atBottom) chatList.scrollTop = chatList.scrollHeight;
   }
   /** What we send to one person, bits per second: payload + audio header (12) + encryption

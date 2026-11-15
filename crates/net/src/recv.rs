@@ -32,6 +32,11 @@ const OFFLINE_AFTER: Duration = Duration::from_secs(5);
 /// the first address that gets through is not always the shortest path.
 const UPGRADE_FOR: Duration = Duration::from_secs(3);
 const UPGRADE_EVERY: Duration = Duration::from_millis(100);
+/// The timers (punching, pings, resending room messages, "who went silent") are looked at
+/// this often. The loop turns once per packet received, and a full room sends 10,000 to 20,000 a
+/// second: going through every peer's timers for each of them was most of what this thread
+/// did between packets. The shortest of the timers is 20 ms.
+const TIMERS_EVERY: Duration = Duration::from_millis(1);
 
 /// How direct a path to `addr` is: 0 = on our network (private IPv4, loopback), 1 = IPv6
 /// (no NAT on the way), 2 = a public IPv4 address (through the NATs; between two PCs in one
@@ -135,6 +140,8 @@ pub(crate) struct Receiver {
     ping_nonce: u32,
     /// set by `Ctl::Goodbye`: we said bye, leave the loop
     done: bool,
+    /// when the timers were last looked at (see `TIMERS_EVERY`)
+    timers_at: Option<Instant>,
     /// our network as last seen (local IPv4 toward the internet)
     last_lan: Option<IpAddr>,
     net_check: Instant,
@@ -183,6 +190,7 @@ impl Receiver {
             last_ping: Instant::now(),
             ping_nonce: 0,
             done: false,
+            timers_at: None,
             last_lan: lan_now(),
             net_check: Instant::now(),
             stun_server: crate::stun::DEFAULT_SERVERS.iter().find_map(|s| crate::stun::resolve(s)),
@@ -203,7 +211,11 @@ impl Receiver {
             if self.done {
                 break;
             }
-            self.timers();
+            let now = Instant::now();
+            if self.timers_at.is_none_or(|t| now - t >= TIMERS_EVERY) {
+                self.timers_at = Some(now);
+                self.timers(now);
+            }
             match self.socket.recv_from(&mut buf) {
                 Ok((n, from)) => self.on_datagram(&buf[..n], from, &mut plain, &mut frame),
                 Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
@@ -345,8 +357,7 @@ impl Receiver {
         send_sealed(&self.socket, &self.cfg, keys, addr, plain);
     }
 
-    fn timers(&mut self) {
-        let now = Instant::now();
+    fn timers(&mut self, now: Instant) {
         let me = self.cfg.my_id;
         let mut out = [0u8; 32];
 
@@ -363,7 +374,7 @@ impl Receiver {
 
         for (&id, p) in self.peers.iter_mut() {
             // room messages: (re)send what is due
-            if let (Some(route), Some(keys)) = (p.route, p.keys.as_ref()) {
+            if let (Some(route), Some(keys), false) = (p.route, p.keys.as_ref(), p.control.idle()) {
                 let mut buf = [0u8; MAX_INNER];
                 let dropped = p.control.send_due(now, |seq, data| {
                     let n = audio::encode_control(&mut buf, me, seq, data);
@@ -556,8 +567,9 @@ impl Receiver {
                 if packet_sender(&inner) != Some(sender) || !allowed {
                     return;
                 }
-                p.last_heard = Some(Instant::now());
-                self.internet_at = Instant::now();
+                let now = Instant::now();
+                p.last_heard = Some(now);
+                self.internet_at = now;
                 if p.lost_reported && !matches!(inner, Packet::Bye { .. }) {
                     p.lost_reported = false;
                     let _ = self.events.send(NetEvent::PeerBack { id: sender });
