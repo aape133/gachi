@@ -23,6 +23,11 @@ pub struct AppState {
     pub preview: tokio::sync::Mutex<Option<commands::Preview>>,
     /// bumped by every create/join/cancel; a start that sees a newer value gives up
     pub join_gen: AtomicU64,
+    /// creates/joins under way (they open the audio device partway through, before there is
+    /// a session to see): nothing else may open the device meanwhile. An ASIO driver opened
+    /// twice at once took the whole program down (leave, then join again 1.6 s later, just
+    /// as the home screen's device probe ran).
+    pub starting: std::sync::atomic::AtomicU32,
     /// room code from a `gachi://join/…` link the UI has not picked up yet
     pub pending_join: Mutex<Option<String>>,
     /// where the settings are saved (app config dir)
@@ -30,6 +35,11 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// A room is being created or joined right now (see `starting`).
+    pub fn entering(&self) -> bool {
+        self.starting.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
     pub fn save_settings(&self) {
         let (Some(path), Ok(s)) = (self.settings_path.get(), self.settings.lock()) else { return };
         if let Err(e) = s.save(path) {

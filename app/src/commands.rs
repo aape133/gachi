@@ -433,7 +433,7 @@ pub async fn set_preview(app: AppHandle, on: bool) -> Result<(), String> {
         return Ok(());
     }
     drop(preview.take()); // close first: ASIO devices open only once
-    if on && state.session.lock().await.is_none() {
+    if on && state.session.lock().await.is_none() && !state.entering() {
         let settings = state.settings.lock().unwrap().clone();
         *preview = Some(open_preview(&app, &settings)?);
     }
@@ -450,7 +450,9 @@ pub async fn probe_device(app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     {
         let mut preview = state.preview.lock().await;
-        if preview.is_some() || state.session.lock().await.is_some() {
+        // (asked while holding the preview: a join that starts now waits for it and closes
+        // what is opened here; one that started before is seen)
+        if preview.is_some() || state.entering() || state.session.lock().await.is_some() {
             return Ok(());
         }
         let settings = state.settings.lock().unwrap().clone();

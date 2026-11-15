@@ -43,6 +43,8 @@ pub struct PeerEntry {
     pub ui: PeerUi,
     /// the peer's address once punching got through
     pub route: Option<SocketAddr>,
+    /// when they were let into the room (as we heard of it)
+    pub added: Instant,
     /// went silent (no goodbye); cleared when we hear from them again
     pub lost: bool,
     /// when it went silent
@@ -118,6 +120,13 @@ const MARGIN_MS: f32 = 0.15;
 /// app probably crashed. Short enough that a new host still takes over the room code (the
 /// connection server keeps it 30 s), long enough to ride out a Wi-Fi hiccup.
 const GONE_AFTER: Duration = Duration::from_secs(10);
+
+/// A member we never got through to in this long is taken off our list: let in, then their
+/// app died before the first packet (they stayed in the room for good, since "went silent"
+/// needs a connection to go silent on), or the two networks cannot reach each other (then
+/// there was nothing to hear from them anyway). Well past the punch timeout (8 s) and the
+/// addresses a router's port mapping adds a few seconds later.
+const NEVER_CAME: Duration = Duration::from_secs(30);
 
 /// The room metronome. `start_us` is beat 0 on `owner`'s clock (the host who set it);
 /// `local_us` caches it converted to our clock, for when that host has left.
@@ -420,6 +429,7 @@ impl Session {
                 handle,
                 ui: PeerUi::default(),
                 route: None,
+                added: now,
                 lost: false,
                 lost_since: None,
                 lost_offline: false,
@@ -575,7 +585,18 @@ impl Session {
             notice(app, format!("{name}님이 오래 응답이 없어서 나간 것으로 처리했어요."));
             self.peer_gone(app, *id);
         }
-        !gone.is_empty()
+        let never: Vec<(PeerId, String)> = self
+            .peers
+            .iter()
+            .filter(|(_, p)| p.route.is_none() && p.added.elapsed() > NEVER_CAME)
+            .map(|(&id, p)| (id, p.info.profile.name.clone()))
+            .collect();
+        for (id, name) in &never {
+            tracing::warn!(id, "never connected: taken off the list");
+            notice(app, format!("{name}님과 끝내 연결되지 않아서 목록에서 뺐어요."));
+            self.peer_gone(app, *id);
+        }
+        !gone.is_empty() || !never.is_empty()
     }
 
     /// People in the room, us included.
@@ -1541,6 +1562,17 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     let cancelled = || state.join_gen.load(Ordering::SeqCst) != gen;
     let cancel_err = || "cancelled".to_string();
 
+    // from here until this returns the audio device is ours to open: said before the
+    // preview is closed, so that whoever would open one after that sees it
+    struct Entering<'a>(&'a std::sync::atomic::AtomicU32);
+    impl Drop for Entering<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    state.starting.fetch_add(1, Ordering::SeqCst);
+    let _entering = Entering(&state.starting);
+
     // one session at a time, and the settings screen's preview must release the device
     let old = state.session.lock().await.take();
     drop(old);
@@ -1986,6 +2018,7 @@ mod tests {
             handle: None,
             ui: PeerUi::default(),
             route: None,
+            added: Instant::now(),
             lost: false,
             lost_since: None,
             lost_offline: false,
