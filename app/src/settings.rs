@@ -95,7 +95,9 @@ impl Default for Settings {
             sample_rate: 48_000,
             buffer_size: 64,
             input_channel: "1-2".into(),
-            quality: "pcm24".into(),
+            // 16 bit unless picked otherwise: two thirds of the upload, which is what most
+            // connections are short of; 24 bit is for those who want it
+            quality: "pcm16".into(),
             // automatic: as long as the device's block (see gachi_engine::auto_packet_frames)
             packet_size: 0,
             jitter_mode: "auto".into(),
@@ -141,9 +143,9 @@ impl Settings {
                 Err(e) => tracing::warn!("settings file unreadable: {e}"),
             }
         }
-        // only uncompressed PCM is left (an old "opus" setting becomes 24 bit)
-        if s.quality != "pcm16" {
-            s.quality = "pcm24".into();
+        // only uncompressed PCM is left (anything else, like an old "opus", becomes the default)
+        if s.quality != "pcm16" && s.quality != "pcm24" {
+            s.quality = Settings::default().quality;
         }
         if s.connection != "daw" {
             s.connection = default_connection();

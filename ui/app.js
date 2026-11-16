@@ -136,7 +136,7 @@
   }
 
   /* ═══════════════════════ HOME ═══════════════════════ */
-  let createMax = 4;
+  let createMax = 8;
   let netInfo = null;
 
   $('#create-max').addEventListener('click', (e) => {
@@ -947,7 +947,7 @@
     if (others + 1 < BIG_ROOM || myStream().bits !== 24) return;
     qualityAdvised = true;
     const mbps = (bits) => f1((streamBps(bits) * others) / 1e6);
-    const text = `방에 ${others + 1}명이 있어요. 지금 24bit로 보내고 있어서 업로드가 약 ${mbps(24)} Mbps 필요해요. 설정 → 오디오 → 음질에서 16bit로 바꾸면 약 ${mbps(16)} Mbps로 줄어요.`;
+    const text = `방에 ${others + 1}명이 있어요. 지금 24bit로 보내고 있어서 업로드가 약 ${mbps(24)} Mbps 필요해요. 설정 → 네트워크 → 음질에서 16bit로 바꾸면 약 ${mbps(16)} Mbps로 줄어요.`;
     sysMsg(text);
     if (!chatOpen()) toast(text);
   }
@@ -1467,7 +1467,7 @@
     // upload grows with the room: everyone sends to everyone
     const mb = (n) => f1((bw * (n - 1)) / 1e6);
     const here = room ? `지금 방(${peers.size + 1}명)은 약 ${mb(peers.size + 1)} Mbps, ` : '';
-    $('#q-note').textContent = `압축 없이 그대로 보내요 (코덱 지연 0 ms). 업로드가 ${here}8명 방이면 약 ${mb(8)} Mbps, 16명 방이면 약 ${mb(16)} Mbps 필요해요. 업로드가 부족하면 16bit로 줄여 보세요.`;
+    $('#q-note').textContent = `압축 없이 그대로 보내요 (코덱 지연 0 ms). 업로드가 ${here}8명 방이면 약 ${mb(8)} Mbps, 16명 방이면 약 ${mb(16)} Mbps 필요해요. ${s.quality === 'pcm16' ? '더 높은 음질을 원하면 24bit를 골라 보세요(업로드가 약 1.4배 필요해요).' : '업로드가 부족하면 16bit로 줄여 보세요.'}`;
     $('#jb-val').textContent = `${s.jitterPackets} · ${f1(s.jitterPackets * pkt)}ms`;
   }
 

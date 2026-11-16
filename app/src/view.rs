@@ -170,5 +170,5 @@ pub struct CreateOpts {
 }
 
 fn default_max() -> u8 {
-    4
+    8
 }

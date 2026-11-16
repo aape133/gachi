@@ -70,7 +70,7 @@
       this._listen = listen;
       this.settings = {
         device: '', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
-        quality: 'pcm24', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
+        quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
         metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device',
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
@@ -188,7 +188,7 @@
       this._sampleRate = 48000; this._bufferFrames = 64;
       this.settings = {
         device: 'focusrite', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
-        quality: 'pcm24', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
+        quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
         name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device',
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
@@ -343,12 +343,12 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.2.2'; }
+    async appVersion() { return '0.2.3'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.2.3' };
+      return { version: '0.2.4' };
     }
     openRelease() {}
     async setPreview() {}
