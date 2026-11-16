@@ -13,11 +13,11 @@ Not from crates.io:
 - **Microsoft WebView2 runtime** (draws the window): part of Windows, not distributed by gachi.
 - **Pretendard** (the font), SIL Open Font License 1.1: `ui/fonts/LICENSE.txt`.
 
-## Rust packages (344, for the Windows build)
+## Rust packages (352, for the Windows build)
 
 Generated from `cargo metadata`; regenerate after changing dependencies.
 
-By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0: 18, Unlicense OR MIT: 8, BSD-3-Clause: 6, MPL-2.0: 6, MIT/Apache-2.0: 6, Apache-2.0: 5, ISC: 3, Zlib: 2, MIT OR Zlib OR Apache-2.0: 2, MIT OR Apache-2.0 OR Zlib: 2, Apache-2.0 OR ISC OR MIT: 2, Unlicense/MIT: 2, BSD-2-Clause OR Apache-2.0 OR MIT: 2, 0BSD OR MIT OR Apache-2.0: 1, BSD-3-Clause AND MIT: 1, BSD-3-Clause/MIT: 1, Apache-2.0/MIT: 1, Apache-2.0 AND MIT: 1, CC0-1.0 OR MIT-0 OR Apache-2.0: 1, Apache-2.0 / MIT: 1, CC0-1.0 OR MIT: 1, Apache-2.0 AND ISC: 1, Zlib OR Apache-2.0 OR MIT: 1, (MIT OR Apache-2.0) AND Unicode-3.0: 1.
+By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0: 18, Unlicense OR MIT: 8, BSD-3-Clause: 6, Apache-2.0: 6, MPL-2.0: 6, MIT/Apache-2.0: 6, ISC: 3, Zlib: 2, MIT OR Zlib OR Apache-2.0: 2, MIT OR Apache-2.0 OR Zlib: 2, Apache-2.0 OR ISC OR MIT: 2, Unlicense/MIT: 2, BSD-2-Clause OR Apache-2.0 OR MIT: 2, 0BSD OR MIT OR Apache-2.0: 1, BSD-3-Clause AND MIT: 1, BSD-3-Clause/MIT: 1, Apache-2.0/MIT: 1, Apache-2.0 AND MIT: 1, CC0-1.0 OR MIT-0 OR Apache-2.0: 1, Apache-2.0 / MIT: 1, CC0-1.0 OR MIT: 1, Apache-2.0 AND ISC: 1, Zlib OR Apache-2.0 OR MIT: 1, (MIT OR Apache-2.0) AND Unicode-3.0: 1
 
 | Package | Version | License | Source |
 |---|---|---|---|
@@ -43,6 +43,7 @@ By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | brotli | 9.1.1 | BSD-3-Clause AND MIT | https://github.com/dropbox/rust-brotli |
 | brotli-decompressor | 6.3.1 | BSD-3-Clause/MIT | https://github.com/dropbox/rust-brotli-decompressor |
 | bs58 | 0.5.1 | MIT/Apache-2.0 | https://github.com/Nullus157/bs58-rs |
+| built | 0.7.7 | MIT | https://github.com/lukaslueg/built |
 | byteorder | 1.5.0 | Unlicense OR MIT | https://github.com/BurntSushi/byteorder |
 | bytes | 1.12.1 | MIT | https://github.com/tokio-rs/bytes |
 | camino | 1.2.6 | MIT OR Apache-2.0 | https://github.com/camino-rs/camino |
@@ -62,6 +63,8 @@ By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | cookie | 0.18.2 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs |
 | cpal | 0.15.3 | Apache-2.0 | https://github.com/rustaudio/cpal |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
+| crc | 3.4.0 | MIT OR Apache-2.0 | https://github.com/mrhooray/crc-rs.git |
+| crc-catalog | 2.5.0 | MIT OR Apache-2.0 | https://github.com/akhilles/crc-catalog.git |
 | crc32fast | 1.5.5 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast |
 | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam |
 | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam |
@@ -97,6 +100,7 @@ By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate |
 | find-msvc-tools | 0.1.15 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs |
+| flacenc | 0.5.1 | Apache-2.0 | https://github.com/yotarok/flacenc-rs/ |
 | flate2 | 1.1.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs |
 | fnv | 1.0.7 | Apache-2.0 / MIT | https://github.com/servo/rust-fnv |
 | foldhash | 0.2.0 | Zlib | https://github.com/orlp/foldhash |
@@ -113,8 +117,10 @@ By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | getrandom | 0.4.3 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom |
 | ghash | 0.5.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/universal-hashes |
 | glob | 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-lang/glob |
+| hash32 | 0.3.1 | MIT OR Apache-2.0 | https://github.com/japaric/hash32 |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |
+| heapless | 0.8.0 | MIT OR Apache-2.0 | https://github.com/rust-embedded/heapless |
 | heck | 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck |
 | hex | 0.4.3 | MIT OR Apache-2.0 | https://github.com/KokaKiwi/rust-hex |
 | hkdf | 0.12.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/KDFs/ |
@@ -159,6 +165,7 @@ By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | mac-addr | 0.3.0 | MIT | https://github.com/shellrow/mac-addr |
 | markup5ever | 0.39.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever |
 | matchers | 0.2.0 | MIT | https://github.com/hawkw/matchers |
+| md-5 | 0.10.6 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | memchr | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr |
 | mime | 0.3.18 | MIT OR Apache-2.0 | https://github.com/hyperium/mime |
 | minimal-lexical | 0.2.1 | MIT/Apache-2.0 | https://github.com/Alexhuszagh/minimal-lexical |
@@ -229,6 +236,7 @@ By license: MIT OR Apache-2.0: 173, MIT: 60, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | scopeguard | 1.2.0 | MIT OR Apache-2.0 | https://github.com/bluss/scopeguard |
 | selectors | 0.38.0 | MPL-2.0 | https://github.com/servo/stylo |
 | semver | 1.0.28 | MIT OR Apache-2.0 | https://github.com/dtolnay/semver |
+| seq-macro | 0.3.6 | MIT OR Apache-2.0 | https://github.com/dtolnay/seq-macro |
 | serde | 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde |
 | serde-untagged | 0.1.9 | MIT OR Apache-2.0 | https://github.com/dtolnay/serde-untagged |
 | serde_core | 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde |

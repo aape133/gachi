@@ -1,5 +1,5 @@
 use crate::device::{find_device, host, HostChoice};
-use crate::extras::{Metronome, MetronomeParams, RecTap, Recorder, RecordingResult, ToneGen, SELF_TRACK};
+use crate::extras::{Metronome, MetronomeParams, RecOptions, RecTap, Recorder, RecordingResult, ToneGen, MIX_TRACK, SELF_TRACK};
 use crate::frame::Frame;
 use crate::jitter::JitterBuffer;
 use crate::meter::{ChannelMeters, Meter, MAX_INPUT_METERS};
@@ -224,6 +224,8 @@ struct PeerSlot {
     handle: PeerHandle,
     /// the left and right gains in use (see `glide`)
     gains: (f32, f32),
+    /// what its packets carry now: 1 (mono) or 2 (a recording writes mono as mono)
+    channels: u8,
 }
 
 /// Gains move to where the faders (and mute, solo) put them over a few ms instead of
@@ -430,7 +432,7 @@ impl Engine {
             meter: Arc::new(Meter::default()),
             stats: Arc::new(SharedJitterStats::default()),
         };
-        let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle: handle.clone(), gains: (f32::NAN, f32::NAN) });
+        let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle: handle.clone(), gains: (f32::NAN, f32::NAN), channels: 2 });
         if self.cmd_tx.push(Cmd::AddPeer(slot)).is_err() {
             tracing::error!("engine command ring full; peer {id} not added");
         }
@@ -480,17 +482,23 @@ impl Engine {
 
     /// Starts writing one WAV per track (you + each peer, as heard here) into `dir`.
     /// `names` maps track ids ([`SELF_TRACK`] for you) to file names; peers that join later
-    /// get a track that starts with silence, so every file lines up. `prefix` starts every
-    /// file's name (which recording it is, for a file taken out of its folder).
-    pub fn start_recording(&mut self, dir: PathBuf, prefix: String, names: Arc<Mutex<HashMap<PeerId, String>>>) -> Result<(), String> {
+    /// get a track that starts with silence, so every file lines up. `opts`: the files'
+    /// format and names, and whether the mix is recorded too.
+    pub fn start_recording(&mut self, dir: PathBuf, opts: RecOptions, names: Arc<Mutex<HashMap<PeerId, String>>>) -> Result<(), String> {
         if self.recorder.is_some() {
             return Err("이미 녹음 중이에요".into());
         }
-        let (tap, rec) = Recorder::start(dir, prefix, self.info.sample_rate, names, MAX_PEERS + 1)?;
+        let (tap, rec) = Recorder::start(dir, opts, self.info.sample_rate, names, MAX_PEERS + 2)?;
         self.rec_tap_back = false;
         self.cmd_tx.push(Cmd::StartRec(Box::new(tap))).map_err(|_| "오디오 엔진이 바빠요. 다시 시도해 주세요.".to_string())?;
         self.recorder = Some(rec);
         Ok(())
+    }
+
+    /// The recording cannot be written (a full disk…): why. To be stopped by the caller;
+    /// what was written until then is kept.
+    pub fn recording_error(&self) -> Option<String> {
+        self.recorder.as_ref().and_then(|r| r.error())
     }
 
     /// Stops recording and waits for the files to be finished.
@@ -857,6 +865,8 @@ fn processors(
         metro_params: metronome,
         rec: None,
         limiter: crate::limiter::Limiter::new(sample_rate),
+        rec_mix: vec![0.0; CHUNK * 2],
+        rec_limiter: crate::limiter::Limiter::new(sample_rate),
         master: f32::NAN,
         glide: glide_step(sample_rate),
         mix: vec![0.0; CHUNK * 2],
@@ -1310,6 +1320,9 @@ struct OutputProcessor {
     metro_params: Arc<MetronomeParams>,
     rec: Option<Box<RecTap>>,
     limiter: crate::limiter::Limiter,
+    /// the recording's mix (see `MIX_TRACK`), and the limiter that keeps it within full scale
+    rec_mix: Vec<f32>,
+    rec_limiter: crate::limiter::Limiter,
     /// the master gain in use, and the per-sample step gains move by (see `glide`)
     master: f32,
     glide: f32,
@@ -1395,6 +1408,7 @@ impl OutputProcessor {
         for (slot, p) in self.peers.iter_mut().enumerate() {
             let Some(p) = p else { continue };
             while let Ok(f) = p.rx.pop() {
+                p.channels = f.channels;
                 p.jitter.push(f);
             }
             let params = &p.handle.params;
@@ -1405,7 +1419,7 @@ impl OutputProcessor {
             // (only the tracks picked on the cards. One switched on while recording starts
             // there: the writer fills what came before with silence, as for a late joiner)
             if let (Some(rec), true) = (self.rec.as_mut(), params.rec.load(Relaxed)) {
-                rec.write(slot + 1, p.id, scratch); // pre-fader, as received
+                rec.write(slot + 1, p.id, scratch, p.channels); // pre-fader, as received
             }
 
             let st = p.jitter.stats();
@@ -1454,7 +1468,21 @@ impl OutputProcessor {
         Self::take_own_sound(&mut self.monitor_rx, &mut self.monitor_missing, scratch);
         if let Some(rec) = self.rec.as_mut() {
             if self.params.rec.load(Relaxed) {
-                rec.write(0, SELF_TRACK, scratch);
+                let mono = InputChannels::decode(self.params.input_map.load(Relaxed)).is_some_and(|m| m.is_mono());
+                rec.write(0, SELF_TRACK, scratch, if mono { 1 } else { 2 });
+            }
+            if rec.mix {
+                // everyone together, as heard here: the others at their faders, our own
+                // sound (whether or not we monitor it), the master fader; no metronome, no
+                // test tone. Kept within full scale by a limiter of its own (the files may
+                // be 16 bit)
+                let master = self.params.master.load();
+                let out = &mut self.rec_mix[..frames * 2];
+                for ((o, m), s) in out.iter_mut().zip(mix.iter()).zip(scratch.iter()) {
+                    *o = (*m + *s) * master;
+                }
+                self.rec_limiter.process(out);
+                rec.write(MAX_PEERS + 1, MIX_TRACK, out, 2);
             }
             rec.pos += frames as u64;
         }
@@ -1875,7 +1903,7 @@ mod monitor_tests {
                 meter: Arc::new(Meter::default()),
                 stats: Arc::new(SharedJitterStats::default()),
             };
-            let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle: handle.clone(), gains: (f32::NAN, f32::NAN) });
+            let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle: handle.clone(), gains: (f32::NAN, f32::NAN), channels: 2 });
             assert!(cmd_tx.push(Cmd::AddPeer(slot)).is_ok());
             peers.push((tx, handle));
         }

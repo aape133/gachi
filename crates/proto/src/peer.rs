@@ -16,9 +16,25 @@ pub enum PeerMsg {
     /// From the host: the room metronome. Beat 0 is at `start_us` on the **host's** clock;
     /// each peer converts with its measured clock offset to the host.
     /// `by` = who asked for it (for "… turned the metronome on").
-    Metronome { on: bool, bpm: f32, beats: u8, start_us: u64, by: crate::PeerId },
+    /// `count_in`: bars counted in from `start_us` before bar 1 (versions that do not know
+    /// it click plain beats there: the same beats, in step).
+    Metronome {
+        on: bool,
+        bpm: f32,
+        beats: u8,
+        start_us: u64,
+        by: crate::PeerId,
+        #[serde(default)]
+        count_in: u8,
+    },
     /// To the host: please turn the metronome on/off or change it.
-    MetronomeRequest { on: bool, bpm: f32, beats: u8 },
+    MetronomeRequest {
+        on: bool,
+        bpm: f32,
+        beats: u8,
+        #[serde(default)]
+        count_in: u8,
+    },
     /// From the host: everything a member needs to take over as host (code, whether it is
     /// open, size, password, the key to reclaim the code on the connection server).
     RoomState(RoomState),
@@ -107,5 +123,15 @@ mod tests {
         let msg = PeerMsg::Chat { text: clip_chat(&long) };
         assert!(msg.to_bytes().len() <= MAX_CONTROL_PAYLOAD);
         assert_eq!(PeerMsg::from_bytes(&msg.to_bytes()), Some(msg));
+    }
+
+    /// The count-in is new: a metronome message from a version without it still reads (no
+    /// count-in), and ours reads there (the field is one it does not know and skips).
+    #[test]
+    fn a_metronome_message_without_a_count_in_still_reads() {
+        let old = br#"{"t":"metronome","on":true,"bpm":120.0,"beats":4,"start_us":5,"by":1}"#;
+        assert_eq!(PeerMsg::from_bytes(old), Some(PeerMsg::Metronome { on: true, bpm: 120.0, beats: 4, start_us: 5, by: 1, count_in: 0 }));
+        let ours = PeerMsg::MetronomeRequest { on: true, bpm: 90.0, beats: 3, count_in: 2 };
+        assert_eq!(PeerMsg::from_bytes(&ours.to_bytes()), Some(ours));
     }
 }

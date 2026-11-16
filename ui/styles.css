@@ -438,27 +438,12 @@ input[type=range]:hover { --fill: var(--text); }
 .code-chip:hover { border-color: var(--accent); color: var(--text); }
 
 .topbar-center { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.metro {
-  display: flex; align-items: center; height: 34px; border-radius: var(--r-sm);
-  background: var(--surface-2); padding: 0 4px; gap: 2px;
-}
 .step-btn {
   width: 26px; height: 26px; border-radius: 6px; color: var(--text-3);
   display: grid; place-items: center; transition: background .15s, color .15s;
 }
 .step-btn .ic { width: 14px; height: 14px; }
 .step-btn:hover { background: var(--surface-3); color: var(--text); }
-.metro-toggle .ic { width: 16px; height: 16px; }
-.metro.on .metro-toggle { color: var(--accent-2); }
-.metro .beat { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); margin: 0 5px; transition: background .08s, box-shadow .08s; }
-.metro.on .beat.flash { background: var(--accent-2); box-shadow: 0 0 10px var(--accent); }
-.metro.on .beat.flash.down { background: #fff; box-shadow: 0 0 12px #fff; }
-.metro input {
-  width: 38px; text-align: center; background: none; border: 0; outline: none;
-  font-weight: 700; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield;
-}
-.metro input::-webkit-inner-spin-button, .metro input::-webkit-outer-spin-button { -webkit-appearance: none; }
-.metro .unit { font-size: 10.5px; color: var(--text-3); font-weight: 700; margin: 0 6px 0 2px; }
 .ch-meters { display: flex; gap: 6px 14px; margin-top: 10px; flex-wrap: wrap; }
 .ch-group { display: flex; flex-direction: column; gap: 4px; }
 .ch-group .g { font-size: 10.5px; color: var(--text-3); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; min-height: 13px; }
@@ -474,22 +459,64 @@ input[type=range]:hover { --fill: var(--text); }
 .safety-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .safety-code { font-size: 17px; font-weight: 700; letter-spacing: .06em; color: var(--text); }
 .safety-code.pending { font-size: 13px; font-weight: 500; color: var(--text-3); letter-spacing: 0; }
-.sig-btn {
-  height: 24px; padding: 0 7px; margin-right: 2px; border-radius: 6px; font-size: 11.5px; font-weight: 700;
-  color: var(--text-2); font-variant-numeric: tabular-nums; border: 1px solid var(--line);
+/* a button in two parts: the main part does the thing, the small arrow opens its menu */
+.split {
+  position: relative; display: flex; align-items: stretch; height: 36px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line);
 }
-.sig-btn:hover { background: var(--surface-3); color: var(--text); }
+.split-main {
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 9px 0 11px;
+  border-radius: 9px 0 0 9px; color: var(--text-2); font-weight: 600; font-size: 13px;
+  font-variant-numeric: tabular-nums; transition: background .15s, color .15s;
+}
+.split-more {
+  width: 24px; display: grid; place-items: center; border-left: 1px solid var(--line);
+  border-radius: 0 9px 9px 0; color: var(--text-3); transition: background .15s, color .15s;
+}
+.split-more .ic { width: 13px; height: 13px; transition: transform .15s; }
+.split-main:hover, .split-more:hover, .split.open .split-more { background: var(--surface-3); color: var(--text); }
+.split.open .split-more .ic { transform: rotate(180deg); }
 
-.rec-btn {
-  display: flex; align-items: center; justify-content: center; gap: 8px; height: 34px; padding: 0 12px;
-  border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid transparent;
-  font-weight: 600; font-size: 13px; color: var(--text-2); transition: all .15s;
-  font-variant-numeric: tabular-nums; min-width: 78px;
+#metro .split-main .ic { width: 17px; height: 17px; }
+#metro.on .split-main { color: var(--accent-2); }
+#metro .beat { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); transition: background .08s, box-shadow .08s; }
+#metro.on .beat.flash { background: var(--accent-2); box-shadow: 0 0 10px var(--accent); }
+#metro.on .beat.flash.down { background: var(--text); box-shadow: 0 0 12px var(--text); }
+/* (the bars counted in, before bar 1) */
+#metro.on .beat.flash.count { background: var(--warn-fill); box-shadow: 0 0 10px var(--warn-fill); }
+
+#rec .split-main { min-width: 68px; }
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad-fill); flex: none; }
+#rec.on { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+#rec.on .split-main, #rec.on .split-more { color: var(--bad); }
+#rec.on .split-more { border-left-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+#rec.on .rec-dot { animation: pulse 1s infinite; }
+
+.menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 310px; padding: 14px;
+  border-radius: var(--r); background: var(--surface); border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-pop); display: flex; flex-direction: column; gap: 11px; cursor: default;
 }
-.rec-btn:hover { color: var(--text); border-color: var(--line-2); }
-.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: none; }
-.rec-btn.on { background: var(--bad-soft); border-color: rgba(255, 92, 108, .45); color: var(--bad); }
-.rec-btn.on .rec-dot { animation: pulse 1s infinite; }
+.menu[hidden] { display: none; }
+.menu-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
+.menu-row[hidden] { display: none; }
+.menu-row > .label { font-size: 12.5px; font-weight: 600; color: var(--text-2); flex: none; }
+.menu .seg { flex: 1; max-width: 208px; padding: 3px; }
+.menu .seg button { height: 26px; font-size: 12px; padding: 0 5px; }
+.menu .note { font-size: 11.5px; color: var(--text-3); line-height: 1.5; margin: 0; }
+.menu-sep { height: 1px; background: var(--line); margin: 1px -14px; }
+.menu .bpm { display: flex; align-items: center; gap: 2px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.menu .bpm input {
+  width: 46px; text-align: center; background: none; border: 0; outline: none;
+  font-weight: 700; font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield;
+}
+.menu .bpm input::-webkit-inner-spin-button, .menu .bpm input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.menu input[type=range] { flex: 1; min-width: 0; }
+.menu .val { font-size: 12px; color: var(--text-3); width: 36px; text-align: right; flex: none; }
+.menu .btn { height: 32px; font-size: 12.5px; }
+/* (while recording: what the files are cannot change) */
+.menu.locked .lockable { opacity: .45; pointer-events: none; }
+
 
 .topbar-right { display: flex; align-items: center; gap: 2px; }
 .session-time { font-size: 13px; color: var(--text-3); margin-right: 10px; }
@@ -779,8 +806,8 @@ input[type=range]:hover { --fill: var(--text); }
   .status-strip { flex-wrap: wrap; gap: 14px 24px; }
   .home-title { font-size: 34px; }
   .topbar { gap: 8px; padding: 0 8px 0 12px; }
-  .room-name, .metro .unit, .rec-btn #rec-label { display: none; }
-  .rec-btn { min-width: 0; }
+  .room-name, #rec #rec-label { display: none; }
+  #rec .split-main { min-width: 0; }
   .stage { padding: 16px; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
   .bottombar { grid-template-columns: auto 1fr auto; padding: 0 12px; }
   .meter.mini, .master .ctrl-label, .master input, .master .val, .leave-label { display: none; }
@@ -1011,10 +1038,8 @@ input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top:
 /* room */
 .topbar { height: 60px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 72%, transparent); }
 .room-name { font-size: 16px; font-weight: 750; letter-spacing: -.02em; }
-.code-chip, .metro, .rec-btn { background: var(--surface-2); border: 1px solid var(--line); }
+.code-chip { background: var(--surface-2); border: 1px solid var(--line); }
 .code-chip { height: 34px; padding: 0 13px; }
-.metro { height: 36px; }
-.rec-btn { height: 36px; }
 .stage { grid-template-columns: repeat(auto-fit, minmax(250px, 284px)); gap: 16px; padding: 30px; }
 .strip {
   border-radius: 20px; padding: 16px 18px 18px;

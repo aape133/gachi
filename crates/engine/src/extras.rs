@@ -60,6 +60,8 @@ pub struct MetronomeParams {
     /// beat 0, in µs on the engine's monotonic clock (see `Engine::set_metronome`)
     pub start_us: AtomicI64,
     pub beats_per_bar: AtomicU32,
+    /// beats counted in from `start_us` before bar 1 (whole bars), in a higher click
+    pub count_in: AtomicU32,
     pub gain: AtomicF32,
 }
 
@@ -70,6 +72,7 @@ impl Default for MetronomeParams {
             bpm: AtomicF32::new(120.0),
             start_us: AtomicI64::new(0),
             beats_per_bar: AtomicU32::new(4),
+            count_in: AtomicU32::new(0),
             gain: AtomicF32::new(0.5),
         }
     }
@@ -133,6 +136,7 @@ impl Metronome {
         let period = 60e6 / p.bpm.load().clamp(20.0, 400.0) as f64;
         let t0 = block_us + self.out_latency_us - p.start_us.load() as f64;
         let per_bar = p.beats_per_bar.load(Relaxed).max(1) as i64;
+        let count_in = p.count_in.load(Relaxed) as i64;
         let gain = p.gain.load();
 
         for (k, m) in mix.as_chunks_mut::<2>().0.iter_mut().enumerate() {
@@ -144,7 +148,15 @@ impl Metronome {
                         // when switched on mid-beat, wait for the next beat instead of clicking late
                         let fresh = t - beat as f64 * period < 5_000.0;
                         if self.last_beat.is_some() || fresh {
-                            let freq = if beat % per_bar == 0 { 1760.0 } else { 1320.0 }; // accent the downbeat
+                            // the downbeat is accented; the bars counted in are a fifth higher,
+                            // so that one hears where bar 1 begins
+                            let down = (beat - count_in).rem_euclid(per_bar) == 0;
+                            let freq = match (beat < count_in, down) {
+                                (true, true) => 2640.0,
+                                (true, false) => 1980.0,
+                                (false, true) => 1760.0,
+                                (false, false) => 1320.0,
+                            };
                             self.click_step = std::f32::consts::TAU * freq / self.sr as f32;
                             self.click_phase = 0.0;
                             self.click_left = self.click_len;
@@ -167,18 +179,27 @@ impl Metronome {
 
 /* ───────────────────────── recording ───────────────────────── */
 
+use crate::recfile::{RecFormat, Sink};
+
 /// Track id used for your own input.
 pub const SELF_TRACK: PeerId = 0;
+/// Track id of the mix: everyone together, as heard here.
+pub const MIX_TRACK: PeerId = PeerId::MAX;
 const BLOCK: usize = 256;
-/// ~2.5 s of 17 tracks (a full room) at 48 kHz between the audio thread and the writer: a
-/// disk that stops for a moment (an antivirus scan, a drive waking up) loses nothing
+/// ~2.5 s of 18 tracks (a full room and the mix) at 48 kHz between the audio thread and the
+/// writer: a disk that stops for a moment (an antivirus scan, a drive waking up) loses nothing
 const RING_BLOCKS: usize = 8192;
-/// A WAV file holds 4 GB at most, and past that its length field wraps around: the file
-/// then reads as a few minutes, the rest of the recording unreachable. So a track goes on
-/// in a new file every this many frames (32-bit float stereo is 8 bytes a frame: 3.6 GB;
-/// 2 h 46 min at 48 kHz, 41 min at 192 kHz). Every track changes files at the same places
-/// on the timeline, so the parts line up like the first files do.
-const PART_FRAMES: u64 = 480_000_000;
+
+/// How a recording is made.
+#[derive(Clone, Debug, Default)]
+pub struct RecOptions {
+    /// what every file's name starts with (which recording it is, for a file taken out of
+    /// its folder)
+    pub prefix: String,
+    pub format: RecFormat,
+    /// also one file of everyone together, as heard here (see [`MIX_TRACK`])
+    pub mix: bool,
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct RecBlock {
@@ -186,11 +207,13 @@ pub(crate) struct RecBlock {
     /// position of the first frame on the recording timeline
     pos: u64,
     frames: u16,
+    /// what the track is: 1 (the same sound in both of `data`'s channels) or 2
+    channels: u8,
     data: [f32; BLOCK * 2],
 }
 
 impl RecBlock {
-    const EMPTY: RecBlock = RecBlock { track: 0, pos: 0, frames: 0, data: [0.0; BLOCK * 2] };
+    const EMPTY: RecBlock = RecBlock { track: 0, pos: 0, frames: 0, channels: 2, data: [0.0; BLOCK * 2] };
 }
 
 /// Lives in the output callback while recording. One accumulator per track slot, so blocks
@@ -199,23 +222,29 @@ pub(crate) struct RecTap {
     tx: rtrb::Producer<RecBlock>,
     acc: Box<[RecBlock]>,
     pub pos: u64,
+    /// the mix is wanted too
+    pub mix: bool,
     dropped: Arc<AtomicU64>,
 }
 
 impl RecTap {
-    /// `slot` is a stable index per track (0 = self, 1.. = peer slots).
-    pub fn write(&mut self, slot: usize, track: PeerId, stereo: &[f32]) {
+    /// `slot` is a stable index per track (0 = self, 1.. = peer slots, then the mix).
+    /// `stereo` is interleaved stereo whatever the track is; `channels` says what it is (a
+    /// mono track has the same sound in both, and is written as one channel).
+    pub fn write(&mut self, slot: usize, track: PeerId, stereo: &[f32], channels: u8) {
         let Some(mut a) = self.acc.get(slot).copied() else { return };
         let mut pos = self.pos;
         let mut rest = stereo;
-        // a different track took this slot, or there was a gap: flush what we had
-        if a.frames > 0 && (a.track != track || a.pos + a.frames as u64 != pos) {
+        // a different track took this slot, there was a gap, or the track turned stereo (or
+        // mono): flush what we had
+        if a.frames > 0 && (a.track != track || a.pos + a.frames as u64 != pos || a.channels != channels) {
             self.flush(&mut a);
         }
         while !rest.is_empty() {
             if a.frames == 0 {
                 a.track = track;
                 a.pos = pos;
+                a.channels = channels;
             }
             let room = BLOCK - a.frames as usize;
             let n = room.min(rest.len() / 2);
@@ -260,29 +289,33 @@ pub struct RecordingResult {
     pub dropped_blocks: u64,
 }
 
-/// The writer side: a thread that drains the ring into one WAV file per track.
+/// The writer side: a thread that drains the ring into one file per track.
 pub(crate) struct Recorder {
     thread: thread::JoinHandle<Result<RecordingResult, String>>,
+    /// writing failed (a full disk…): said here as soon as it happens, so that the user
+    /// hears of it then and not when the recording is stopped an hour later
+    error: Arc<Mutex<Option<String>>>,
 }
 
 impl Recorder {
     /// Creates the tap (goes to the audio thread) and starts the writer.
     /// `names` maps track ids to display names; it is read when a track first appears.
-    /// Files are named `<prefix><number> <name>.wav`.
+    /// Files are named `<prefix><number> <name>.<ext>`.
     pub fn start(
         dir: PathBuf,
-        prefix: String,
+        opts: RecOptions,
         sample_rate: u32,
         names: Arc<Mutex<HashMap<PeerId, String>>>,
         slots: usize,
     ) -> Result<(RecTap, Recorder), String> {
-        Self::start_parts(dir, prefix, sample_rate, names, slots, PART_FRAMES)
+        let part_frames = opts.format.part_frames();
+        Self::start_parts(dir, opts, sample_rate, names, slots, part_frames)
     }
 
-    /// (`part_frames`: see [`PART_FRAMES`]; tests use small parts)
+    /// (`part_frames`: see [`RecFormat::part_frames`]; tests use small parts)
     fn start_parts(
         dir: PathBuf,
-        prefix: String,
+        opts: RecOptions,
         sample_rate: u32,
         names: Arc<Mutex<HashMap<PeerId, String>>>,
         slots: usize,
@@ -291,12 +324,20 @@ impl Recorder {
         std::fs::create_dir_all(&dir).map_err(|e| format!("녹음 폴더를 만들 수 없어요 ({e})"))?;
         let (tx, rx) = rtrb::RingBuffer::new(RING_BLOCKS);
         let dropped = Arc::new(AtomicU64::new(0));
-        let tap = RecTap { tx, acc: vec![RecBlock::EMPTY; slots].into_boxed_slice(), pos: 0, dropped: dropped.clone() };
+        let error = Arc::new(Mutex::new(None));
+        let tap = RecTap { tx, acc: vec![RecBlock::EMPTY; slots].into_boxed_slice(), pos: 0, mix: opts.mix, dropped: dropped.clone() };
+        let said = error.clone();
         let thread = thread::Builder::new()
             .name("gachi-rec-writer".into())
-            .spawn(move || write_loop(rx, dir, prefix, sample_rate, names, dropped, part_frames))
+            .spawn(move || write_loop(rx, dir, opts, sample_rate, names, dropped, said, part_frames))
             .map_err(|e| e.to_string())?;
-        Ok((tap, Recorder { thread }))
+        Ok((tap, Recorder { thread, error }))
+    }
+
+    /// Writing failed: why. The recording goes on taking sound (and throwing it away) until
+    /// it is stopped; what was written until then is kept.
+    pub fn error(&self) -> Option<String> {
+        self.error.lock().ok().and_then(|e| e.clone())
     }
 
     /// Waits for the writer to finish (the tap must already be dropped by the audio thread).
@@ -312,61 +353,103 @@ pub fn safe_name(s: &str) -> String {
     if s.is_empty() { "track".into() } else { s }
 }
 
-type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
+/// What every track of one recording is written with.
+struct Files<'a> {
+    dir: &'a Path,
+    prefix: &'a str,
+    format: RecFormat,
+    sample_rate: u32,
+    /// frames to a file (see [`RecFormat::part_frames`])
+    part_frames: u64,
+}
 
-/// One track of a recording: its files (one per part of the timeline, see [`PART_FRAMES`]).
+/// One track of a recording: its files (one per part of the timeline).
 struct Track {
     /// the file being written (opened with the first frame that goes into it)
-    writer: Option<Wav>,
+    sink: Option<Sink>,
     /// which part of the timeline that file is
     part: u64,
     /// frames of the timeline this track is written up to
     written: u64,
-    /// what its file names start with, then its number and name
-    prefix: std::sync::Arc<str>,
-    n: usize,
+    /// its number (the mix has none) and name in the file names
+    n: Option<usize>,
     name: String,
+    /// 1 or 2: a track sent as mono is written as mono
+    channels: usize,
+    /// it was mono and turned stereo: its files from then on say so
+    widened: bool,
     files: Vec<PathBuf>,
+    mono: Vec<f32>,
 }
 
 impl Track {
     /// A track whose first sound is at `pos`: it starts with the part `pos` is in (a track
     /// that joins hours in has no files of silence for the hours before).
-    fn new(prefix: std::sync::Arc<str>, n: usize, name: String, pos: u64, part_frames: u64) -> Self {
-        Self { writer: None, part: pos / part_frames, written: pos - pos % part_frames, prefix, n, name, files: Vec::new() }
+    fn new(n: Option<usize>, name: String, pos: u64, channels: usize, part_frames: u64) -> Self {
+        Self {
+            sink: None,
+            part: pos / part_frames,
+            written: pos - pos % part_frames,
+            n,
+            name,
+            channels,
+            widened: false,
+            files: Vec::new(),
+            mono: Vec::new(),
+        }
+    }
+
+    /// The track is `channels` wide from here. A file cannot change its width: a mono
+    /// track that turns stereo goes on in a stereo file (one that turns mono stays in its
+    /// stereo file, the same sound in both channels).
+    fn widen(&mut self, channels: usize) -> Result<(), String> {
+        if channels > self.channels {
+            self.close()?;
+            self.widened = !self.files.is_empty();
+            self.channels = channels;
+        }
+        Ok(())
+    }
+
+    fn file_name(&self, f: &Files, part: u64) -> String {
+        let num = self.n.map(|n| format!("{n:02} ")).unwrap_or_default();
+        let wide = if self.widened { " (스테레오)" } else { "" };
+        let more = if part > 0 { format!(" - {}", part + 1) } else { String::new() };
+        format!("{}{num}{}{wide}{more}.{}", f.prefix, safe_name(&self.name), f.format.ext())
     }
 
     /// Writes `frames` frames at the track's end, into the part (or parts) they fall in:
     /// `data` (interleaved stereo), or silence.
-    fn put(&mut self, dir: &Path, sample_rate: u32, part_frames: u64, data: Option<&[f32]>, frames: u64) -> Result<(), String> {
-        let cannot = |e: hound::Error| format!("녹음 파일에 쓸 수 없어요 ({e})");
+    fn put(&mut self, f: &Files, data: Option<&[f32]>, frames: u64) -> Result<(), String> {
         let mut done = 0;
         while done < frames {
-            let part = self.written / part_frames;
-            if self.writer.is_none() || part != self.part {
+            let part = self.written / f.part_frames;
+            if self.sink.is_none() || part != self.part {
                 self.close()?;
-                let name = safe_name(&self.name);
-                let (prefix, n) = (&self.prefix, self.n);
-                let file = if part == 0 { format!("{prefix}{n:02} {name}.wav") } else { format!("{prefix}{n:02} {name} - {}.wav", part + 1) };
-                let path = dir.join(file);
-                let spec = hound::WavSpec { channels: 2, sample_rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-                self.writer = Some(hound::WavWriter::create(&path, spec).map_err(|e| format!("파일을 만들 수 없어요 ({e})"))?);
-                self.part = part;
+                let path = f.dir.join(self.file_name(f, part));
+                let mut sink = Sink::create(&path, f.format, self.channels, f.sample_rate)?;
                 self.files.push(path);
+                // a file that starts inside its part (the track turned stereo there):
+                // silence up to here, so that it lines up with every other file
+                sink.silence(self.written - part * f.part_frames, self.channels)?;
+                self.sink = Some(sink);
+                self.part = part;
             }
-            let Some(w) = self.writer.as_mut() else { break };
-            let n = (frames - done).min((part + 1) * part_frames - self.written);
+            let Self { sink, mono, channels, .. } = self;
+            let Some(sink) = sink.as_mut() else { break };
+            let n = (frames - done).min((part + 1) * f.part_frames - self.written);
             match data {
                 Some(d) => {
-                    for &s in &d[done as usize * 2..(done + n) as usize * 2] {
-                        w.write_sample(s).map_err(cannot)?;
+                    let d = &d[done as usize * 2..(done + n) as usize * 2];
+                    if *channels == 2 {
+                        sink.write(d)?;
+                    } else {
+                        mono.clear();
+                        mono.extend(d.iter().step_by(2));
+                        sink.write(mono)?;
                     }
                 }
-                None => {
-                    for _ in 0..n * 2 {
-                        w.write_sample(0.0f32).map_err(cannot)?;
-                    }
-                }
+                None => sink.silence(n, *channels)?,
             }
             self.written += n;
             done += n;
@@ -376,24 +459,27 @@ impl Track {
 
     /// Finishes the file being written (its header gets the length).
     fn close(&mut self) -> Result<(), String> {
-        match self.writer.take() {
-            Some(w) => w.finalize().map_err(|e| format!("녹음 파일을 마무리할 수 없어요 ({e})")),
+        match self.sink.take() {
+            Some(s) => s.finish(),
             None => Ok(()),
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_loop(
     mut rx: rtrb::Consumer<RecBlock>,
     dir: PathBuf,
-    prefix: String,
+    opts: RecOptions,
     sample_rate: u32,
     names: Arc<Mutex<HashMap<PeerId, String>>>,
     dropped: Arc<AtomicU64>,
+    said: Arc<Mutex<Option<String>>>,
     part_frames: u64,
 ) -> Result<RecordingResult, String> {
     // (as it is given, less what a file name cannot have: it ends in a space, and may be empty)
-    let prefix: std::sync::Arc<str> = prefix.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) || c.is_control() { '_' } else { c }).collect::<String>().into();
+    let prefix: String = opts.prefix.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) || c.is_control() { '_' } else { c }).collect();
+    let f = Files { dir: &dir, prefix: &prefix, format: opts.format, sample_rate, part_frames };
     let mut tracks: HashMap<PeerId, Track> = HashMap::new();
     let mut order: Vec<PeerId> = Vec::new();
     let mut end: u64 = 0;
@@ -405,21 +491,30 @@ fn write_loop(
             if err.is_some() {
                 continue;
             }
+            let channels = if b.channels == 1 { 1 } else { 2 };
             let t = tracks.entry(b.track).or_insert_with(|| {
-                let name = names.lock().ok().and_then(|n| n.get(&b.track).cloned()).unwrap_or_else(|| format!("peer{}", b.track));
-                let n = if b.track == SELF_TRACK { 0 } else { order.iter().filter(|&&t| t != SELF_TRACK).count() + 1 };
+                let (n, name) = match b.track {
+                    SELF_TRACK => (Some(0), None),
+                    MIX_TRACK => (None, Some("믹스".to_string())),
+                    _ => (Some(order.iter().filter(|&&t| t != SELF_TRACK && t != MIX_TRACK).count() + 1), None),
+                };
+                let name = name.or_else(|| names.lock().ok().and_then(|n| n.get(&b.track).cloned())).unwrap_or_else(|| format!("peer{}", b.track));
                 order.push(b.track);
-                Track::new(prefix.clone(), n, name, b.pos, part_frames)
+                Track::new(n, name, b.pos, channels, part_frames)
             });
             // a track that joins late (or had a gap) gets silence there, so all files line up
             let gap = b.pos.saturating_sub(t.written);
             let frames = b.frames as usize;
-            let wrote = t
-                .put(&dir, sample_rate, part_frames, None, gap)
-                .and_then(|_| t.put(&dir, sample_rate, part_frames, Some(&b.data[..frames * 2]), frames as u64));
+            let wrote = t.put(&f, None, gap).and_then(|_| t.widen(channels)).and_then(|_| t.put(&f, Some(&b.data[..frames * 2]), frames as u64));
             match wrote {
                 Ok(()) => end = end.max(t.written),
-                Err(e) => err = Some(e),
+                Err(e) => {
+                    tracing::error!("recording: {e}");
+                    if let Ok(mut s) = said.lock() {
+                        *s = Some(e.clone());
+                    }
+                    err = Some(e);
+                }
             }
         }
         if !got {
@@ -440,7 +535,7 @@ fn write_loop(
             // ago is not filled up with files of silence)
             let part_end = (t.written.max(1) - 1) / part_frames * part_frames + part_frames;
             let pad = end.min(part_end).saturating_sub(t.written);
-            err = t.put(&dir, sample_rate, part_frames, None, pad).err();
+            err = t.put(&f, None, pad).err();
         }
         if let Err(e) = t.close() {
             err.get_or_insert(e);
@@ -457,16 +552,21 @@ fn write_loop(
 mod tests {
     use super::*;
 
+    /// 32 bit float WAV (what the files are read back as here).
+    fn float(prefix: &str) -> RecOptions {
+        RecOptions { prefix: prefix.into(), format: RecFormat::Wav { bits: 32 }, mix: false }
+    }
+
     #[test]
     fn recording_writes_aligned_tracks() {
         let dir = std::env::temp_dir().join(format!("gachi-rec-test-{}", std::process::id()));
         let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "나".to_string()), (7, "민지/기타".to_string())])));
-        let (mut tap, rec) = Recorder::start(dir.clone(), "합주 0903 - ".into(), 48_000, names, 3).unwrap();
+        let (mut tap, rec) = Recorder::start(dir.clone(), float("합주 0903 - "), 48_000, names, 3).unwrap();
         let block = [0.5f32; 128]; // 64 frames
         for i in 0..100 {
-            tap.write(0, SELF_TRACK, &block);
+            tap.write(0, SELF_TRACK, &block, 2);
             if i >= 50 {
-                tap.write(1, 7, &block); // joins halfway
+                tap.write(1, 7, &block, 2); // joins halfway
             }
             tap.pos += 64;
         }
@@ -541,12 +641,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("gachi-rec-parts-{}", std::process::id()));
         let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "me".to_string()), (7, "late".to_string())])));
         // parts of 1000 frames; blocks of 64 do not end where the parts do
-        let (mut tap, rec) = Recorder::start_parts(dir.clone(), String::new(), 48_000, names, 3, 1000).unwrap();
+        let (mut tap, rec) = Recorder::start_parts(dir.clone(), float(""), 48_000, names, 3, 1000).unwrap();
         let block = [0.5f32; 128];
         for i in 0..40 {
-            tap.write(0, SELF_TRACK, &block);
+            tap.write(0, SELF_TRACK, &block, 2);
             if i >= 20 {
-                tap.write(1, 7, &block); // joins at frame 1280: in the second part
+                tap.write(1, 7, &block, 2); // joins at frame 1280: in the second part
             }
             tap.pos += 64;
         }
@@ -564,5 +664,96 @@ mod tests {
         let me: Vec<f32> = hound::WavReader::open(dir.join("00 me - 2.wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
         assert!(me.iter().all(|&s| s == 0.5), "nothing missing where a block is split between two files");
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A track sent as mono is a mono file; the mix has a name instead of a number; and a
+    /// mono track that turns stereo goes on in a stereo file that lines up with the rest.
+    #[test]
+    fn mono_tracks_are_mono_files_and_the_mix_has_its_name() {
+        let dir = std::env::temp_dir().join(format!("gachi-rec-mono-{}", std::process::id()));
+        let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "me".to_string()), (7, "gt".to_string())])));
+        let opts = RecOptions { prefix: "r - ".into(), format: RecFormat::Wav { bits: 16 }, mix: true };
+        let (mut tap, rec) = Recorder::start(dir.clone(), opts, 48_000, names, 4).unwrap();
+        assert!(tap.mix);
+        let block = [0.25f32; 128]; // 64 frames
+        for i in 0..40 {
+            tap.write(0, SELF_TRACK, &block, 1);
+            tap.write(1, 7, &block, if i < 10 { 1 } else { 2 }); // turns stereo at frame 640
+            tap.write(3, MIX_TRACK, &block, 2);
+            tap.pos += 64;
+        }
+        tap.flush_all();
+        drop(tap);
+        let r = rec.finish().unwrap();
+        assert!(rec_error_free(&r));
+        let spec = |name: &str| {
+            let w = hound::WavReader::open(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+            (w.spec().channels, w.spec().bits_per_sample, w.duration())
+        };
+        assert_eq!(spec("r - 00 me.wav"), (1, 16, 2560), "mono, as it was sent");
+        assert_eq!(spec("r - 믹스.wav"), (2, 16, 2560), "the mix: stereo, no number");
+        // the guitar: 640 frames of mono (the file ends where it turned stereo); then a
+        // stereo file of the whole length whose sound starts at frame 640
+        assert_eq!(spec("r - 01 gt.wav"), (1, 16, 640));
+        assert_eq!(spec("r - 01 gt (스테레오).wav"), (2, 16, 2560));
+        let wide: Vec<i16> = hound::WavReader::open(dir.join("r - 01 gt (스테레오).wav")).unwrap().samples::<i16>().map(|s| s.unwrap()).collect();
+        assert!(wide[..640 * 2].iter().all(|&s| s == 0), "silence before it turned stereo");
+        assert!(wide[640 * 2..].iter().all(|&s| (s - 8192).abs() <= 2), "its sound from there on");
+        assert_eq!(r.files.len(), 4);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn rec_error_free(r: &RecordingResult) -> bool {
+        r.dropped_blocks == 0 && !r.files.is_empty()
+    }
+
+    /// Writing that fails is said at once, not when the recording is stopped.
+    #[test]
+    fn a_write_that_fails_is_said_at_once() {
+        // a folder where the first file should be: it cannot be created
+        let dir = std::env::temp_dir().join(format!("gachi-rec-fail-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("x - 00 me.wav")).unwrap();
+        let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "me".to_string())])));
+        let (mut tap, rec) = Recorder::start(dir.clone(), float("x - "), 48_000, names, 2).unwrap();
+        assert_eq!(rec.error(), None);
+        let block = [0.25f32; 512];
+        tap.write(0, SELF_TRACK, &block, 2);
+        let t = Instant::now();
+        while rec.error().is_none() && t.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(rec.error().is_some(), "the writer said nothing while the recording went on");
+        drop(tap);
+        assert!(rec.finish().is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The bars counted in click higher than the bars that follow, beat for beat in step.
+    #[test]
+    fn the_count_in_clicks_higher_then_the_bars_begin() {
+        let p = MetronomeParams::default();
+        p.bpm.store(300.0); // 200 ms beats
+        p.start_us.store(0);
+        p.beats_per_bar.store(2, Relaxed);
+        p.count_in.store(2, Relaxed); // one bar of two beats
+        p.on.store(true, Relaxed);
+        let mut m = Metronome::new(48_000, 0.0, Instant::now());
+        let mut out = Vec::new();
+        for i in 0..(48_000 / 256) {
+            let mut mix = [0.0f32; 512];
+            m.add_at(&p, &mut mix, i as f64 * 256.0 * 1e6 / 48_000.0);
+            out.extend(mix.as_chunks::<2>().0.iter().map(|f| f[0]));
+        }
+        // the pitch of the click at each beat: times the sound crosses zero going up, in
+        // its first 10 ms
+        let pitch = |beat: usize| {
+            let at = beat * 9600;
+            let c = out[at..at + 480].windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
+            c as f32 * 100.0
+        };
+        let near = |hz: f32, want: f32| (hz - want).abs() <= 150.0;
+        let got: Vec<f32> = (0..4).map(pitch).collect();
+        assert!(near(got[0], 2640.0) && near(got[1], 1980.0), "the bar counted in: {got:?}");
+        assert!(near(got[2], 1760.0) && near(got[3], 1320.0), "bar 1 and on: {got:?}");
     }
 }

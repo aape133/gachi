@@ -171,6 +171,8 @@ pub struct Metro {
     start_us: u64,
     owner: PeerId,
     local_us: Option<i64>,
+    /// bars counted in from `start_us` before bar 1
+    count_in: u8,
 }
 
 pub struct Session {
@@ -438,6 +440,9 @@ fn mono_to_system(us: i64) -> SystemTime {
         now - Duration::from_micros((-delta) as u64)
     }
 }
+
+/// Bars the metronome counts in at most.
+const MAX_COUNT_IN: u8 = 2;
 
 /// Beat 0 is this far in the future when someone turns the metronome on, so every peer
 /// has the message before the first click.
@@ -931,12 +936,12 @@ impl Session {
                     }
                 }
             }
-            PeerMsg::MetronomeRequest { on, bpm, beats } => {
+            PeerMsg::MetronomeRequest { on, bpm, beats, count_in } => {
                 if self.is_host {
-                    self.set_room_metronome(app, on, bpm, beats, from);
+                    self.set_room_metronome(app, on, bpm, beats, count_in, from);
                 }
             }
-            PeerMsg::Metronome { on, bpm, beats, start_us, by } => {
+            PeerMsg::Metronome { on, bpm, beats, start_us, by, count_in } => {
                 // only the host runs the room metronome
                 if from != self.host_id() {
                     return;
@@ -946,7 +951,7 @@ impl Session {
                 let bpm = if bpm.is_finite() { bpm.clamp(30.0, 300.0) } else { 120.0 };
                 let beats = beats.clamp(1, 12);
                 self.last_tempo = (bpm, beats);
-                self.metronome = on.then_some(Metro { bpm, beats, start_us, owner: from, local_us: None });
+                self.metronome = on.then_some(Metro { bpm, beats, start_us, owner: from, local_us: None, count_in: count_in.min(MAX_COUNT_IN) });
                 self.apply_metronome();
                 self.emit_metronome(app, on, by);
             }
@@ -954,11 +959,14 @@ impl Session {
     }
 
     /// Turns the room metronome on/off (we are host): set it, apply it, tell everyone.
-    fn set_room_metronome(&mut self, app: &AppHandle, on: bool, bpm: f32, beats: u8, by: PeerId) {
+    /// `count_in`: bars to count in. Only when it is turned on: a change of tempo while it
+    /// runs starts the beats anew, and must not count everybody in again each time.
+    fn set_room_metronome(&mut self, app: &AppHandle, on: bool, bpm: f32, beats: u8, count_in: u8, by: PeerId) {
         let bpm = if bpm.is_finite() { bpm.clamp(30.0, 300.0) } else { 120.0 };
         let beats = beats.clamp(1, 12);
         let start = gachi_net::now_us() + METRONOME_LEAD_US;
-        let m = Metro { bpm, beats, start_us: start, owner: self.me, local_us: Some(start as i64) };
+        let count_in = if self.metronome.is_none() { count_in.min(MAX_COUNT_IN) } else { 0 };
+        let m = Metro { bpm, beats, start_us: start, owner: self.me, local_us: Some(start as i64), count_in };
         self.last_tempo = (bpm, beats);
         self.metronome = on.then_some(m);
         self.broadcast(&self.metro_msg(&m, on, by));
@@ -969,15 +977,15 @@ impl Session {
     /// Our metronome as a message on our own clock (we must be host).
     fn metro_msg(&self, m: &Metro, on: bool, by: PeerId) -> PeerMsg {
         let start = self.metro_local_us(m).unwrap_or(m.start_us.min(i64::MAX as u64) as i64).max(0) as u64;
-        PeerMsg::Metronome { on, bpm: m.bpm, beats: m.beats, start_us: start, by }
+        PeerMsg::Metronome { on, bpm: m.bpm, beats: m.beats, start_us: start, by, count_in: m.count_in }
     }
 
     /// Someone (maybe us) wants the metronome changed: the host decides and broadcasts.
-    pub fn request_metronome(&mut self, app: &AppHandle, on: bool, bpm: f32, beats: u8) {
+    pub fn request_metronome(&mut self, app: &AppHandle, on: bool, bpm: f32, beats: u8, count_in: u8) {
         if self.is_host {
-            self.set_room_metronome(app, on, bpm, beats, self.me);
+            self.set_room_metronome(app, on, bpm, beats, count_in, self.me);
         } else {
-            self.send_to(self.host_id(), &PeerMsg::MetronomeRequest { on, bpm, beats });
+            self.send_to(self.host_id(), &PeerMsg::MetronomeRequest { on, bpm, beats, count_in });
         }
     }
 
@@ -1004,7 +1012,7 @@ impl Session {
         let by_name = self.peers.get(&by).map(|p| p.info.profile.name.clone());
         let _ = app.emit(
             "metronome",
-            json!({ "on": on, "bpm": bpm, "beats": beats, "startMs": start_ms, "byMe": by == self.me, "byName": by_name }),
+            json!({ "on": on, "bpm": bpm, "beats": beats, "startMs": start_ms, "byMe": by == self.me, "byName": by_name, "countIn": self.metronome.map_or(0, |m| m.count_in) }),
         );
     }
 
@@ -1321,6 +1329,7 @@ impl Session {
         match (self.metronome, local) {
             (Some(m), Some(local)) => {
                 e.metronome.beats_per_bar.store(m.beats as u32, Ordering::Relaxed);
+                e.metronome.count_in.store(m.count_in as u32 * m.beats as u32, Ordering::Relaxed);
                 e.set_metronome(true, m.bpm, mono_to_system(local))
             }
             (Some(_), None) => {} // no clock offset yet: start clicking once we have one
@@ -1330,7 +1339,7 @@ impl Session {
 
     /// Starts per-track recording into Documents/gachi/녹음/<date time room [code]> (see
     /// `recording_names`), of the tracks picked on the cards.
-    pub fn start_recording(&mut self, base: PathBuf) -> Result<PathBuf, String> {
+    pub fn start_recording(&mut self, base: PathBuf, format: gachi_engine::RecFormat, mix: bool) -> Result<PathBuf, String> {
         let engine = self.engine.as_mut().ok_or("오디오 장치가 열려 있지 않아요")?;
         let (folder, prefix) = recording_names(&self.room_state.name, &self.room_state.code, chrono::Local::now());
         // (a second recording in the same minute)
@@ -1340,12 +1349,20 @@ impl Session {
             dir = base.join(format!("{folder} ({n})"));
             n += 1;
         }
-        engine.start_recording(dir.clone(), prefix, self.rec_names.clone())?;
+        engine.start_recording(dir.clone(), gachi_engine::RecOptions { prefix, format, mix }, self.rec_names.clone())?;
         Ok(dir)
     }
 
     pub fn stop_recording(&mut self) -> Option<Result<RecordingResult, String>> {
         self.engine.as_mut()?.stop_recording()
+    }
+
+    /// The recording cannot be written (a full disk, a drive pulled out): stop it now and
+    /// give what became of it, to be told to the user. Waiting until they stop it
+    /// themselves, an hour on, left them playing to a recording that was not being made.
+    pub fn recording_failed(&mut self) -> Option<Result<RecordingResult, String>> {
+        self.engine.as_ref()?.recording_error()?;
+        self.stop_recording()
     }
 
     /// Our own track's name in recordings, from our name and instrument.
@@ -1965,6 +1982,11 @@ async fn ticker(app: AppHandle) {
             if (now_ms - s.announced_in_ms).abs() > 0.05 {
                 s.announced_in_ms = now_ms;
                 s.announce_status();
+            }
+        }
+        if n.is_multiple_of(15) {
+            if let Some(r) = s.recording_failed() {
+                let _ = app.emit("recording", crate::commands::recording_json(r));
             }
         }
         if changed || n.is_multiple_of(15) {

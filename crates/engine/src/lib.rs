@@ -16,6 +16,7 @@
 pub mod device;
 pub mod engine;
 pub mod extras;
+pub mod recfile;
 pub mod frame;
 mod host_thread;
 pub mod jitter;
@@ -27,11 +28,12 @@ pub mod params;
 
 pub use device::{list_devices, open_asio_control_panel, DeviceInfo, HostChoice, ASIO_AVAILABLE};
 pub use engine::{auto_packet_frames, DriverCheck, Engine, EngineConfig, EngineError, InputChannels, PacketSink, PeerHandle, StreamInfo};
-pub use extras::{safe_name, MetronomeParams, RecordingResult, SELF_TRACK};
+pub use extras::{safe_name, MetronomeParams, RecOptions, RecordingResult, MIX_TRACK, SELF_TRACK};
 pub use frame::Frame;
 pub use jitter::{JitterBuffer, JitterStats};
 pub use load::{CallbackLoad, LoadWindow};
 pub use meter::{ChannelMeters, Meter};
+pub use recfile::RecFormat;
 pub use params::{db_to_gain, PeerParams, SelfParams};
 
 /// Tests only: counts what the allocator is asked for inside [`alloc_guard::count`], on

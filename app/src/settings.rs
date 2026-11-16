@@ -61,6 +61,23 @@ pub struct Settings {
     /// the home screen only says so)
     #[serde(default = "yes")]
     pub check_updates: bool,
+    /// recordings: "wav" (uncompressed) or "flac" (lossless, smaller)
+    #[serde(default = "default_rec_format")]
+    pub rec_format: String,
+    /// WAV: 16, 24 or 32 (float); FLAC: 16 or 24
+    #[serde(default = "default_rec_bits")]
+    pub rec_bits: u32,
+    /// also one file of everyone together, as heard here
+    #[serde(default = "yes")]
+    pub rec_mix: bool,
+}
+
+fn default_rec_format() -> String {
+    "wav".into()
+}
+
+fn default_rec_bits() -> u32 {
+    16
 }
 
 /// The log is written in full (see `Settings::verbose_log`; read by the log filter and by
@@ -116,6 +133,9 @@ impl Default for Settings {
             gpu: true,
             verbose_log: false,
             check_updates: true,
+            rec_format: default_rec_format(),
+            rec_bits: default_rec_bits(),
+            rec_mix: true,
         }
     }
 }
@@ -195,6 +215,11 @@ impl Settings {
         }
         *self = serde_json::from_value(v).map_err(|e| format!("잘못된 설정 값: {e}"))?;
         Ok(())
+    }
+
+    /// How recordings are made (see `gachi_engine::RecFormat`).
+    pub fn rec_format(&self) -> gachi_engine::RecFormat {
+        gachi_engine::RecFormat::from_settings(&self.rec_format, self.rec_bits)
     }
 
     /// DAW mode: the DAW owns the interface, the gachi plugin hands the sound over.

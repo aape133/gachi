@@ -45,6 +45,7 @@
     lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     unlock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/>',
     refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><polyline points="21 3 21 9 15 9"/>',
+    'chevron-down': '<polyline points="6 9 12 15 18 9"/>',
     plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
     minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
     headphones: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>',
@@ -308,6 +309,7 @@
     closePop();
     setMetro(false, { send: false });
     if (rec.on) { setRecUi(false); toast('녹음은 나오면서 저장했어요'); }
+    closeMenus();
     $('#screen-room').classList.remove('chat-open');
     unread = 0; updateBadge();
     show('home');
@@ -805,29 +807,62 @@
     leaveRoom();
   });
 
+  /* ── the two top-bar menus (metronome, recording) ── */
+  // The main part of each button switches the thing on and off; the arrow opens its menu.
+  function toggleMenu(id, force) {
+    for (const other of ['metro', 'rec']) {
+      const open = other === id ? (force ?? $(`#${other}-menu`).hidden) : false;
+      $(`#${other}-menu`).hidden = !open;
+      $(`#${other}`).classList.toggle('open', open);
+      $(`#${other}-more`).setAttribute('aria-expanded', open);
+    }
+  }
+  const closeMenus = () => toggleMenu(null);
+  const menuOpen = () => !$('#metro-menu').hidden || !$('#rec-menu').hidden;
+  $('#metro-more').addEventListener('click', () => { syncMetroMenu(); syncMetroVol(); toggleMenu('metro'); });
+  $('#rec-more').addEventListener('click', () => { syncRecMenu(); toggleMenu('rec'); });
+  document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.split')) closeMenus(); });
+  /** marks the button of a `.seg` whose value is `v` */
+  const segSet = (seg, v) => $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.v === String(v)));
+
   /* ── metronome ── */
   // The click itself is played by the audio engine, lined up across the room via the
   // server clock. This only drives the little beat light, aligned to the same start time.
   let metroOn = false, bpm = 120, beats = 4, beatTimer = null, sendTimer = null;
-  const SIGS = [4, 3, 2, 6];
+  // bars counted in when the metronome is turned on (kept between rooms)
+  let countIn = 0;
+  try { countIn = clamp(+localStorage.getItem('gachi-count-in') || 0, 0, 2); } catch { /* fine without */ }
   const sigLabel = (b) => (b === 6 ? '6/8' : `${b}/4`);
-  function setMetro(on, { send = true, startMs = null } = {}) {
+  function syncMetroMenu() {
+    $('#metro-on').checked = metroOn;
+    $('#bpm').value = bpm;
+    segSet($('#metro-sig'), beats);
+    segSet($('#metro-count'), countIn);
+    $('#metro-toggle').title = metroOn ? `메트로놈 끄기 · ${bpm} BPM · ${sigLabel(beats)} (방 전체)` : '메트로놈 켜기 (방 전체)';
+  }
+  /** `counted`: bars the room is being counted in with, from `startMs` */
+  function setMetro(on, { send = true, startMs = null, counted = null } = {}) {
+    const turnedOn = on && !metroOn;
     metroOn = on;
     $('#metro').classList.toggle('on', on);
-    $('#metro-sig').textContent = sigLabel(beats);
+    syncMetroMenu();
     clearInterval(beatTimer);
     clearTimeout(sendTimer);
-    if (send) backend.setMetronome({ on, bpm, beats });
+    if (send) backend.setMetronome({ on, bpm, beats, countIn });
     if (!on) return;
     const origin = startMs ?? Date.now();
     const period = 60000 / bpm;
+    // (the room's word when it comes; until then what we asked for, when turning it on)
+    const lead = (counted ?? (turnedOn && send ? countIn : 0)) * beats;
     let last = null;
     const d = $('#metro-beat');
     beatTimer = setInterval(() => {
       const n = Math.floor((Date.now() - origin) / period);
       if (n < 0 || n === last) return;
       last = n;
-      d.classList.add('flash'); d.classList.toggle('down', n % beats === 0);
+      d.classList.add('flash');
+      d.classList.toggle('count', n < lead);
+      d.classList.toggle('down', n >= lead && (n - lead) % beats === 0);
       setTimeout(() => d.classList.remove('flash'), 90);
     }, 10);
   }
@@ -838,34 +873,91 @@
     // wait until the user stops nudging the tempo before telling the room
     setMetro(true, { send: false });
     clearTimeout(sendTimer);
-    sendTimer = setTimeout(() => backend.setMetronome({ on: true, bpm, beats }), 300);
+    sendTimer = setTimeout(() => backend.setMetronome({ on: true, bpm, beats, countIn }), 300);
   }
-  $('#metro-sig').addEventListener('click', () => {
-    beats = SIGS[(SIGS.indexOf(beats) + 1) % SIGS.length];
-    $('#metro-sig').textContent = sigLabel(beats);
+  function toggleMetro() {
+    setMetro(!metroOn);
+    toast(metroOn ? `메트로놈 ${bpm} BPM · ${sigLabel(beats)}${countIn ? ` · ${countIn}마디 세고 시작` : ''} · 모두에게 동기화됨` : '메트로놈 끔');
+  }
+  $('#metro-sig').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    beats = +b.dataset.v;
+    syncMetroMenu();
     if (metroOn) setMetro(true); // tell the room
   });
-  backend.on('metronome', ({ on, bpm: b, beats: bb, startMs, byMe, byName }) => {
+  $('#metro-count').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    countIn = +b.dataset.v;
+    try { localStorage.setItem('gachi-count-in', countIn); } catch { /* fine without */ }
+    syncMetroMenu();
+  });
+  backend.on('metronome', ({ on, bpm: b, beats: bb, startMs, byMe, byName, countIn: counted }) => {
     if (!room) return;
-    bpm = Math.round(b); $('#bpm').value = bpm;
+    bpm = Math.round(b);
     if (bb) beats = bb;
-    setMetro(on, { send: false, startMs });
+    setMetro(on, { send: false, startMs, counted: counted || 0 });
     if (!byMe && byName) sysMsg(on ? `${byName}님이 메트로놈을 ${bpm} BPM · ${sigLabel(beats)}로 맞췄어요` : `${byName}님이 메트로놈을 껐어요`);
   });
-  $('#metro-toggle').addEventListener('click', () => {
-    setMetro(!metroOn);
-    toast(metroOn ? `메트로놈 ${bpm} BPM · 모두에게 동기화됨` : '메트로놈 끔');
-  });
+  $('#metro-toggle').addEventListener('click', toggleMetro);
+  $('#metro-on').addEventListener('change', toggleMetro);
   $('#bpm-dec').addEventListener('click', () => setBpm(bpm - 1));
   $('#bpm-inc').addEventListener('click', () => setBpm(bpm + 1));
   $('#bpm').addEventListener('change', (e) => setBpm(+e.target.value));
   $('#bpm').addEventListener('wheel', (e) => { e.preventDefault(); setBpm(bpm + (e.deltaY < 0 ? 1 : -1)); }, { passive: false });
+  // the click's loudness: ours alone (the same setting as in the settings window)
+  const metroVolMenu = $('#metro-vol');
+  metroVolMenu.addEventListener('input', () => {
+    paintRange(metroVolMenu);
+    $('#metro-vol-menu-val').textContent = metroVolMenu.value + '%';
+    backend.updateSettings({ metronomeVolume: +metroVolMenu.value });
+  });
+  function syncMetroVol() {
+    metroVolMenu.value = backend.getSettings().metronomeVolume ?? 60; paintRange(metroVolMenu);
+    $('#metro-vol-menu-val').textContent = metroVolMenu.value + '%';
+  }
 
   /* ── recording ── */
   const rec = { on: false, start: 0, timer: null, busy: false };
+  /** what the recording's files are, in words: "WAV 16bit", "FLAC 24bit" */
+  function recFormatText(s = backend.getSettings()) {
+    const bits = s.recFormat === 'flac' ? Math.min(24, s.recBits || 16) : (s.recBits || 16);
+    return `${s.recFormat === 'flac' ? 'FLAC' : 'WAV'} ${bits === 32 ? '32bit float' : bits + 'bit'}`;
+  }
+  function syncRecMenu() {
+    const s = backend.getSettings();
+    const format = s.recFormat === 'flac' ? 'flac' : 'wav';
+    const bits = format === 'flac' ? Math.min(24, s.recBits || 16) : (s.recBits || 16);
+    segSet($('#rec-format'), format);
+    segSet($('#rec-bits'), bits);
+    // (FLAC has no float)
+    $('#rec-bits button[data-v="32"]').hidden = format === 'flac';
+    $('#rec-mix').checked = s.recMix !== false;
+    $('#rec-menu').classList.toggle('locked', rec.on);
+    $('#rec-locked').hidden = !rec.on;
+    // what an hour of one stereo track comes to (a mono one: half)
+    const rate = s.sampleRate || 48000;
+    const wav = rate * 2 * (bits / 8) * 3600;
+    const size = (b) => (b >= 1e9 ? f1(b / 1e9) + ' GB' : Math.round(b / 1e6) + ' MB');
+    $('#rec-note').textContent = format === 'flac'
+      ? `스테레오 한 트랙이 1시간에 대략 ${size(wav * 0.55)}예요(소리에 따라 달라요). 무손실이고 WAV보다 작아요.`
+      : `스테레오 한 트랙이 1시간에 약 ${size(wav)}예요. 무손실이고 어느 DAW에서나 열려요.`;
+    $('#rec-btn').title = rec.on ? '녹음 끝내기' : `녹음 시작 · ${recFormatText(s)}`;
+  }
+  for (const [id, key, num] of [['rec-format', 'recFormat', false], ['rec-bits', 'recBits', true]]) {
+    $('#' + id).addEventListener('click', async (e) => {
+      const b = e.target.closest('button'); if (!b || rec.on) return;
+      const patch = { [key]: num ? +b.dataset.v : b.dataset.v };
+      // FLAC has no 32 bit float: 24 bit there
+      if (patch.recFormat === 'flac' && (backend.getSettings().recBits || 16) > 24) patch.recBits = 24;
+      await backend.updateSettings(patch);
+      syncRecMenu();
+    });
+  }
+  $('#rec-mix').addEventListener('change', async (e) => { await backend.updateSettings({ recMix: e.target.checked }); syncRecMenu(); });
+  $('#rec-open').addEventListener('click', () => backend.openRecordings?.().catch((e) => toast(e.message)));
   function setRecUi(on) {
     rec.on = on;
-    $('#rec-btn').classList.toggle('on', on);
+    $('#rec').classList.toggle('on', on);
     // the cards' record buttons show which tracks are being taken
     $('#stage').classList.toggle('recording', on);
     clearInterval(rec.timer);
@@ -876,13 +968,14 @@
     } else {
       $('#rec-label').textContent = '녹음';
     }
+    syncRecMenu();
   }
   function recSaved(r) {
-    if (r?.error) { toast(r.error); return; }
+    if (r?.error) { toast(r.error); if (room) sysMsg(`녹음이 멈췄어요: ${r.error}`); return; }
     if (!r || r.files == null) return;
-    toast(`녹음 저장됨 · ${r.files}트랙 WAV · ${mmss(r.seconds * 1000)}`);
+    toast(`녹음 저장됨 · 파일 ${r.files}개 · ${recFormatText()} · ${mmss(r.seconds * 1000)}`);
     if (!room) return;
-    const el = h(`<div class="msg sys">녹음을 저장했어요 (${r.files}트랙 · ${esc(r.dir || '')}) <button class="link-btn" type="button">폴더 열기</button></div>`);
+    const el = h(`<div class="msg sys">녹음을 저장했어요 (파일 ${r.files}개 · ${esc(r.dir || '')}) <button class="link-btn" type="button">폴더 열기</button></div>`);
     $('button', el).addEventListener('click', () => backend.openRecordings?.().catch((e) => toast(e.message)));
     pushMsg(el);
     if (r.dropped) sysMsg(`디스크가 느려서 녹음 일부(${r.dropped}블록)가 빠졌어요`);
@@ -897,7 +990,7 @@
     try {
       const r = await backend.setRecording(want);
       setRecUi(want);
-      if (want) toast(picked === peers.size + 1 ? '녹음 시작 · 사람마다 트랙을 따로 저장해요' : `녹음 시작 · 고른 ${picked}명만 저장해요`);
+      if (want) toast(`녹음 시작 · ${recFormatText()} · ${picked === peers.size + 1 ? '사람마다 트랙을 따로 저장해요' : `고른 ${picked}명만 저장해요`}`);
       else recSaved(r);
     } catch (e) {
       toast(e.message);
@@ -906,7 +999,8 @@
       rec.busy = false;
     }
   }
-  // the engine restarted (settings changed) and finished the recording on its own
+  // the recording ended on its own: the engine restarted (settings changed), or the files
+  // could not be written (a full disk)
   backend.on('recording', (r) => { setRecUi(false); recSaved(r); });
   $('#rec-btn').addEventListener('click', toggleRec);
 
@@ -1507,6 +1601,7 @@
     fillInputSelect($('#set-input'), s);
     buildChannelMeters(s);
     metroVol.value = s.metronomeVolume ?? 60; paintRange(metroVol);
+    syncMetroVol();
     $('#metro-vol-val').textContent = metroVol.value + '%';
     syncBuffer(s);
     syncPacket(s);
@@ -1577,6 +1672,7 @@
   /* ═══════════════════════ KEYBOARD ═══════════════════════ */
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (menuOpen()) return closeMenus();
       if (popFor) return closePop();
       const open = $('.modal-backdrop.open');
       if (open) return closeModal(open);

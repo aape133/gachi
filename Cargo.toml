@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/proto", "crates/engine", "crates/net", "crates/bridge", "crates/plugin", "app"]
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 # GNU General Public License, version 3 (see LICENSE). The app is built with Steinberg's
 # ASIO SDK under that SDK's GPLv3 option, so the whole work is under the GPLv3.

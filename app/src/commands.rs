@@ -295,12 +295,12 @@ pub async fn set_master(app: AppHandle, db: f32) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn set_metronome(app: AppHandle, on: bool, bpm: f32, beats: Option<u8>) -> Result<(), String> {
+pub async fn set_metronome(app: AppHandle, on: bool, bpm: f32, beats: Option<u8>, count_in: Option<u8>) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut guard = state.session.lock().await;
     let s = guard.as_mut().ok_or("not in a room")?;
     // the host sets the start on its clock and tells everyone (us included, via an event)
-    s.request_metronome(&app, on, bpm, beats.unwrap_or(4));
+    s.request_metronome(&app, on, bpm, beats.unwrap_or(4), count_in.unwrap_or(0));
     Ok(())
 }
 
@@ -529,7 +529,7 @@ fn recordings_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(docs.join("gachi").join("녹음"))
 }
 
-fn recording_json(r: Result<gachi_engine::RecordingResult, String>) -> Value {
+pub fn recording_json(r: Result<gachi_engine::RecordingResult, String>) -> Value {
     match r {
         Ok(r) => json!({
             "recording": false,
@@ -547,10 +547,14 @@ fn recording_json(r: Result<gachi_engine::RecordingResult, String>) -> Value {
 pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
     let base = recordings_dir(&app)?;
     let state = app.state::<AppState>();
+    let (format, mix) = {
+        let g = state.settings.lock().unwrap();
+        (g.rec_format(), g.rec_mix)
+    };
     let mut guard = state.session.lock().await;
     let s = guard.as_mut().ok_or("방에 들어가야 녹음할 수 있어요")?;
     if on {
-        let dir = s.start_recording(base)?;
+        let dir = s.start_recording(base, format, mix)?;
         Ok(json!({ "recording": true, "dir": dir.display().to_string() }))
     } else {
         let r = s.stop_recording().unwrap_or_else(|| Err("녹음 중이 아니에요".into()));

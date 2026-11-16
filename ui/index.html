@@ -128,16 +128,57 @@
     </div>
 
     <div class="topbar-center">
-      <div class="metro" id="metro">
-        <button class="step-btn metro-toggle" id="metro-toggle" title="메트로놈 켜기/끄기" data-icon="metronome"></button>
-        <span class="beat" id="metro-beat"></span>
-        <button class="step-btn" id="bpm-dec" title="BPM -1" data-icon="minus"></button>
-        <input id="bpm" type="number" min="30" max="300" value="120" aria-label="BPM">
-        <button class="step-btn" id="bpm-inc" title="BPM +1" data-icon="plus"></button>
-        <span class="unit">BPM</span>
-        <button class="sig-btn" id="metro-sig" title="박자 바꾸기 (첫 박에 강세)">4/4</button>
+      <!-- two buttons in two parts each: the main part switches the thing on and off, the
+           small arrow opens its menu -->
+      <div class="split" id="metro">
+        <button class="split-main" id="metro-toggle" title="메트로놈 켜기/끄기 (방 전체)" data-icon="metronome"><i class="beat" id="metro-beat"></i></button>
+        <button class="split-more" id="metro-more" title="메트로놈 설정" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down"></button>
+        <div class="menu" id="metro-menu" hidden>
+          <div class="menu-row"><span class="label">메트로놈</span><input type="checkbox" class="switch" id="metro-on" aria-label="메트로놈 켜기"></div>
+          <div class="menu-row">
+            <span class="label">BPM</span>
+            <div class="bpm">
+              <button class="step-btn" id="bpm-dec" title="BPM -1" data-icon="minus"></button>
+              <input id="bpm" type="number" min="30" max="300" value="120" aria-label="BPM">
+              <button class="step-btn" id="bpm-inc" title="BPM +1" data-icon="plus"></button>
+            </div>
+          </div>
+          <div class="menu-row"><span class="label">박자</span>
+            <div class="seg" id="metro-sig" title="첫 박에 강세가 들어가요">
+              <button data-v="2">2/4</button><button data-v="3">3/4</button><button data-v="4">4/4</button><button data-v="6">6/8</button>
+            </div>
+          </div>
+          <div class="menu-row"><span class="label">카운트인</span>
+            <div class="seg" id="metro-count" title="켤 때 먼저 세어 주는 마디 (더 높은 소리)">
+              <button data-v="0">없음</button><button data-v="1">1마디</button><button data-v="2">2마디</button>
+            </div>
+          </div>
+          <div class="menu-sep"></div>
+          <div class="menu-row"><span class="label">내 클릭 음량</span><input type="range" id="metro-vol" min="0" max="100" step="1"><span class="val num" id="metro-vol-menu-val"></span></div>
+          <p class="note">켜기 · BPM · 박자 · 카운트인은 방 전체에 적용돼요. 음량은 나에게만 적용돼요.</p>
+        </div>
       </div>
-      <button class="rec-btn" id="rec-btn" title="녹음 (각 트랙 분리 저장)"><span class="rec-dot"></span><span id="rec-label">녹음</span></button>
+      <div class="split" id="rec">
+        <button class="split-main" id="rec-btn" title="녹음 시작/끝내기"><span class="rec-dot"></span><span id="rec-label">녹음</span></button>
+        <button class="split-more" id="rec-more" title="녹음 설정" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down"></button>
+        <div class="menu" id="rec-menu" hidden>
+          <div class="menu-row lockable"><span class="label">형식</span>
+            <div class="seg" id="rec-format">
+              <button data-v="wav">WAV</button><button data-v="flac">FLAC</button>
+            </div>
+          </div>
+          <div class="menu-row lockable" id="rec-bits-row"><span class="label">비트 수</span>
+            <div class="seg" id="rec-bits">
+              <button data-v="16">16bit</button><button data-v="24">24bit</button><button data-v="32">32bit float</button>
+            </div>
+          </div>
+          <div class="menu-row lockable"><span class="label">전체 믹스 파일도 저장</span><input type="checkbox" class="switch" id="rec-mix" aria-label="전체 믹스 파일도 저장"></div>
+          <p class="note" id="rec-note"></p>
+          <p class="note" id="rec-locked" hidden>녹음 중에는 형식을 바꿀 수 없어요.</p>
+          <div class="menu-sep"></div>
+          <button class="btn" id="rec-open">녹음 폴더 열기</button>
+        </div>
+      </div>
     </div>
 
     <div class="topbar-right">

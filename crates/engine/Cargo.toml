@@ -16,9 +16,15 @@ rtrb.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 hound = "3.5.1"
+# recordings as FLAC (in Rust alone: no C compiler in the build)
+flacenc = { version = "0.5.1", default-features = false }
 # the same ASIO bindings cpal uses: only for the channel names cpal does not expose
 asio-sys = { version = "0.2.6", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 # DAW mode: the plugin's blocks drive the engine instead of an audio device
 gachi-bridge.workspace = true
+
+[dev-dependencies]
+# reads our FLAC files back in the tests
+claxon = "0.4"
