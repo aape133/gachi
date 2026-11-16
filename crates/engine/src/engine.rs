@@ -480,12 +480,13 @@ impl Engine {
 
     /// Starts writing one WAV per track (you + each peer, as heard here) into `dir`.
     /// `names` maps track ids ([`SELF_TRACK`] for you) to file names; peers that join later
-    /// get a track that starts with silence, so every file lines up.
-    pub fn start_recording(&mut self, dir: PathBuf, names: Arc<Mutex<HashMap<PeerId, String>>>) -> Result<(), String> {
+    /// get a track that starts with silence, so every file lines up. `prefix` starts every
+    /// file's name (which recording it is, for a file taken out of its folder).
+    pub fn start_recording(&mut self, dir: PathBuf, prefix: String, names: Arc<Mutex<HashMap<PeerId, String>>>) -> Result<(), String> {
         if self.recorder.is_some() {
             return Err("이미 녹음 중이에요".into());
         }
-        let (tap, rec) = Recorder::start(dir, self.info.sample_rate, names, MAX_PEERS + 1)?;
+        let (tap, rec) = Recorder::start(dir, prefix, self.info.sample_rate, names, MAX_PEERS + 1)?;
         self.rec_tap_back = false;
         self.cmd_tx.push(Cmd::StartRec(Box::new(tap))).map_err(|_| "오디오 엔진이 바빠요. 다시 시도해 주세요.".to_string())?;
         self.recorder = Some(rec);
@@ -1401,7 +1402,9 @@ impl OutputProcessor {
             p.jitter.set_base_ratio(params.rate_ratio.load() as f64);
             p.jitter.read_stereo(scratch);
             p.handle.meter.update_stereo(scratch);
-            if let Some(rec) = self.rec.as_mut() {
+            // (only the tracks picked on the cards. One switched on while recording starts
+            // there: the writer fills what came before with silence, as for a late joiner)
+            if let (Some(rec), true) = (self.rec.as_mut(), params.rec.load(Relaxed)) {
                 rec.write(slot + 1, p.id, scratch); // pre-fader, as received
             }
 
@@ -1450,7 +1453,9 @@ impl OutputProcessor {
         // mixed in only if software monitoring is on
         Self::take_own_sound(&mut self.monitor_rx, &mut self.monitor_missing, scratch);
         if let Some(rec) = self.rec.as_mut() {
-            rec.write(0, SELF_TRACK, scratch);
+            if self.params.rec.load(Relaxed) {
+                rec.write(0, SELF_TRACK, scratch);
+            }
             rec.pos += frames as u64;
         }
         if self.local_monitor && self.params.monitor.load(Relaxed) {

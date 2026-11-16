@@ -364,6 +364,22 @@ fn clip_profile(p: Profile) -> Profile {
     Profile { name: if name.is_empty() { "손님".into() } else { name }, instrument, color }
 }
 
+/// A track's name in a recording's file names: the name, and the instrument if one is given.
+fn track_label(p: &Profile) -> String {
+    let inst = p.instrument.trim();
+    if inst.is_empty() { p.name.clone() } else { format!("{} ({inst})", p.name) }
+}
+
+/// A recording's folder and what its files' names start with:
+/// `2026-11-16 0903 금요일 합주 [2N4FW8]` and `금요일 합주 0903 - `. The date first, so that
+/// the folders sort by time; the room's name and code, to tell one room's from another's
+/// (rooms left unnamed all have the same name); and the name and time in every file too,
+/// so that a file taken out of its folder (into a DAW) still says which recording it is from.
+fn recording_names(room: &str, code: &str, at: chrono::DateTime<chrono::Local>) -> (String, String) {
+    let room = gachi_engine::safe_name(room);
+    (format!("{} {room} [{code}]", at.format("%Y-%m-%d %H%M")), format!("{room} {} - ", at.format("%H%M")))
+}
+
 /// A peer's key as the net layer takes it (with its AES support), once the room told us.
 fn peer_key(info: &PeerInfo) -> Option<PeerKey> {
     info.key.map(|public| PeerKey { public, aes: info.aes })
@@ -465,7 +481,7 @@ impl Session {
         if let (false, Some(key)) = (info.candidates.is_empty(), peer_key(&info)) {
             self.net.set_candidates(info.id, info.candidates.clone(), info.token, key);
         }
-        self.rec_names.lock().unwrap().insert(info.id, info.profile.name.clone());
+        self.rec_names.lock().unwrap().insert(info.id, track_label(&info.profile));
         let id = info.id;
         let now = Instant::now();
         self.peers.insert(
@@ -841,8 +857,8 @@ impl Session {
         // the same limits as when it joined (a peer's later changes are not trusted more)
         let profile = clip_profile(profile);
         if let Some(p) = self.peers.get_mut(&id) {
-            p.info.profile = profile.clone();
-            self.rec_names.lock().unwrap().insert(id, profile.name);
+            self.rec_names.lock().unwrap().insert(id, track_label(&profile));
+            p.info.profile = profile;
         }
         let _ = app.emit("room", self.room_view());
     }
@@ -1133,6 +1149,7 @@ impl Session {
         p.monitor.store(ui.monitor, Ordering::Relaxed);
         p.monitor_gain.store(db_to_gain(ui.monitor_db));
         p.own_on.store(ui.own, Ordering::Relaxed);
+        p.rec.store(ui.rec, Ordering::Relaxed);
         p.master.store(db_to_gain(ui.master_db));
     }
 
@@ -1143,6 +1160,7 @@ impl Session {
         params.pan.store(p.ui.pan / 100.0);
         params.mute.store(p.ui.mute, Ordering::Relaxed);
         params.solo.store(p.ui.solo, Ordering::Relaxed);
+        params.rec.store(p.ui.rec, Ordering::Relaxed);
     }
 
     /// What we tell the others about our setup.
@@ -1310,12 +1328,19 @@ impl Session {
         }
     }
 
-    /// Starts per-track recording into Documents/gachi/녹음/<date time>.
-    pub fn start_recording(&mut self, base: PathBuf, my_name: &str) -> Result<PathBuf, String> {
+    /// Starts per-track recording into Documents/gachi/녹음/<date time room [code]> (see
+    /// `recording_names`), of the tracks picked on the cards.
+    pub fn start_recording(&mut self, base: PathBuf) -> Result<PathBuf, String> {
         let engine = self.engine.as_mut().ok_or("오디오 장치가 열려 있지 않아요")?;
-        let dir = base.join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
-        self.rec_names.lock().unwrap().insert(SELF_TRACK, my_name.to_string());
-        engine.start_recording(dir.clone(), self.rec_names.clone())?;
+        let (folder, prefix) = recording_names(&self.room_state.name, &self.room_state.code, chrono::Local::now());
+        // (a second recording in the same minute)
+        let mut dir = base.join(&folder);
+        let mut n = 2;
+        while dir.exists() && n < 100 {
+            dir = base.join(format!("{folder} ({n})"));
+            n += 1;
+        }
+        engine.start_recording(dir.clone(), prefix, self.rec_names.clone())?;
         Ok(dir)
     }
 
@@ -1323,8 +1348,9 @@ impl Session {
         self.engine.as_mut()?.stop_recording()
     }
 
-    pub fn set_my_name(&self, name: &str) {
-        self.rec_names.lock().unwrap().insert(SELF_TRACK, name.to_string());
+    /// Our own track's name in recordings, from our name and instrument.
+    pub fn set_my_track(&self, profile: &Profile) {
+        self.rec_names.lock().unwrap().insert(SELF_TRACK, track_label(profile));
     }
 
     /// Frames per packet we send: what the engine uses now (automatic follows the device's
@@ -1589,6 +1615,7 @@ impl Session {
             pan: p.ui.pan,
             mute: p.ui.mute,
             solo: p.ui.solo,
+            rec: p.ui.rec,
             total: breakdown.total(),
             rtt: st.rtt_ms.unwrap_or(0.0),
             // the figures are estimates until the round trip and 2 s of the stream are measured
@@ -1839,7 +1866,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         metronome: None,
         last_tempo: (120.0, 4),
         metronome_volume: settings.metronome_volume,
-        rec_names: Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, settings.name.clone())]))),
+        rec_names: Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, track_label(&settings.profile()))]))),
         sample_rate,
         buffer_size,
         packet_frames: settings.packet_size,
@@ -2019,6 +2046,21 @@ pub fn lan_prefix() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_recording_is_named_by_date_room_and_code() {
+        use chrono::TimeZone;
+        let at = chrono::Local.with_ymd_and_hms(2026, 11, 16, 9, 3, 27).unwrap();
+        let (folder, prefix) = super::recording_names("금요일 합주", "2N4FW8", at);
+        assert_eq!(folder, "2026-11-16 0903 금요일 합주 [2N4FW8]");
+        assert_eq!(prefix, "금요일 합주 0903 - ");
+        // a room name with characters a file name cannot have
+        let (folder, _) = super::recording_names("A/B: 합주?", "2N4FW8", at);
+        assert_eq!(folder, "2026-11-16 0903 A_B_ 합주_ [2N4FW8]");
+        let p = |name: &str, inst: &str| gachi_proto::signal::Profile { name: name.into(), instrument: inst.into(), color: None };
+        assert_eq!(super::track_label(&p("지민", "보컬")), "지민 (보컬)");
+        assert_eq!(super::track_label(&p("지민", " ")), "지민");
+    }
 
     #[test]
     fn only_addresses_of_ones_own_are_banned() {

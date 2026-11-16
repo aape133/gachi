@@ -73,7 +73,7 @@
         quality: 'pcm24', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
         metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device',
       };
-      this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true };
+      this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this._devices = { devices: [], hasAsio: true };
       this.devicesLoaded = false;
       ['levels', 'stats', 'peer-joined', 'peer-left', 'chat', 'settings', 'notice', 'room', 'room-lost', 'kicked', 'metronome', 'recording'].forEach((ev) =>
@@ -191,7 +191,7 @@
         quality: 'pcm24', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
         name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device',
       };
-      this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true };
+      this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this.master = 0;
       this.room = null;
       this.peers = new Map();
@@ -313,7 +313,7 @@
     _addPeer(def, { isHost = false, silent = false } = {}) {
       if (!this.room || this.peers.size + 1 >= this.room.maxPeers) return;
       const p = {
-        ...def, isHost, volume: 0, pan: 0, mute: false, solo: false,
+        ...def, isHost, volume: 0, pan: 0, mute: false, solo: false, rec: true,
         jitterAuto: true, jitterPackets: 3, netNow: def.netMs,
         speed: 1.2 + Math.random() * 2, base: 0.5 + Math.random() * 0.3,
       };
@@ -343,12 +343,12 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.2.1'; }
+    async appVersion() { return '0.2.2'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.2.2' };
+      return { version: '0.2.3' };
     }
     openRelease() {}
     async setPreview() {}

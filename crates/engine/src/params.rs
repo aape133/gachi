@@ -48,6 +48,8 @@ pub struct PeerParams {
     pub jitter_target: AtomicU32,
     /// the peer's sample rate / ours (resampling when they differ)
     pub rate_ratio: AtomicF32,
+    /// a recording takes this track (on unless turned off on its card)
+    pub rec: AtomicBool,
 }
 
 impl Default for PeerParams {
@@ -59,6 +61,7 @@ impl Default for PeerParams {
             solo: AtomicBool::new(false),
             jitter_target: AtomicU32::new(300),
             rate_ratio: AtomicF32::new(1.0),
+            rec: AtomicBool::new(true),
         }
     }
 }
@@ -79,6 +82,8 @@ pub struct SelfParams {
     pub test_tone: AtomicU32,
     /// which input channels are sent (`InputChannels::encode`); changeable while running
     pub input_map: AtomicU64,
+    /// a recording takes your own track (on unless turned off on your card)
+    pub rec: AtomicBool,
 }
 
 impl Default for SelfParams {
@@ -92,6 +97,7 @@ impl Default for SelfParams {
             master: AtomicF32::new(1.0),
             test_tone: AtomicU32::new(0),
             input_map: AtomicU64::new(0),
+            rec: AtomicBool::new(true),
         }
     }
 }

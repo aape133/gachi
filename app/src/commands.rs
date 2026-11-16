@@ -75,7 +75,7 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
                 sess.apply_metronome();
             }
             if profile {
-                sess.set_my_name(&s.name);
+                sess.set_my_track(&s.profile());
                 sess.announce_profile(s.profile());
                 sess.sync_lobby(); // the nearby list shows the host's name
             }
@@ -251,6 +251,7 @@ pub async fn set_peer(app: AppHandle, id: String, patch: PeerPatch) -> Result<()
         if let Some(v) = patch.pan { ui.pan = v.clamp(-100.0, 100.0) }
         if let Some(v) = patch.mute { ui.mute = v }
         if let Some(v) = patch.solo { ui.solo = v }
+        if let Some(v) = patch.rec { ui.rec = v }
         if let Some(v) = patch.jitter_auto { ui.jitter_auto = v }
         if let Some(v) = patch.jitter_packets { ui.jitter_packets = v.clamp(1, 12) }
         Session::apply_peer(p);
@@ -270,6 +271,7 @@ pub async fn set_self(app: AppHandle, patch: SelfPatch) -> Result<(), String> {
         if let Some(v) = patch.monitor { g.monitor = v }
         if let Some(v) = patch.monitor_db { g.monitor_db = v.clamp(-40.0, 6.0) }
         if let Some(v) = patch.own { g.own = v }
+        if let Some(v) = patch.rec { g.rec = v }
         g.clone()
     };
     if let Some(s) = state.session.lock().await.as_ref() {
@@ -545,11 +547,10 @@ fn recording_json(r: Result<gachi_engine::RecordingResult, String>) -> Value {
 pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
     let base = recordings_dir(&app)?;
     let state = app.state::<AppState>();
-    let name = state.settings.lock().unwrap().name.clone();
     let mut guard = state.session.lock().await;
     let s = guard.as_mut().ok_or("방에 들어가야 녹음할 수 있어요")?;
     if on {
-        let dir = s.start_recording(base, &name)?;
+        let dir = s.start_recording(base)?;
         Ok(json!({ "recording": true, "dir": dir.display().to_string() }))
     } else {
         let r = s.stop_recording().unwrap_or_else(|| Err("녹음 중이 아니에요".into()));

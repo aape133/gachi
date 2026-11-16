@@ -66,7 +66,7 @@ fn main() {
 
     let rec_dir = std::env::temp_dir().join("gachi-loopback-rec");
     let names = Arc::new(Mutex::new(std::collections::HashMap::from([(0, "me".to_string()), (1, "loop".to_string())])));
-    engine.start_recording(rec_dir, names).expect("start recording");
+    engine.start_recording(rec_dir, String::new(), names).expect("start recording");
     if sounds {
         engine.play_test_tone(1.0);
         engine.set_metronome(true, 120.0, std::time::SystemTime::now() + Duration::from_millis(1200));

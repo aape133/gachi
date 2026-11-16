@@ -581,6 +581,14 @@ input[type=range]:hover { --fill: var(--text); }
 .ms:hover { color: var(--text); border-color: var(--line-2); }
 .ms.m.on { background: var(--bad); color: #fff; border-color: var(--bad); }
 .ms.s.on { background: var(--warn); color: #1a1200; border-color: var(--warn); }
+/* the record button: a ring when this track is left out, a red dot when a recording takes
+   it, and the whole button red while one is being made */
+.ms.r { display: inline-grid; place-items: center; }
+.ms.r i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; transition: all .12s; }
+.ms.r.on i { background: var(--bad-fill); border-color: var(--bad-fill); }
+.stage.recording .ms.r.on { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
+.stage.recording .ms.r.on i { animation: rec-on 1.6s ease-in-out infinite; }
+@keyframes rec-on { 50% { opacity: .35; } }
 
 .pill {
   display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px;
@@ -1174,6 +1182,9 @@ input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top:
 .stage.many .meter { margin-top: 1px; }
 /* (the input channel is in the settings too) */
 .stage.many .strip.self [data-act=input-ch] { display: none; }
+/* (the two pills and the record button do not fit a small card with their words: icons, the words as tooltips) */
+.stage.many .strip.self .pill { padding: 0 10px; }
+.stage.many .strip.self .pill span { display: none; }
 .stage.many .strip-top { flex-wrap: nowrap; }
 .stage.many .top-tags { flex: none; }
 .stage.many .net-chip { min-width: 0; white-space: nowrap; overflow: hidden; }

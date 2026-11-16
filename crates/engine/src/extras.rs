@@ -268,18 +268,21 @@ pub(crate) struct Recorder {
 impl Recorder {
     /// Creates the tap (goes to the audio thread) and starts the writer.
     /// `names` maps track ids to display names; it is read when a track first appears.
+    /// Files are named `<prefix><number> <name>.wav`.
     pub fn start(
         dir: PathBuf,
+        prefix: String,
         sample_rate: u32,
         names: Arc<Mutex<HashMap<PeerId, String>>>,
         slots: usize,
     ) -> Result<(RecTap, Recorder), String> {
-        Self::start_parts(dir, sample_rate, names, slots, PART_FRAMES)
+        Self::start_parts(dir, prefix, sample_rate, names, slots, PART_FRAMES)
     }
 
     /// (`part_frames`: see [`PART_FRAMES`]; tests use small parts)
     fn start_parts(
         dir: PathBuf,
+        prefix: String,
         sample_rate: u32,
         names: Arc<Mutex<HashMap<PeerId, String>>>,
         slots: usize,
@@ -291,7 +294,7 @@ impl Recorder {
         let tap = RecTap { tx, acc: vec![RecBlock::EMPTY; slots].into_boxed_slice(), pos: 0, dropped: dropped.clone() };
         let thread = thread::Builder::new()
             .name("gachi-rec-writer".into())
-            .spawn(move || write_loop(rx, dir, sample_rate, names, dropped, part_frames))
+            .spawn(move || write_loop(rx, dir, prefix, sample_rate, names, dropped, part_frames))
             .map_err(|e| e.to_string())?;
         Ok((tap, Recorder { thread }))
     }
@@ -302,7 +305,8 @@ impl Recorder {
     }
 }
 
-fn safe_name(s: &str) -> String {
+/// `s` as (part of) a file name: without the characters Windows does not take in one.
+pub fn safe_name(s: &str) -> String {
     let s: String = s.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) || c.is_control() { '_' } else { c }).collect();
     let s = s.trim().trim_end_matches('.').to_string();
     if s.is_empty() { "track".into() } else { s }
@@ -318,7 +322,8 @@ struct Track {
     part: u64,
     /// frames of the timeline this track is written up to
     written: u64,
-    /// its number and name in the file names
+    /// what its file names start with, then its number and name
+    prefix: std::sync::Arc<str>,
     n: usize,
     name: String,
     files: Vec<PathBuf>,
@@ -327,8 +332,8 @@ struct Track {
 impl Track {
     /// A track whose first sound is at `pos`: it starts with the part `pos` is in (a track
     /// that joins hours in has no files of silence for the hours before).
-    fn new(n: usize, name: String, pos: u64, part_frames: u64) -> Self {
-        Self { writer: None, part: pos / part_frames, written: pos - pos % part_frames, n, name, files: Vec::new() }
+    fn new(prefix: std::sync::Arc<str>, n: usize, name: String, pos: u64, part_frames: u64) -> Self {
+        Self { writer: None, part: pos / part_frames, written: pos - pos % part_frames, prefix, n, name, files: Vec::new() }
     }
 
     /// Writes `frames` frames at the track's end, into the part (or parts) they fall in:
@@ -341,7 +346,8 @@ impl Track {
             if self.writer.is_none() || part != self.part {
                 self.close()?;
                 let name = safe_name(&self.name);
-                let file = if part == 0 { format!("{:02}-{name}.wav", self.n) } else { format!("{:02}-{name} ({}).wav", self.n, part + 1) };
+                let (prefix, n) = (&self.prefix, self.n);
+                let file = if part == 0 { format!("{prefix}{n:02} {name}.wav") } else { format!("{prefix}{n:02} {name} - {}.wav", part + 1) };
                 let path = dir.join(file);
                 let spec = hound::WavSpec { channels: 2, sample_rate, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
                 self.writer = Some(hound::WavWriter::create(&path, spec).map_err(|e| format!("파일을 만들 수 없어요 ({e})"))?);
@@ -380,11 +386,14 @@ impl Track {
 fn write_loop(
     mut rx: rtrb::Consumer<RecBlock>,
     dir: PathBuf,
+    prefix: String,
     sample_rate: u32,
     names: Arc<Mutex<HashMap<PeerId, String>>>,
     dropped: Arc<AtomicU64>,
     part_frames: u64,
 ) -> Result<RecordingResult, String> {
+    // (as it is given, less what a file name cannot have: it ends in a space, and may be empty)
+    let prefix: std::sync::Arc<str> = prefix.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) || c.is_control() { '_' } else { c }).collect::<String>().into();
     let mut tracks: HashMap<PeerId, Track> = HashMap::new();
     let mut order: Vec<PeerId> = Vec::new();
     let mut end: u64 = 0;
@@ -400,7 +409,7 @@ fn write_loop(
                 let name = names.lock().ok().and_then(|n| n.get(&b.track).cloned()).unwrap_or_else(|| format!("peer{}", b.track));
                 let n = if b.track == SELF_TRACK { 0 } else { order.iter().filter(|&&t| t != SELF_TRACK).count() + 1 };
                 order.push(b.track);
-                Track::new(n, name, b.pos, part_frames)
+                Track::new(prefix.clone(), n, name, b.pos, part_frames)
             });
             // a track that joins late (or had a gap) gets silence there, so all files line up
             let gap = b.pos.saturating_sub(t.written);
@@ -452,7 +461,7 @@ mod tests {
     fn recording_writes_aligned_tracks() {
         let dir = std::env::temp_dir().join(format!("gachi-rec-test-{}", std::process::id()));
         let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "나".to_string()), (7, "민지/기타".to_string())])));
-        let (mut tap, rec) = Recorder::start(dir.clone(), 48_000, names, 3).unwrap();
+        let (mut tap, rec) = Recorder::start(dir.clone(), "합주 0903 - ".into(), 48_000, names, 3).unwrap();
         let block = [0.5f32; 128]; // 64 frames
         for i in 0..100 {
             tap.write(0, SELF_TRACK, &block);
@@ -465,7 +474,8 @@ mod tests {
         drop(tap);
         let r = rec.finish().unwrap();
         assert_eq!(r.files.len(), 2);
-        assert!(r.files[1].file_name().unwrap().to_string_lossy().contains("민지_기타"));
+        let name = |i: usize| r.files[i].file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!((name(0), name(1)), ("합주 0903 - 00 나.wav".to_string(), "합주 0903 - 01 민지_기타.wav".to_string()));
         for f in &r.files {
             let reader = hound::WavReader::open(f).unwrap();
             assert_eq!(reader.duration(), 6400, "{f:?} padded to the same length");
@@ -531,7 +541,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("gachi-rec-parts-{}", std::process::id()));
         let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "me".to_string()), (7, "late".to_string())])));
         // parts of 1000 frames; blocks of 64 do not end where the parts do
-        let (mut tap, rec) = Recorder::start_parts(dir.clone(), 48_000, names, 3, 1000).unwrap();
+        let (mut tap, rec) = Recorder::start_parts(dir.clone(), String::new(), 48_000, names, 3, 1000).unwrap();
         let block = [0.5f32; 128];
         for i in 0..40 {
             tap.write(0, SELF_TRACK, &block);
@@ -545,13 +555,13 @@ mod tests {
         let r = rec.finish().unwrap();
         let len = |name: &str| hound::WavReader::open(dir.join(name)).map(|w| w.duration()).unwrap_or(u32::MAX);
         // 2560 frames: two whole parts and 560 of the third
-        assert_eq!((len("00-me.wav"), len("00-me (2).wav"), len("00-me (3).wav")), (1000, 1000, 560));
-        assert_eq!((len("01-late (2).wav"), len("01-late (3).wav")), (1000, 560));
-        assert!(!dir.join("01-late.wav").exists(), "no file of silence for the part before it joined");
+        assert_eq!((len("00 me.wav"), len("00 me - 2.wav"), len("00 me - 3.wav")), (1000, 1000, 560));
+        assert_eq!((len("01 late - 2.wav"), len("01 late - 3.wav")), (1000, 560));
+        assert!(!dir.join("01 late.wav").exists(), "no file of silence for the part before it joined");
         assert_eq!(r.files.len(), 5);
-        let late: Vec<f32> = hound::WavReader::open(dir.join("01-late (2).wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
+        let late: Vec<f32> = hound::WavReader::open(dir.join("01 late - 2.wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
         assert_eq!((late[279 * 2], late[280 * 2]), (0.0, 0.5), "its sound starts at frame 1280 of the timeline");
-        let me: Vec<f32> = hound::WavReader::open(dir.join("00-me (2).wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
+        let me: Vec<f32> = hound::WavReader::open(dir.join("00 me - 2.wav")).unwrap().samples::<f32>().map(|s| s.unwrap()).collect();
         assert!(me.iter().all(|&s| s == 0.5), "nothing missing where a block is split between two files");
         std::fs::remove_dir_all(dir).ok();
     }

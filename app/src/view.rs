@@ -64,6 +64,8 @@ pub struct PeerView {
     pub pan: f32,
     pub mute: bool,
     pub solo: bool,
+    /// a recording takes this track
+    pub rec: bool,
     pub breakdown: Breakdown,
     pub total: f32,
     pub rtt: f32,
@@ -103,11 +105,13 @@ pub struct PeerUi {
     pub solo: bool,
     pub jitter_auto: bool,
     pub jitter_packets: u32,
+    /// a recording takes this track (the card's record button)
+    pub rec: bool,
 }
 
 impl Default for PeerUi {
     fn default() -> Self {
-        Self { volume_db: 0.0, pan: 0.0, mute: false, solo: false, jitter_auto: true, jitter_packets: 3 }
+        Self { volume_db: 0.0, pan: 0.0, mute: false, solo: false, jitter_auto: true, jitter_packets: 3, rec: true }
     }
 }
 
@@ -120,6 +124,7 @@ pub struct PeerPatch {
     pub solo: Option<bool>,
     pub jitter_auto: Option<bool>,
     pub jitter_packets: Option<u32>,
+    pub rec: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -132,11 +137,13 @@ pub struct SelfUi {
     pub monitor_db: f32,
     /// DAW mode: the plugin passes your own sound through at all
     pub own: bool,
+    /// a recording takes your own track
+    pub rec: bool,
 }
 
 impl Default for SelfUi {
     fn default() -> Self {
-        Self { gain_db: 0.0, muted: false, monitor: false, master_db: 0.0, monitor_db: 0.0, own: true }
+        Self { gain_db: 0.0, muted: false, monitor: false, master_db: 0.0, monitor_db: 0.0, own: true, rec: true }
     }
 }
 
@@ -148,6 +155,7 @@ pub struct SelfPatch {
     #[serde(rename = "monitorDb")]
     pub monitor_db: Option<f32>,
     pub own: Option<bool>,
+    pub rec: Option<bool>,
 }
 
 #[derive(Deserialize, Debug)]

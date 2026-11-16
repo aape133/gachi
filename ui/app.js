@@ -341,6 +341,8 @@
         <div class="strip-foot">
           <button class="pill" data-act="mute"></button>
           <button class="pill" data-act="monitor" title="내 소리를 바로 듣기 (네트워크 거치지 않음)">${icon('headphones')}<span>모니터</span></button>
+          <span class="spacer"></span>
+          <button class="ms r" data-act="rec" title="녹음에 넣기 (켜진 사람만 녹음해요)"><i></i></button>
         </div>
       </article>`);
     strips.set('self', { el, meter: $('[data-f=meter]', el), avatar: $('.avatar', el) });
@@ -375,7 +377,9 @@
     const mute = $('[data-act=mute]', el);
     mute.className = 'pill' + (self.muted ? ' muted' : '');
     mute.innerHTML = icon(self.muted ? 'mic-off' : 'mic') + `<span>${self.muted ? '음소거됨' : '마이크'}</span>`;
+    mute.title = self.muted ? '음소거됨 · 누르면 마이크 켜기' : '마이크 음소거'; // (small cards show the icon only)
     $('[data-act=monitor]', el).classList.toggle('on', daw ? self.own !== false : self.monitor);
+    $('[data-act=rec]', el).classList.toggle('on', self.rec !== false);
     // (off: the level has nothing to act on)
     $('[data-f=own]', el).classList.toggle('off', daw && self.own === false);
     const mic = $('#mic-btn');
@@ -411,6 +415,7 @@
         <div class="strip-foot">
           <button class="ms m" data-act="mute" title="뮤트 (이 사람 소리 끄기)">M</button>
           <button class="ms s" data-act="solo" title="솔로 (이 사람 소리만 듣기)">S</button>
+          <button class="ms r" data-act="rec" title="녹음에 넣기 (켜진 사람만 녹음해요)"><i></i></button>
           <span class="spacer"></span>
           <button class="ms kick" data-act="kick" title="방에서 내보내기 (다시 들어올 수 없어요)" hidden>${icon('log-out')}<span class="kick-label">한 번 더</span></button>
         </div>
@@ -453,6 +458,7 @@
     $('[data-f=pan]', el).textContent = panText(p.pan);
     $('[data-act=mute]', el).classList.toggle('on', p.mute);
     $('[data-act=solo]', el).classList.toggle('on', p.solo);
+    $('[data-act=rec]', el).classList.toggle('on', p.rec !== false);
   }
 
   function updateDim() {
@@ -551,12 +557,15 @@
         else backend.setSelf({ monitor: !backend.self.monitor });
         syncSelfControls();
       }
+      if (act === 'rec') { backend.setSelf({ rec: backend.self.rec === false }); syncSelfControls(); }
       if (act === 'local') openSettings('audio');
       return;
     }
     const p = peers.get(id);
     if (act === 'mute') { backend.setPeer(id, { mute: !p.mute }); }
     if (act === 'solo') { backend.setPeer(id, { solo: !p.solo }); }
+    // (shown at once: the figures that confirm it come back half a second later)
+    if (act === 'rec') { p.rec = p.rec === false; b.classList.toggle('on', p.rec); backend.setPeer(id, { rec: p.rec }); }
     // put out of the room: asks once more (the button says so for a moment)
     if (act === 'kick') {
       if (!b.classList.contains('arm')) {
@@ -857,6 +866,8 @@
   function setRecUi(on) {
     rec.on = on;
     $('#rec-btn').classList.toggle('on', on);
+    // the cards' record buttons show which tracks are being taken
+    $('#stage').classList.toggle('recording', on);
     clearInterval(rec.timer);
     if (on) {
       rec.start = Date.now();
@@ -879,11 +890,14 @@
   async function toggleRec() {
     if (rec.busy) return;
     const want = !rec.on;
+    // the tracks picked on the cards (all of them unless some were switched off)
+    const picked = (backend.self.rec !== false ? 1 : 0) + [...peers.values()].filter((p) => p.rec !== false).length;
+    if (want && !picked) { toast('녹음할 사람이 없어요. 카드의 녹음 버튼(●)을 켜 주세요'); return; }
     rec.busy = true;
     try {
       const r = await backend.setRecording(want);
       setRecUi(want);
-      if (want) toast('녹음 시작 · 사람마다 트랙을 따로 저장해요');
+      if (want) toast(picked === peers.size + 1 ? '녹음 시작 · 사람마다 트랙을 따로 저장해요' : `녹음 시작 · 고른 ${picked}명만 저장해요`);
       else recSaved(r);
     } catch (e) {
       toast(e.message);
