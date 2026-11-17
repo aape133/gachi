@@ -65,6 +65,42 @@ impl Sock {
     pub fn set_read_timeout(&self, t: Option<Duration>) -> io::Result<()> {
         self.inner.set_read_timeout(t)
     }
+
+    /// From now on no call on this socket waits: a send the system has no room for fails
+    /// with `WouldBlock` (the packet is dropped) instead of holding up the caller. Audio is
+    /// sent from the audio callback: a send that waited for the kernel's send buffer (full
+    /// when the link stalls with many peers) stopped our own sound with it. Reading waits in
+    /// [`Sock::wait_readable`] instead. (Windows; elsewhere sockets stay as they are.)
+    pub fn set_nonblocking(&self) -> io::Result<()> {
+        if cfg!(windows) {
+            self.inner.set_nonblocking(true)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Waits up to `timeout` for a datagram to read; true when one (or an error to read)
+    /// is there. Wakes as soon as one arrives.
+    #[cfg(windows)]
+    pub fn wait_readable(&self, timeout: Duration) -> bool {
+        use std::os::windows::io::AsRawSocket;
+        use windows_sys::Win32::Networking::WinSock::{WSAPoll, POLLRDNORM, WSAPOLLFD};
+        let mut fd = WSAPOLLFD { fd: self.inner.as_raw_socket() as _, events: POLLRDNORM, revents: 0 };
+        let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+        // SAFETY: one descriptor of our open socket, valid for the call
+        let ready = unsafe { WSAPoll(&mut fd, 1, ms) };
+        if ready < 0 {
+            // (an error that stays must not make the receive loop spin: wait as asked)
+            std::thread::sleep(timeout);
+        }
+        ready > 0
+    }
+
+    /// (Elsewhere the socket blocks, with a read timeout: reading itself waits.)
+    #[cfg(not(windows))]
+    pub fn wait_readable(&self, _timeout: Duration) -> bool {
+        true
+    }
 }
 
 /// Bigger kernel buffers (a burst from 7 peers must not overflow the default 64 KB and
@@ -168,5 +204,33 @@ mod tests {
         assert_eq!(canonical(mapped), "10.0.0.1:5000".parse::<SocketAddr>().unwrap());
         let v6: SocketAddr = "[2001:db8::1]:5000".parse().unwrap();
         assert_eq!(canonical(v6), v6);
+    }
+
+    /// A non-blocking socket waits for a datagram in `wait_readable`: no longer than asked
+    /// when none comes, and wakes at once when one does. Reading returns at once.
+    #[cfg(windows)]
+    #[test]
+    fn waiting_for_a_datagram_ends_when_it_comes() {
+        use std::time::Instant;
+        let a = Sock::bind().unwrap();
+        let b = Sock::bind().unwrap();
+        a.set_nonblocking().unwrap();
+        let to_a = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), a.port());
+        let mut buf = [0u8; 64];
+        let t = Instant::now();
+        assert_eq!(a.recv_from(&mut buf).unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        assert!(t.elapsed() < Duration::from_millis(5), "reading waited");
+        let t = Instant::now();
+        assert!(!a.wait_readable(Duration::from_millis(100)));
+        assert!(t.elapsed() >= Duration::from_millis(80), "woke after {:?} with nothing there", t.elapsed());
+        let sender = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(30));
+            b.send_to(b"hi", to_a).unwrap();
+        });
+        let t = Instant::now();
+        assert!(a.wait_readable(Duration::from_secs(2)));
+        assert!(t.elapsed() < Duration::from_millis(500), "woke {:?} after the datagram", t.elapsed());
+        assert_eq!(a.recv_from(&mut buf).unwrap().0, 2);
+        sender.join().unwrap();
     }
 }

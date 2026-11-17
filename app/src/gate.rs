@@ -142,6 +142,13 @@ async fn serve(app: AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<From
                     return;
                 }
             }
+            FromWorker::Rekeyed { host_key } => {
+                // the room learns the code's new key (the member put out does not)
+                if host_key.len() == 32 && host_key.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    s.room_state.host_key = Some(host_key);
+                    s.broadcast_room_state();
+                }
+            }
             FromWorker::Opened { .. } | FromWorker::Welcome { .. } | FromWorker::Nearby { .. } | FromWorker::Host { .. } => {}
         }
     }
@@ -245,7 +252,10 @@ pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Optio
             }
         }
         s.room_state.open = want_open && s.gate.is_some() && !new_code;
-        if new_code {
+        // a code turned off is forgotten by the server, which takes the key it is reopened
+        // with: that would be the old one, which members who have left since still have.
+        // Without one, the server picks a new key
+        if new_code || !want_open {
             s.room_state.host_key = None;
         }
         let reconnect = want_open && (s.gate.is_none());

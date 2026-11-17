@@ -34,7 +34,7 @@ fn search_once(from: Option<IpAddr>, to: SocketAddr, timeout: Duration) -> Optio
     while let Some(left) = timeout.checked_sub(start.elapsed()).filter(|d| *d > Duration::from_millis(200)) {
         match igd_next::search_gateway(SearchOptions { bind_addr: bind, broadcast_address: to, timeout: Some(left), single_search_timeout: Some(left) }) {
             Ok(gw) => return Some(gw),
-            Err(e) => tracing::debug!(%to, ?from, "UPnP search: {e}"),
+            Err(e) => tracing::debug!(to = %crate::logaddr::Shown(to), from = %crate::logaddr::opt_ip(from), "UPnP search: {e}"),
         }
         std::thread::sleep(Duration::from_millis(100));
     }

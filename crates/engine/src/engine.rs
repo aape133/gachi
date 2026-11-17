@@ -1133,7 +1133,10 @@ fn run_bridge(
             continue;
         }
         if end.up_available() > STALE_BACKLOG {
-            end.skip_up_to_latest(CHUNK);
+            // the newest block only: keeping 43 ms of it sent that much old sound to the
+            // room at once, a burst every receiver then had to work off
+            let (_, block) = end.format();
+            end.skip_up_to_latest((block as usize).clamp(16, CHUNK));
         }
         loop {
             let n = end.read_up(&mut up);

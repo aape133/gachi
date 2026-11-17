@@ -37,6 +37,9 @@ const UPGRADE_EVERY: Duration = Duration::from_millis(100);
 /// second: going through every peer's timers for each of them was most of what this thread
 /// did between packets. The shortest of the timers is 20 ms.
 const TIMERS_EVERY: Duration = Duration::from_millis(1);
+/// With nothing to read, the loop waits this long for a datagram (it wakes at once when one
+/// comes) before it looks at the timers and the app's requests again.
+const IDLE_WAIT: Duration = Duration::from_millis(5);
 
 /// How direct a path to `addr` is: 0 = on our network (private IPv4, loopback), 1 = IPv6
 /// (no NAT on the way), 2 = a public IPv4 address (through the NATs; between two PCs in one
@@ -154,6 +157,14 @@ pub(crate) struct Receiver {
     probe: Option<[u8; 12]>,
     last_probe: Instant,
     internet_at: Instant,
+    /// our public address as last learned (a STUN answer that differs: see `moved`)
+    public: Option<SocketAddr>,
+    /// our router gave us another public address while peers went silent (it restarted, or
+    /// a carrier NAT moved us): the silence is ours, though our internet works. Peers whose
+    /// router lets in only what answers what they sent cannot reach us at the new one, nor
+    /// we them: we report them lost as if offline, so the app comes back in through the room
+    /// (see `NetEvent::PeerLost`). Cleared when one of them is heard again.
+    moved: bool,
     /// after our network changed: punch every peer until then
     repunch_all_until: Option<Instant>,
     /// keys of removed peers. If one comes back with the same key, its keys (and their
@@ -174,6 +185,8 @@ impl Receiver {
         ctl_rx: mpsc::Receiver<Ctl>,
         events: mpsc::Sender<NetEvent>,
         stop: Arc<AtomicBool>,
+        stun_server: Option<SocketAddr>,
+        public: Option<SocketAddr>,
     ) -> Self {
         Self {
             socket,
@@ -193,7 +206,11 @@ impl Receiver {
             timers_at: None,
             last_lan: lan_now(),
             net_check: Instant::now(),
-            stun_server: crate::stun::DEFAULT_SERVERS.iter().find_map(|s| crate::stun::resolve(s)),
+            // the server that told us our address (the same one answers the same way while
+            // nothing changed), else one of the usual ones
+            stun_server: stun_server.or_else(|| crate::stun::DEFAULT_SERVERS.iter().find_map(|s| crate::stun::resolve(s))),
+            public,
+            moved: false,
             stun_pending: None,
             probe: None,
             last_probe: Instant::now(),
@@ -206,6 +223,9 @@ impl Receiver {
         let mut buf = [0u8; 2048];
         let mut plain = [0u8; MAX_SEALED];
         let mut frame = Frame::EMPTY;
+        // the last read found nothing: wait for a datagram before reading again (the socket
+        // does not wait: see `Sock::set_nonblocking`)
+        let mut idle = false;
         while !self.done && !self.stop.load(Ordering::Relaxed) {
             self.handle_ctl();
             if self.done {
@@ -216,12 +236,22 @@ impl Receiver {
                 self.timers_at = Some(now);
                 self.timers(now);
             }
+            if idle && !self.socket.wait_readable(IDLE_WAIT) {
+                continue;
+            }
             match self.socket.recv_from(&mut buf) {
-                Ok((n, from)) => self.on_datagram(&buf[..n], from, &mut plain, &mut frame),
-                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+                Ok((n, from)) => {
+                    idle = false;
+                    self.on_datagram(&buf[..n], from, &mut plain, &mut frame);
+                }
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => idle = true,
                 // Windows reports ICMP "port unreachable" from an earlier send as ConnectionReset
                 Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => {}
-                Err(e) => tracing::warn!("udp recv: {e}"),
+                Err(e) => {
+                    tracing::warn!("udp recv: {e}");
+                    // (an error that stays must not make this loop spin)
+                    idle = true;
+                }
             }
         }
     }
@@ -389,7 +419,9 @@ impl Receiver {
             if let (Some(heard), false) = (p.last_heard, p.lost_reported) {
                 if now - heard > self.cfg.peer_timeout {
                     p.lost_reported = true;
-                    tracing::warn!(id, online, "peer went silent");
+                    // (our address moved: as good as offline for this peer)
+                    let online = online && !self.moved;
+                    tracing::warn!(id, online, moved = self.moved, "peer went silent");
                     let _ = self.events.send(NetEvent::PeerLost { id, online });
                 }
             }
@@ -474,7 +506,7 @@ impl Receiver {
         if lan.is_none() || lan == self.last_lan {
             return;
         }
-        tracing::info!(old = ?self.last_lan, new = ?lan, "our network changed");
+        tracing::info!(old = %crate::logaddr::opt_ip(self.last_lan), new = %crate::logaddr::opt_ip(lan), "our network changed");
         self.last_lan = lan;
         self.repunch_all_until = Some(now + REPUNCH_FOR);
         match self.stun_server {
@@ -508,6 +540,9 @@ impl Receiver {
         }
         if p.route.is_none() {
             p.connected_at = Some(Instant::now());
+            // silence counts from here: a peer we got through to and then never heard from
+            // (the path broke at once) would otherwise never be reported silent
+            p.last_heard.get_or_insert(Instant::now());
         }
         p.route = Some(addr);
         tracing::info!(id, addr = %crate::logaddr::Shown(addr), "peer connected");
@@ -525,9 +560,15 @@ impl Receiver {
     fn on_datagram(&mut self, data: &[u8], from: SocketAddr, plain: &mut [u8], frame: &mut Frame) {
         // the answer to "are we online?" (asked while a peer is silent)
         if let (Some(txid), Some(server)) = (self.probe, self.stun_server) {
-            if from == server && crate::stun::parse_response(data, &txid).is_some() {
+            if let (true, Some(seen)) = (from == server, crate::stun::parse_response(data, &txid)) {
                 self.probe = None;
                 self.internet_at = Instant::now();
+                if self.public.is_some_and(|p| p != seen) {
+                    tracing::warn!("our public address changed while peers went silent: the router moved us");
+                    self.moved = true;
+                    self.public = Some(seen);
+                    self.announce_addresses(Some(seen));
+                }
                 return;
             }
         }
@@ -536,6 +577,7 @@ impl Receiver {
             if from == server {
                 if let Some(public) = crate::stun::parse_response(data, &txid) {
                     self.stun_pending = None;
+                    self.public = Some(public);
                     self.announce_addresses(Some(public));
                 }
                 return;
@@ -572,6 +614,7 @@ impl Receiver {
                 self.internet_at = now;
                 if p.lost_reported && !matches!(inner, Packet::Bye { .. }) {
                     p.lost_reported = false;
+                    self.moved = false;
                     let _ = self.events.send(NetEvent::PeerBack { id: sender });
                 }
                 // roaming: a packet only this peer could have sealed, and new (the replay

@@ -47,14 +47,25 @@ export interface Env {
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CODE_LEN = 6;
 const GRACE_MS = 30_000;
+/** after a new host key (`rekey`), the one before still takes the code over for this long,
+ *  once, and only while no host holds it: the host may leave before its room has heard
+ *  the new key (right after someone else left, as a session ends), and the next host
+ *  only has the old one */
+const PREV_KEY_MS = 60_000;
 /** how often a room looks whether its host is still there */
 const HOST_CHECK_MS = 3600_000;
-/** a host that has not sent its keepalive ("ping", every 20 s) for this long is gone: its
+/** a host that has not sent its keepalive ("ping", every 5 s) for this long is gone: its
  *  PC lost power or its network, and the connection was never closed */
 const HOST_STALE_MS = 5 * 60_000;
 const MAX_ROOM = 16;
 /** join/open attempts per IP per minute (codes are short: no guessing sprees) */
 const ATTEMPTS_PER_MIN = 20;
+/** wrong room passwords one caller may give one room in `WRONG_WINDOW_MS`; past that its
+ *  requests to that room are refused here, before they reach the host. (The host also
+ *  stops answering everybody after many wrong ones in a minute: that is the guard against
+ *  guessing from many addresses, and it no longer locks everybody out because of one) */
+const WRONG_PER_WINDOW = 5;
+const WRONG_WINDOW_MS = 10 * 60_000;
 
 /** "k7m-q2x" → "K7MQ2X", or null if it is not a valid code. */
 export function normalizeCode(raw: string | null): string | null {
@@ -160,16 +171,17 @@ export default {
       return sayOnce({ t: "nearby", rooms }, 1000, "done");
     }
 
-    // brute-force guard: codes are short, so limit attempts per IP
+    // brute-force guard: codes are short, so limit attempts per IP; and a caller that gave
+    // this room's password wrong too often is not let through to it (same call)
     const limiter = env.LIMITER.get(env.LIMITER.idFromName(`attempts-${at.shard}`));
-    if (!(await limiter.hit(at.key, Number(env.ATTEMPTS_PER_MIN) || ATTEMPTS_PER_MIN))) {
-      return refuse("rate_limited", "시도가 너무 많아요. 잠시 후 다시 해 주세요.");
-    }
+    const joinCode = join ? normalizeCode(decodePath(join[1])) : null;
+    const verdict = await limiter.attempt(at.key, Number(env.ATTEMPTS_PER_MIN) || ATTEMPTS_PER_MIN, joinCode);
+    if (verdict === "limited") return refuse("rate_limited", "시도가 너무 많아요. 잠시 후 다시 해 주세요.");
+    if (verdict === "locked") return refuse("rate_limited", "비밀번호가 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.");
 
     if (join) {
-      const code = normalizeCode(decodePath(join[1]));
-      if (!code) return refuse("not_found", "방을 찾을 수 없어요. 코드를 다시 확인해 주세요.");
-      return env.ROOMS.get(env.ROOMS.idFromName(code)).fetch(withCode(req, code, "join", at.net));
+      if (!joinCode) return refuse("not_found", "방을 찾을 수 없어요. 코드를 다시 확인해 주세요.");
+      return env.ROOMS.get(env.ROOMS.idFromName(joinCode)).fetch(withCode(req, joinCode, "join", at.net, `${at.shard}:${at.key}`));
     }
 
     // host: reopen/take over a given code, or find a free one
@@ -187,11 +199,15 @@ export default {
   },
 };
 
-function withCode(req: Request, code: string, role: "host" | "join", net: string): Request {
+/** `who`: for a newcomer, its attempt shard and key (see `whereOf`), so that the room can
+ *  report a wrong password against it (`Counts.wrong`). Never the address itself. */
+function withCode(req: Request, code: string, role: "host" | "join", net: string, who = ""): Request {
   const r = new Request(req);
   r.headers.set("x-gachi-code", code);
   r.headers.set("x-gachi-role", role);
   r.headers.set("x-gachi-net", net);
+  r.headers.delete("x-gachi-who");
+  if (who) r.headers.set("x-gachi-who", who);
   // (the room never learns the address itself)
   r.headers.delete("CF-Connecting-IP");
   return r;
@@ -279,6 +295,9 @@ interface Stored {
   joinKey: string;
   /** the room has a password */
   locked: boolean;
+  /** the host key before the last `rekey`, and until when it still counts (see `PREV_KEY_MS`) */
+  prevKey?: string;
+  prevUntil?: number;
   /** where the room is listed for nearby people (the host's `whereOf` net), if at all */
   lobby?: { net: string; entry: LobbyEntry };
 }
@@ -300,6 +319,8 @@ interface Attachment {
   /** for hosts: messages in the minute that began at `since` (ms) */
   n?: number;
   since?: number;
+  /** for newcomers: its attempt shard and key (see `withCode`) */
+  who?: string;
 }
 
 /** what a newcomer is told when no host holds the code: it was mistyped, the room is over,
@@ -327,6 +348,7 @@ export class Jam extends DurableObject<Env> {
     const code = req.headers.get("x-gachi-code") ?? "";
     const role = req.headers.get("x-gachi-role") === "host" ? "host" : "join";
     const net = req.headers.get("x-gachi-net") ?? "local";
+    const who = req.headers.get("x-gachi-who") ?? undefined;
     // a code no host is connected to: refused here, without touching the object's storage
     // (most of these are mistyped or old codes, and each would leave an object behind)
     if (role === "join" && this.hosts().length === 0) return refuse(NO_HOST[0], NO_HOST[1]);
@@ -355,7 +377,7 @@ export class Jam extends DurableObject<Env> {
       if (waiting >= MAX_WAITING) return refuse("rate_limited", "지금 들어오려는 사람이 너무 많아요. 잠시 후 다시 해 주세요.");
     }
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({ role, code, net, at: Date.now() } satisfies Attachment);
+    server.serializeAttachment({ role, code, net, at: Date.now(), ...(role === "join" && who ? { who } : {}) } satisfies Attachment);
     // a newcomer first needs the host's join key to seal its request
     if (role === "join") {
       const room = await this.room();
@@ -452,14 +474,17 @@ export class Jam extends DurableObject<Env> {
   private async onHost(ws: WebSocket, att: Attachment, msg: any) {
     if (msg?.t !== "host_open" && !att.open) {
       // (nothing to do for a host that has not opened; and nothing read for it)
-      if (["capacity", "lobby", "admit", "close"].includes(msg?.t)) return;
+      if (["capacity", "lobby", "admit", "close", "rekey"].includes(msg?.t)) return;
       return this.fail(ws, "bad_request", "잘못된 요청이에요.");
     }
     const room = await this.ctx.storage.get<Stored>("room");
     switch (msg.t) {
       case "host_open": {
         const code = room?.code ?? att.code;
-        if (room && msg.host_key !== room.hostKey) {
+        // (the key before the last change: once, soon after, while nobody holds the code)
+        const byPrev =
+          !!room?.prevKey && msg.host_key === room.prevKey && Date.now() < (room.prevUntil ?? 0) && this.hosts().length === 0;
+        if (room && msg.host_key !== room.hostKey && !byPrev) {
           return this.fail(ws, "code_taken", "이 코드는 다른 방이 쓰고 있어요. 새 코드를 만들어 주세요.");
         }
         // (a host reopening a forgotten code brings the key we gave it; anything else gets a new one)
@@ -517,12 +542,29 @@ export class Jam extends DurableObject<Env> {
           .getWebSockets("join")
           .find((j) => (j.deserializeAttachment() as Attachment)?.req === msg.req);
         if (!joiner) return; // gave up meanwhile
+        // a wrong password: counted against the one who gave it (see `WRONG_PER_WINDOW`)
+        const ja = joiner.deserializeAttachment() as Attachment;
+        if (msg.result !== "accept" && msg.kind === "wrong_password" && ja.who) {
+          const [shard, key] = ja.who.split(":");
+          if (Number(shard) < SHARDS && key) await this.env.LIMITER.get(this.env.LIMITER.idFromName(`attempts-${shard}`)).wrong(key, ja.code);
+        }
         if (msg.result === "accept") {
           this.send(joiner, { t: "welcome", sealed: String(msg.welcome?.sealed ?? "") });
           this.finish(joiner, 1000, "welcome");
         } else {
           this.fail(joiner, reason(String(msg.kind ?? "bad_request")), String(msg.message ?? "들어갈 수 없어요.").slice(0, 200));
         }
+        return;
+      }
+      case "rekey": {
+        // a member was put out: every member has the key (to take the code over when the
+        // host leaves), and the one put out must not keep that power over the code
+        if (!att.open || !room) return;
+        room.prevKey = room.hostKey;
+        room.prevUntil = Date.now() + PREV_KEY_MS;
+        room.hostKey = randomKey();
+        await this.ctx.storage.put("room", room);
+        this.send(ws, { t: "rekeyed", host_key: room.hostKey });
         return;
       }
       case "close": {
@@ -736,16 +778,38 @@ function clampSize(n: unknown): number {
  */
 export class Counts extends DurableObject<Env> {
   private seen = new Map<string, { start: number; count: number }>();
+  /** wrong room passwords per caller and room ("key code"), in `WRONG_WINDOW_MS` from `start` */
+  private wrongs = new Map<string, { start: number; count: number }>();
 
-  async hit(key: string, limit: number): Promise<boolean> {
+  /** One attempt by `key`: "limited" past `limit` this minute; "locked" when it asks to join
+   *  `code` and gave that room's password wrong too often (see `WRONG_PER_WINDOW`). */
+  async attempt(key: string, limit: number, code: string | null): Promise<"ok" | "limited" | "locked"> {
     const now = Date.now();
     const h = this.seen.get(key);
     if (!h || now - h.start > 60_000) {
       this.seen.set(key, { start: now, count: 1 });
       if (this.seen.size > 1024) for (const [k, v] of this.seen) if (now - v.start > 60_000) this.seen.delete(k);
-      return true;
+    } else if (++h.count > limit) {
+      return "limited";
     }
-    return ++h.count <= limit;
+    if (code) {
+      const w = this.wrongs.get(`${key} ${code}`);
+      if (w && now - w.start <= WRONG_WINDOW_MS && w.count >= WRONG_PER_WINDOW) return "locked";
+    }
+    return "ok";
+  }
+
+  /** The host found `key`'s password for `code` wrong. */
+  async wrong(key: string, code: string) {
+    const now = Date.now();
+    const k = `${key} ${code}`;
+    const w = this.wrongs.get(k);
+    if (!w || now - w.start > WRONG_WINDOW_MS) {
+      this.wrongs.set(k, { start: now, count: 1 });
+      if (this.wrongs.size > 1024) for (const [x, v] of this.wrongs) if (now - v.start > WRONG_WINDOW_MS) this.wrongs.delete(x);
+    } else {
+      w.count++;
+    }
   }
 }
 

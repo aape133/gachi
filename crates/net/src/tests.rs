@@ -196,10 +196,16 @@ fn send_and_check(from: &Net, to_rx: &mut rtrb::Consumer<Frame>) {
     let mut sender = from.sender();
     let mut f = Frame { seq: 7, channels: 2, frames: 32, ..Frame::EMPTY };
     f.data[..64].iter_mut().enumerate().for_each(|(i, s)| *s = i as f32 / 100.0);
-    sender.send(&f);
-
+    // (sent again every 100 ms until it is there: what is checked is that the connection
+    // carries audio, and one datagram can be lost on a busy machine, the tests running side
+    // by side. It failed once that way. The receiver keeps one copy of a sequence number)
     let deadline = Instant::now() + Duration::from_secs(2);
+    let mut resend = Instant::now();
     let got = loop {
+        if Instant::now() >= resend {
+            sender.send(&f);
+            resend += Duration::from_millis(100);
+        }
         if let Ok(frame) = to_rx.pop() {
             break frame;
         }
@@ -459,5 +465,251 @@ fn sending_does_not_allocate() {
             }
         });
         assert_eq!(calls, 0, "send (doubled: {doubled}) asked the allocator {calls} times");
+    }
+}
+
+/// From the sender's call to the packet in the receiver's mixer ring: the receive thread
+/// must pick each one up at once (it waits on the socket, not on a timer). Prints the
+/// figures (`cargo test -p gachi-net arrival -- --nocapture`).
+#[test]
+fn audio_reaches_the_mixer_ring_at_once() {
+    let (a, _b, mut b_rx) = connected_pair(&spawn_stun());
+    thread::sleep(Duration::from_millis(300));
+    while b_rx.pop().is_ok() {}
+    let mut sender = a.sender();
+    let mut f = Frame { channels: 2, frames: 32, ..Frame::EMPTY };
+    let mut took = Vec::new();
+    for seq in 0..300u32 {
+        f.seq = seq;
+        let t = Instant::now();
+        sender.send(&f);
+        // (spun on: sleeping between looks would measure the sleep)
+        while b_rx.pop().is_err() {
+            if t.elapsed() > Duration::from_millis(100) {
+                break;
+            }
+            std::hint::spin_loop();
+        }
+        took.push(t.elapsed().as_micros() as u64);
+        thread::sleep(Duration::from_millis(2));
+    }
+    took.sort_unstable();
+    let at = |q: f64| took[((took.len() - 1) as f64 * q) as usize];
+    println!("arrival µs: p50 {} p90 {} p99 {} max {}", at(0.5), at(0.9), at(0.99), at(1.0));
+    assert!(at(0.5) < 2_000, "half the packets took over 2 ms: {took:?}");
+    assert!(at(0.99) < 20_000, "p99 {} µs", at(0.99));
+}
+
+/// The started socket does not wait: a send the system has no room for is dropped instead
+/// of holding up the audio callback (see `Sock::set_nonblocking`).
+#[cfg(windows)]
+#[test]
+fn the_socket_never_waits() {
+    let a = start(&spawn_stun(), 1);
+    let mut buf = [0u8; 64];
+    let t = Instant::now();
+    let r = a.socket.recv_from(&mut buf);
+    assert!(matches!(&r, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock), "{r:?}");
+    assert!(t.elapsed() < Duration::from_millis(3), "a read waited {:?}", t.elapsed());
+}
+
+/// With nothing to read the receive thread waits on the socket: it must not spin (the
+/// socket no longer waits by itself). Measured as the thread's own CPU time over a second.
+#[cfg(windows)]
+#[test]
+fn an_idle_receive_thread_does_not_spin() {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::GetThreadTimes;
+    let a = start(&spawn_stun(), 1);
+    let handle = a.thread.as_ref().unwrap().as_raw_handle();
+    let cpu = || {
+        let z = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let (mut c, mut e, mut k, mut u) = (z, z, z, z);
+        // SAFETY: the handle of a thread that lives as long as `a`; four valid out-pointers
+        assert_ne!(unsafe { GetThreadTimes(handle as _, &mut c, &mut e, &mut k, &mut u) }, 0);
+        let t = |f: FILETIME| ((f.dwHighDateTime as u64) << 32 | f.dwLowDateTime as u64) / 10; // µs
+        t(k) + t(u)
+    };
+    thread::sleep(Duration::from_millis(200));
+    let before = cpu();
+    thread::sleep(Duration::from_secs(1));
+    let used = cpu() - before;
+    assert!(used < 100_000, "the idle receive thread used {used} µs of CPU in a second");
+}
+
+/* ───────────── behind routers (see `nat_sim`) ───────────── */
+
+mod behind_routers {
+    use super::*;
+    use crate::nat_sim::{reachable, stun_at, Filter, Mapping, Nat};
+    use std::net::Ipv4Addr;
+
+    fn lo(n: u8) -> Ipv4Addr {
+        Ipv4Addr::new(127, 0, 0, n)
+    }
+
+    /// A peer behind `nat`: it asks the STUN servers through it, as it would at home.
+    fn behind(nat: &Nat, stuns: &[SocketAddr], id: PeerId) -> Net {
+        let servers: Vec<String> = stuns.iter().map(|s| nat.view(*s).to_string()).collect();
+        start_with_servers(&servers, id)
+    }
+
+    fn start_with_servers(servers: &[String], id: PeerId) -> Net {
+        let g = Gathered::gather(servers).unwrap();
+        Net::start(g, cfg(id)).unwrap()
+    }
+
+    /// Two peers, each behind its router, told of each other as the room tells them (the
+    /// addresses each announced, as the other's router shows them). Two STUN servers, as
+    /// the app asks: that is how a router that changes ports per destination is noticed.
+    fn pair(na: &Nat, nb: &Nat) -> (Net, Net, rtrb::Consumer<Frame>) {
+        let stuns = [stun_at(lo(10)), stun_at(lo(11))];
+        let a = behind(na, &stuns, 1);
+        let b = behind(nb, &stuns, 2);
+        let (a_tx, _) = rtrb::RingBuffer::<Frame>::new(64);
+        let (b_tx, b_rx) = rtrb::RingBuffer::<Frame>::new(64);
+        a.add_peer(2, a_tx);
+        b.add_peer(1, b_tx);
+        a.set_candidates(2, reachable(&b.candidates, nb, na), b.token, b.peer_key());
+        b.set_candidates(1, reachable(&a.candidates, na, nb), a.token, a.peer_key());
+        (a, b, b_rx)
+    }
+
+    /// Connected, or punching gave up (`None`), within the punch timeout.
+    fn outcome(net: &Net) -> Option<SocketAddr> {
+        let deadline = Instant::now() + NetConfig::DEFAULT_PUNCH_TIMEOUT + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            match net.try_event() {
+                Some(NetEvent::Connected { addr, .. }) => return Some(addr),
+                Some(NetEvent::PunchFailed { .. }) => return None,
+                _ => thread::sleep(Duration::from_millis(5)),
+            }
+        }
+        panic!("neither connected nor gave up");
+    }
+
+    fn connects(na: Nat, nb: Nat) {
+        let (a, b, mut b_rx) = pair(&na, &nb);
+        assert!(outcome(&a).is_some(), "a did not get through");
+        assert!(outcome(&b).is_some(), "b did not get through");
+        thread::sleep(Duration::from_millis(100));
+        while b_rx.pop().is_ok() {}
+        send_and_check(&a, &mut b_rx);
+    }
+
+    fn home(ip: u8) -> Nat {
+        Nat::new(lo(ip), Mapping::Independent, Filter::AddressPort)
+    }
+
+    fn symmetric(ip: u8) -> Nat {
+        Nat::new(lo(ip), Mapping::PerDestination, Filter::AddressPort)
+    }
+
+    /// The common case: two homes, each router port restricted (it lets in only what
+    /// answers what was sent).
+    #[test]
+    fn home_router_to_home_router() {
+        connects(home(20), home(21));
+    }
+
+    #[test]
+    fn open_router_to_home_router() {
+        connects(Nat::new(lo(22), Mapping::Independent, Filter::Open), home(23));
+    }
+
+    #[test]
+    fn address_restricted_router_to_home_router() {
+        connects(Nat::new(lo(24), Mapping::Independent, Filter::Address), home(25));
+    }
+
+    /// A phone's hotspot (a carrier that changes ports per destination, in order) to a
+    /// home: the home side knocks on the ports the hotspot will use next.
+    #[test]
+    fn hotspot_to_home_router() {
+        connects(symmetric(26), home(27));
+    }
+
+    /// A hotspot whose ports cannot be guessed, to a home router that only lets in what
+    /// answers what it sent: nobody can get in. To one that lets in anything from an
+    /// address it sent to (address restricted, or a port opened by UPnP), it gets through.
+    #[test]
+    fn unguessable_hotspot_needs_the_home_side_open() {
+        let random = || Nat::new(lo(30), Mapping::PerDestinationRandom, Filter::AddressPort);
+        let (a, b, _) = pair(&random(), &home(31));
+        assert_eq!((outcome(&a), outcome(&b)), (None, None), "port restricted home: no way in");
+        drop((a, b));
+        connects(random(), Nat::new(lo(32), Mapping::Independent, Filter::Address));
+    }
+
+    /// The router forgets its mappings mid-session (restarted, or a carrier NAT moved us):
+    /// what one side sends goes out from a new public port, which the other side's router
+    /// does not let in, and nothing gets back either. The side that moved must know it is
+    /// its own silence (the app then comes back in through the room); the other side sees
+    /// a peer that went away.
+    #[test]
+    fn a_router_that_forgets_its_mappings_is_noticed_by_its_own_side() {
+        let (na, nb) = (home(33), home(34));
+        let (a, b, _) = pair(&na, &nb);
+        assert!(outcome(&a).is_some() && outcome(&b).is_some());
+        thread::sleep(Duration::from_millis(300));
+        na.rebind();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let (mut a_lost, mut b_lost) = (None, None);
+        while Instant::now() < deadline && (a_lost.is_none() || b_lost.is_none()) {
+            if let Some(NetEvent::PeerLost { online, .. }) = a.try_event() {
+                a_lost = Some(online);
+            }
+            if let Some(NetEvent::PeerLost { online, .. }) = b.try_event() {
+                b_lost = Some(online);
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(a_lost, Some(false), "a's address moved: its own silence (as if offline)");
+        assert_eq!(b_lost, Some(true), "b's internet is fine: a went away");
+    }
+
+    /// A path that breaks right after connecting, before anything sealed came through: the
+    /// peer must still be reported silent (it was never "heard", so it never was).
+    #[test]
+    fn a_peer_never_heard_after_connecting_still_goes_silent() {
+        let (na, nb) = (home(35), home(36));
+        let (a, _b, _) = pair(&na, &nb);
+        assert!(outcome(&a).is_some());
+        na.rebind();
+        let deadline = Instant::now() + Duration::from_secs(14);
+        while Instant::now() < deadline {
+            if let Some(NetEvent::PeerLost { .. }) = a.try_event() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        panic!("never reported silent");
+    }
+
+    /// Two people behind the same carrier NAT (two homes, or two phones, of one provider):
+    /// each can reach the other only at the carrier's public address, which only works if
+    /// the carrier's router sends that back in ("hairpinning"). Without it, punching gives
+    /// up and says so.
+    #[test]
+    fn two_behind_one_carrier_nat() {
+        let carrier = || Nat::new(lo(40), Mapping::Independent, Filter::AddressPort);
+        let cgn = carrier();
+        connects(cgn.clone(), cgn);
+        let cgn = carrier().without_hairpin();
+        let (a, b, _) = pair(&cgn, &cgn);
+        assert_eq!((outcome(&a), outcome(&b)), (None, None));
+    }
+
+    /// Two hotspots: neither can guess where the other will be let in. Punching must give
+    /// up and say so (no relay).
+    #[test]
+    fn hotspot_to_hotspot_gives_up() {
+        let (na, nb) = (symmetric(28), symmetric(29));
+        let (a, b, _) = pair(&na, &nb);
+        assert_eq!(outcome(&a), None, "a should have given up");
+        assert_eq!(outcome(&b), None, "b should have given up");
+        // (the routers did turn the knocking away: nothing went around them)
+        assert!(na.filtered() > 0 && nb.filtered() > 0);
     }
 }

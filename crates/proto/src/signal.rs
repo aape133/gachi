@@ -215,6 +215,10 @@ pub enum ToWorker {
     Close,
     /// Host: show the room to people on the same network (`None`: stop showing it).
     Lobby { lobby: Option<Lobby> },
+    /// Host: a member was put out. The code's `host_key` is shared with every member (so the
+    /// next host can take the code over): give the code a new one, which the room is told
+    /// without the member put out. Answered with [`FromWorker::Rekeyed`].
+    Rekey,
     /// Newcomer (on `/ws/join/{code}`), after the server's [`FromWorker::Host`].
     Join {
         #[serde(flatten)]
@@ -229,6 +233,9 @@ pub enum FromWorker {
     /// To the host: the code is open. Keep `host_key` (share it in the room) to reopen or
     /// take over this code later.
     Opened { code: String, host_key: String },
+    /// To the host, after [`ToWorker::Rekey`]: the code's new `host_key` (the old one no
+    /// longer takes the code over).
+    Rekeyed { host_key: String },
     /// To the host: someone wants in.
     JoinRequest {
         req: u32,
@@ -295,5 +302,13 @@ mod tests {
         assert_eq!(w, FromWorker::Welcome { welcome: SealedWelcome { sealed: "ee".into() } });
         let h: FromWorker = serde_json::from_str(r#"{"t":"host","join_key":"00","locked":true}"#).unwrap();
         assert_eq!(h, FromWorker::Host { join_key: "00".into(), locked: true });
+    }
+
+    /// A new host key on the server's terms: `{"t":"rekey"}` out, `rekeyed` back.
+    #[test]
+    fn a_new_host_key_is_asked_for_and_told() {
+        assert_eq!(serde_json::to_string(&ToWorker::Rekey).unwrap(), r#"{"t":"rekey"}"#);
+        let m: FromWorker = serde_json::from_str(r#"{"t":"rekeyed","host_key":"0123456789abcdef0123456789abcdef"}"#).unwrap();
+        assert_eq!(m, FromWorker::Rekeyed { host_key: "0123456789abcdef0123456789abcdef".into() });
     }
 }

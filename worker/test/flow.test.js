@@ -6,7 +6,8 @@ import { spawn } from "node:child_process";
 
 const PORT = 8799;
 const BASE = `127.0.0.1:${PORT}`;
-const LIMIT = 40;
+// (the tests before the one about it make about 60 attempts in the first minute)
+const LIMIT = 90;
 let dev;
 
 before(async () => {
@@ -184,6 +185,88 @@ test("only the key holder can take over a code; a dropped host keeps it for a wh
   next.send(hostOpen({ code, host_key: key }));
   assert.deepEqual(await next.next(), { t: "opened", code, host_key: key });
   next.send({ t: "close" });
+});
+
+test("a new key for the code: the old one no longer takes it over, the new one does", async () => {
+  const { host, code, key } = await openRoom();
+  host.send({ t: "rekey" });
+  const m = await host.next();
+  assert.equal(m.t, "rekeyed");
+  assert.match(m.host_key, /^[0-9a-f]{32}$/);
+  assert.notEqual(m.host_key, key);
+
+  // someone put out (who had the old key) cannot take the code
+  const kicked = await connect(`/ws/host?code=${code}`);
+  kicked.send(hostOpen({ code, host_key: key }));
+  assert.equal((await kicked.next()).kind, "code_taken");
+
+  // the next host, told the new key, can
+  host.close();
+  await sleep(300);
+  const next = await connect(`/ws/host?code=${code}`);
+  next.send(hostOpen({ code, host_key: m.host_key }));
+  assert.deepEqual(await next.next(), { t: "opened", code, host_key: m.host_key });
+  next.send({ t: "close" });
+
+  // (a host connection that has not opened a room cannot ask for one)
+  const stranger = await connect(`/ws/host?code=${code}`);
+  stranger.send({ t: "rekey" });
+  assert.equal(await stranger.next(500), "timeout");
+  stranger.close();
+});
+
+test("one who gives a room's password wrong too often is kept from that room only", async () => {
+  const { host, code } = await openRoom(4, true);
+  const other = await openRoom(4, true);
+  // five wrong passwords: each reaches the host, which says so
+  for (let i = 0; i < 5; i++) {
+    const j = await joiner(code);
+    j.send(joinMsg(true));
+    const r = await host.next();
+    assert.equal(r.t, "join_request");
+    host.send({ t: "admit", req: r.req, result: "reject", kind: "wrong_password", message: "비밀번호가 맞지 않아요." });
+    assert.equal((await j.next()).kind, "wrong_password");
+    j.close();
+  }
+  await sleep(100);
+  // the sixth is refused before it reaches the host
+  const locked = await connect(`/ws/join/${code}`);
+  const m = await locked.next();
+  assert.equal(m.kind, "rate_limited");
+  assert.match(m.message, /비밀번호/);
+  assert.equal(await host.next(300), "timeout", "the host heard nothing of it");
+  locked.close();
+  // another room is not affected
+  const elsewhere = await joiner(other.code);
+  elsewhere.send(joinMsg(true));
+  assert.equal((await other.host.next()).t, "join_request");
+  elsewhere.close();
+  host.send({ t: "close" });
+  other.host.send({ t: "close" });
+});
+
+test("a host that leaves before its room heard the new key: the next one gets in with the old", async () => {
+  const { host, code, key } = await openRoom();
+  host.send({ t: "rekey" });
+  const fresh = (await host.next()).host_key;
+  host.close();
+  await sleep(300);
+  // the next host only has the old key: let in once, and told the current one
+  const next = await connect(`/ws/host?code=${code}`);
+  next.send(hostOpen({ code, host_key: key }));
+  assert.deepEqual(await next.next(), { t: "opened", code, host_key: fresh });
+  // while it holds the code, the old key takes nothing
+  const other = await connect(`/ws/host?code=${code}`);
+  other.send(hostOpen({ code, host_key: key }));
+  assert.equal((await other.next()).kind, "code_taken");
+  other.close();
+  // nor after it leaves (it was used)
+  next.close();
+  await sleep(300);
+  const again = await connect(`/ws/host?code=${code}`);
+  again.send(hostOpen({ code, host_key: key }));
+  assert.equal((await again.next()).kind, "code_taken");
+  again.close();
 });
 
 const GW = "0123456789abcdef0123456789abcdef";

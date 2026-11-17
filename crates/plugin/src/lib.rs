@@ -246,39 +246,52 @@ impl Processor {
         }
     }
 
-    /// Sends `a.up[..n * 2]` (the block, already copied in) and leaves the app's mix in
-    /// `a.down[..n * 2]` (silence for what did not come back in time).
-    #[cfg(windows)]
-    fn exchange(&self, a: &mut Audio, end: &mut Bridge, n: usize) {
-        // every block, not only on a change: the bridge may be a new one (the app restarted
-        // and started on a fresh region) that has never heard it. Two stores into the line
-        // the heartbeat already writes.
-        end.set_format(a.sample_rate, n as u32);
-        // 1. send (before anything of the others is added: it never goes back to them)
-        let t = Instant::now();
-        end.write_up(&a.up[..n * 2]);
-        // 2. the app answers within microseconds: wait for it, a little
-        let budget = if a.missed >= 2 {
-            Duration::ZERO
-        } else {
-            Duration::from_secs_f64(n as f64 / a.sample_rate.max(1) as f64 / 4.0).min(MAX_WAIT)
-        };
-        while end.down_available() < n && t.elapsed() < budget && end.app_alive() {
-            std::hint::spin_loop();
-        }
-        a.missed = if end.down_available() >= n { 0 } else { a.missed.saturating_add(1) };
-        // a backlog (the app answered late before): play the newest, not old sound
-        while end.down_available() >= 2 * n {
-            end.read_down(&mut a.down[..n * 2]);
-        }
-        let got = end.read_down(&mut a.down[..n * 2]);
-        a.down[got * 2..n * 2].fill(0.0);
-    }
+}
 
-    #[cfg(not(windows))]
-    fn exchange(&self, a: &mut Audio, _: &mut Bridge, n: usize) {
-        a.down[..n * 2].fill(0.0);
+/// Sends `a.up[..n * 2]` (the block, already copied in) and leaves the app's mix in
+/// `a.down[..n * 2]` (silence for what did not come back in time).
+#[cfg(windows)]
+fn exchange(a: &mut Audio, end: &mut Bridge, n: usize) {
+    // every block, not only on a change: the bridge may be a new one (the app restarted
+    // and started on a fresh region) that has never heard it. Two stores into the line
+    // the heartbeat already writes.
+    end.set_format(a.sample_rate, n as u32);
+    // what is waiting already was mixed for an earlier block (the app answered late once):
+    // this block's mix comes after it. Waiting only for "a block's worth" took that old
+    // mix for this one, and from then on every block played the mix of the block before:
+    // a block of delay for good, from a single late answer
+    let stale = end.down_available();
+    let want = stale + n;
+    // 1. send (before anything of the others is added: it never goes back to them)
+    let t = Instant::now();
+    end.write_up(&a.up[..n * 2]);
+    // 2. the app answers within microseconds: wait for it, a little. An app that keeps
+    // missing (gone, stuck, or slower than the wait) is not waited for on every block (the
+    // wait is a quarter of the block, spent on the DAW's audio thread), but on every 8th:
+    // after a stall of a few blocks it is quick again, and back in step within 8 blocks
+    let wait = a.missed < 2 || a.missed.is_multiple_of(8);
+    let budget = if wait { Duration::from_secs_f64(n as f64 / a.sample_rate.max(1) as f64 / 4.0).min(MAX_WAIT) } else { Duration::ZERO };
+    while end.down_available() < want && t.elapsed() < budget && end.app_alive() {
+        std::hint::spin_loop();
     }
+    a.missed = if end.down_available() >= want { 0 } else { a.missed.saturating_add(1) };
+    // 3. the newest block's worth: what is older goes (play current sound, not old). If
+    // this block's mix is not back, that is the last one's: a block late beats silence
+    let mut extra = end.down_available().saturating_sub(n);
+    while extra > 0 {
+        let k = extra.min(n);
+        if end.read_down(&mut a.down[..k * 2]) == 0 {
+            break;
+        }
+        extra -= k;
+    }
+    let got = end.read_down(&mut a.down[..n * 2]);
+    a.down[got * 2..n * 2].fill(0.0);
+}
+
+#[cfg(not(windows))]
+fn exchange(a: &mut Audio, _: &mut Bridge, n: usize) {
+    a.down[..n * 2].fill(0.0);
 }
 
 #[cfg(windows)]
@@ -384,7 +397,7 @@ impl Processor {
             a.up[k * 2] = *li.add(k);
             a.up[k * 2 + 1] = *ri.add(k);
         }
-        self.exchange(&mut a, end, n);
+        exchange(&mut a, end, n);
         let own = if self.own.load(Relaxed) { own_gain(end) } else { 0.0 };
         self.link.well.store(bridge_well(end), Relaxed);
         self.link.blocks.fetch_add(1, Relaxed);
@@ -820,4 +833,57 @@ extern "system" fn ExitDll() -> bool {
 #[no_mangle]
 extern "system" fn GetPluginFactory() -> *mut IPluginFactory {
     ComWrapper::new(Factory).to_com_ptr::<IPluginFactory>().map_or(ptr::null_mut(), |p| p.into_raw())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// The app answers one block late once (its thread was held up); after that it answers
+    /// at once again. The plugin must go back to playing each block's own mix, not stay a
+    /// block behind for the rest of the session.
+    #[test]
+    fn one_late_answer_does_not_leave_the_mix_a_block_behind() {
+        let name = format!("gachi-plugin-test-{}", std::process::id());
+        let app = gachi_bridge::AppEnd::create(&name).expect("bridge");
+        let mut end = gachi_bridge::PluginEnd::open(&name, 7).expect("plugin end");
+        let stop = Arc::new(AtomicBool::new(false));
+        let quit = stop.clone();
+        // the app: hands each block straight back as the mix (so a mix says which block it
+        // was made for); the first answer comes 5 ms late
+        let worker = std::thread::spawn(move || {
+            let mut up = vec![0f32; 8192];
+            let mut first = true;
+            while !quit.load(Ordering::Relaxed) {
+                if !app.wait(20) && app.up_available() == 0 {
+                    continue;
+                }
+                let n = app.read_up(&mut up);
+                if n == 0 {
+                    continue;
+                }
+                if std::mem::take(&mut first) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                app.write_down(&up[..n * 2]);
+            }
+        });
+        let n = 256;
+        let mut a = Audio { sample_rate: 48_000, missed: 0, own: f32::NAN, up: vec![0.0; n * 2], down: vec![0.0; n * 2] };
+        // (the stall spans a few blocks, then the plugin waits again within 8 blocks)
+        let mut current = 0;
+        let blocks = 40;
+        for k in 1..=blocks {
+            a.up.fill(k as f32);
+            exchange(&mut a, &mut end, n);
+            if k > blocks - 20 && a.down.iter().all(|&s| s == k as f32) {
+                current += 1;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        stop.store(true, Ordering::Relaxed);
+        worker.join().unwrap();
+        assert!(current >= 18, "{current} of the last 20 blocks played their own mix");
+    }
 }

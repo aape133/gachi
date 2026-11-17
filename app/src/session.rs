@@ -96,6 +96,27 @@ const CODE_OPEN_FOR: Duration = Duration::from_secs(12 * 3600);
 
 /// A room's name as shown (and passed on): plain text, of a sensible length.
 const ROOM_NAME_MAX: usize = 40;
+/// The longest room password (characters): what the password box when joining takes.
+pub const PASSWORD_MAX: usize = 64;
+
+/// The room state as it can be sent: one control packet at most (a message that does not
+/// fit is not sent at all, and members would miss the key the next host needs). The
+/// oldest bans go first; nothing else in it is long.
+fn fitting(mut state: RoomState) -> RoomState {
+    while !state.banned.is_empty() && PeerMsg::RoomState(state.clone()).to_bytes().len() > gachi_proto::audio::MAX_CONTROL_PAYLOAD {
+        state.banned.remove(0);
+    }
+    state
+}
+/// The number for a newcomer: `next` (the room's next unused one), or past everyone here,
+/// whichever is higher; numbers are not reused, so a newcomer is never taken for someone
+/// who was here before. After the last number (65 000 joins, or a `next` from a hostile
+/// former host) the lowest free one: never a number someone here has, never an overflow.
+fn next_peer_id(next: PeerId, taken: &[PeerId]) -> PeerId {
+    let start = taken.iter().max().map_or(2, |m| m.saturating_add(1)).max(next).max(2);
+    (start..u16::MAX).chain(2..start).find(|k| !taken.contains(k)).unwrap_or(start)
+}
+
 fn clip_room_name(name: &str) -> String {
     let name: String = gachi_proto::peer::clean_text(name).trim().chars().take(ROOM_NAME_MAX).collect();
     if name.is_empty() { "새 합주실".into() } else { name }
@@ -608,13 +629,28 @@ impl Session {
         }
     }
 
-    /// A peer left (goodbye) or the server said so.
-    fn peer_gone(&mut self, app: &AppHandle, id: PeerId) {
+    /// A peer left (goodbye) or the server said so. `rekey`: give the code a new host key
+    /// (see `rekey`; false for a member put out, whose key was changed when it was).
+    fn peer_gone(&mut self, app: &AppHandle, id: PeerId, rekey: bool) {
         if let Some(p) = self.remove_peer(id) {
             let _ = app.emit("peer-left", json!({ "id": id.to_string(), "name": p.info.profile.name }));
             self.refresh_host(app);
             self.send_capacity();
+            if rekey {
+                self.rekey();
+            }
             let _ = app.emit("room", self.room_view());
+        }
+    }
+
+    /// Host holding the code: ask the server for a new host key (the answer, `Rekeyed`, is
+    /// shared with the room). Every member has the key, to take the code over when the
+    /// host leaves; one who has left (or was put out) must not keep that power over the
+    /// code. A host that has just become host has no connection yet: it takes the code
+    /// over with the key as it is (nothing to do here).
+    fn rekey(&self) {
+        if let (true, Some(g)) = (self.is_host, &self.gate) {
+            g.send(ToWorker::Rekey);
         }
     }
 
@@ -643,9 +679,20 @@ impl Session {
         let over = self.room_state.banned.len().saturating_sub(MAX_BANNED);
         self.room_state.banned.drain(..over);
         self.broadcast(&PeerMsg::Kick { id });
-        self.broadcast_room_state();
-        if !self.kicked.iter().any(|(k, _)| *k == id) {
+        let first = !self.kicked.iter().any(|(k, _)| *k == id);
+        if first {
             self.kicked.push((id, Instant::now()));
+        }
+        // the code's host key: every member has it (the next host takes the code over with
+        // it), the one put out too, who could then take the code away from this room and
+        // answer its newcomers. The server gives the code a new key (`Rekeyed` tells the
+        // room, not the one put out); with the code off, the next opening gets a new one
+        match &self.gate {
+            Some(_) => self.rekey(),
+            None => self.room_state.host_key = None,
+        }
+        self.broadcast_room_state();
+        if first {
             notice(app, format!("{name}님을 내보냈어요. 이 방에 다시 들어올 수 없어요."));
         }
         Ok(())
@@ -659,7 +706,7 @@ impl Session {
         if !due.is_empty() {
             self.kicked.retain(|(id, _)| !due.contains(id));
             for id in due {
-                self.peer_gone(app, id);
+                self.peer_gone(app, id, false);
             }
             return true;
         }
@@ -683,7 +730,7 @@ impl Session {
             .collect();
         for (id, name) in &gone {
             notice(app, format!("{name}님이 오래 응답이 없어서 나간 것으로 처리했어요."));
-            self.peer_gone(app, *id);
+            self.peer_gone(app, *id, true);
         }
         let never: Vec<(PeerId, String)> = self
             .peers
@@ -694,7 +741,7 @@ impl Session {
         for (id, name) in &never {
             tracing::warn!(id, "never connected: taken off the list");
             notice(app, format!("{name}님과 끝내 연결되지 않아서 목록에서 뺐어요."));
-            self.peer_gone(app, *id);
+            self.peer_gone(app, *id, true);
         }
         !gone.is_empty() || !never.is_empty()
     }
@@ -710,6 +757,8 @@ impl Session {
             g.send(ToWorker::Close); // forget the code right away
         }
         self.room_state.open = false;
+        // (see `configure`: the next opening gets a new key)
+        self.room_state.host_key = None;
         self.broadcast_room_state();
         let _ = app.emit("room", self.room_view());
         tracing::info!("the code was on for 12 hours: turned off");
@@ -730,9 +779,14 @@ impl Session {
     }
 
     /// Host: share the room state (members need it to take over as host).
+    /// Not to members just put out (they are still here for a moment, see `KICK_LINGER`):
+    /// the state holds the code's host key.
     pub fn broadcast_room_state(&self) {
         if self.is_host {
-            self.broadcast(&PeerMsg::RoomState(self.room_state.clone()));
+            let bytes = PeerMsg::RoomState(fitting(self.room_state.clone())).to_bytes();
+            for &id in self.peers.keys().filter(|id| !self.kicked.iter().any(|(k, _)| k == *id)) {
+                self.net.send_control(id, bytes.clone());
+            }
             self.sync_lobby();
         }
     }
@@ -827,8 +881,9 @@ impl Session {
     /// Host: lets an (opened, checked) newcomer in: gives it an id and the member list, and
     /// introduces it to everyone.
     fn admit(&mut self, app: &AppHandle, join: JoinRequest) -> Welcome {
-        let id = self.room_state.next_id.max(self.peers.keys().copied().chain([self.me]).max().unwrap_or(1) + 1);
-        self.room_state.next_id = id + 1;
+        let taken: Vec<PeerId> = self.peers.keys().copied().chain([self.me]).collect();
+        let id = next_peer_id(self.room_state.next_id, &taken);
+        self.room_state.next_id = id.saturating_add(1);
         let newcomer = PeerInfo {
             id,
             profile: clip_profile(join.profile),
@@ -955,7 +1010,7 @@ impl Session {
                     let _ = app.emit("kicked", json!({}));
                 } else if let Some(p) = self.peers.get(&id) {
                     notice(app, format!("방장이 {}님을 내보냈어요.", p.info.profile.name));
-                    self.peer_gone(app, id);
+                    self.peer_gone(app, id, true);
                 }
             }
             PeerMsg::Candidates { mut addrs } => {
@@ -1127,7 +1182,7 @@ impl Session {
                     Some(msg) => self.on_peer_msg(app, id, msg),
                     None => tracing::warn!(id, "unreadable room message"),
                 },
-                NetEvent::PeerLeft { id } => self.peer_gone(app, id),
+                NetEvent::PeerLeft { id } => self.peer_gone(app, id, true),
                 NetEvent::PeerLost { id, online } => {
                     // keep them for a while: a network hiccup often heals (see `drop_silent_peers`)
                     if let Some(p) = self.peers.get_mut(&id) {
@@ -1144,7 +1199,8 @@ impl Session {
                     if !self.cut_off && is_cut_off(self.peers.len(), &silent) {
                         self.cut_off = true;
                         tracing::warn!("everyone went silent at once: our own connection dropped");
-                        notice(app, "내 인터넷 연결이 끊겼어요. 다시 연결되기를 기다리는 중이에요.".into());
+                        // (the internet itself may be fine: the router may have moved us)
+                        notice(app, "내 연결이 끊겼어요. 다시 연결되기를 기다리는 중이에요.".into());
                     }
                 }
                 NetEvent::PunchFailed { id } => {
@@ -1724,9 +1780,11 @@ pub fn notice(app: &AppHandle, text: String) {
     let _ = app.emit("notice", json!({ "text": text }));
 }
 
-/// Wrong-password joins the host takes per window before it refuses all for a while (the
-/// connection server also limits attempts per address).
-const BAD_TRIES_MAX: usize = 5;
+/// Wrong-password joins the host takes per window before it refuses all for a while: the
+/// guard against guessing from many addresses. One caller is kept out by the connection
+/// server after 5 wrong in 10 minutes (it alone sees who asks: a wrong password cannot be
+/// opened here); at 5 here, one guesser locked everybody out of the room.
+const BAD_TRIES_MAX: usize = 30;
 const BAD_TRIES_WINDOW: Duration = Duration::from_secs(60);
 
 fn stun_servers() -> Vec<String> {
@@ -2153,6 +2211,56 @@ mod tests {
         // one other, silent while nothing answered us: it is us
         assert!(super::is_cut_off(1, &[(t, true)]));
         assert!(!super::is_cut_off(0, &[]));
+    }
+
+    /// The largest room messages the app can make must fit one control packet: one that
+    /// does not is not sent at all (and the room state carries the key the next host needs).
+    #[test]
+    fn the_biggest_room_messages_fit_a_packet() {
+        use gachi_proto::audio::MAX_CONTROL_PAYLOAD;
+        use gachi_proto::signal::{AudioInfo, Link, PeerInfo, Profile};
+        use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+        let v6 = |k: u16| Ipv6Addr::new(0xfedc, 0xba98, 0x7654, 0x3210, 0xffff, 0xeeee, 0xdddd, k);
+        let state = RoomState {
+            code: "ABCDEF".into(),
+            name: "가".repeat(super::ROOM_NAME_MAX),
+            open: true,
+            max_peers: 16,
+            // the longest a password can be, of characters that take the most room in JSON
+            password: Some("\"".repeat(super::PASSWORD_MAX)),
+            host_key: Some("f".repeat(32)),
+            next_id: u16::MAX,
+            banned: (0..super::MAX_BANNED as u16).map(|k| IpAddr::V6(Ipv6Addr::new(0xfedc, 0xba98, 0x7654, k | 0xf000, 0, 0, 0, 0))).collect(),
+        };
+        let n = PeerMsg::RoomState(super::fitting(state.clone())).to_bytes().len();
+        println!("room state: {} bytes as is, {n} as sent", PeerMsg::RoomState(state).to_bytes().len());
+        assert!(n <= MAX_CONTROL_PAYLOAD, "room state {n} bytes");
+        let peer = PeerInfo {
+            id: u16::MAX,
+            profile: Profile { name: "🎸".repeat(12), instrument: "🎸".repeat(12), color: Some(15) },
+            is_host: true,
+            candidates: (0..super::MAX_CANDIDATES as u16).map(|k| SocketAddr::new(IpAddr::V6(v6(k | 0xf000)), 65535)).collect(),
+            token: u32::MAX,
+            key: Some([255; 32]),
+            aes: true,
+            audio: Some(AudioInfo { input_ms: 123.456_79, sample_rate: 384_000, link: Link::Wifi }),
+            seats: 16,
+        };
+        let n = PeerMsg::Introduce { peer }.to_bytes().len();
+        println!("introduction: {n} bytes");
+        assert!(n <= MAX_CONTROL_PAYLOAD, "introduction {n} bytes");
+    }
+
+    #[test]
+    fn newcomers_get_a_number_nobody_has_even_at_the_end() {
+        use super::next_peer_id;
+        assert_eq!(next_peer_id(2, &[1]), 2);
+        assert_eq!(next_peer_id(5, &[1, 2]), 5, "numbers are not reused");
+        assert_eq!(next_peer_id(0, &[1, 7]), 8);
+        // the last numbers: the lowest free one, no overflow
+        assert_eq!(next_peer_id(u16::MAX, &[1, 2, 3]), 4);
+        assert_eq!(next_peer_id(9, &[1, u16::MAX - 1]), 2);
+        assert_eq!(next_peer_id(u16::MAX, &[u16::MAX]), 2);
     }
 
     #[test]

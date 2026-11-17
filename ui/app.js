@@ -249,7 +249,7 @@
     if (!room || rejoining) return;
     rejoining = true;
     leaveRoom();
-    toast('인터넷 연결이 끊겨서 방에서 나왔어요. 다시 들어가는 중이에요…');
+    toast('연결이 끊겨서 방에서 나왔어요. 다시 들어가는 중이에요…');
     try {
       for (let i = 0; i < 8; i++) {
         const r = await join(code, password || undefined);

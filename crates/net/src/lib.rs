@@ -123,6 +123,9 @@ pub struct Gathered {
     pub public: Option<SocketAddr>,
     /// how the router maps us (see [`stun::Mapping`])
     pub mapping: stun::Mapping,
+    /// the STUN server that told us `public` (asked again while a peer is silent: see
+    /// `recv`)
+    stun: Option<SocketAddr>,
     /// put in our punch packets so peers only accept us
     pub token: u32,
     /// our X25519 public key for this session
@@ -187,7 +190,7 @@ impl Gathered {
             tracing::warn!("no STUN server answered; only LAN/IPv6 peers will connect");
         }
         let identity = Arc::new(Identity::generate());
-        Ok(Self { socket, public_key: identity.public, identity, lan_ip, candidates, public, mapping, token: rand::random() })
+        Ok(Self { socket, public_key: identity.public, identity, lan_ip, candidates, public, mapping, stun: asked, token: rand::random() })
     }
 }
 
@@ -218,8 +221,11 @@ impl Net {
 
     /// Starts the receive thread on a gathered socket (and the UPnP helper if enabled).
     pub fn start(g: Gathered, cfg: NetConfig) -> io::Result<Self> {
-        let Gathered { socket, identity, lan_ip, candidates, token, public_key, mapping, .. } = g;
+        let Gathered { socket, identity, lan_ip, candidates, token, public_key, mapping, public, stun, .. } = g;
         socket.set_read_timeout(Some(Duration::from_millis(5)))?;
+        // sends never wait (they run on the audio callback); the receive thread waits for
+        // datagrams in `wait_readable`
+        socket.set_nonblocking()?;
         let socket = Arc::new(socket);
         let routes: Routes = Arc::new(ArcSwap::from_pointee(Vec::new()));
         let stats = Arc::new(Mutex::new(HashMap::new()));
@@ -237,6 +243,8 @@ impl Net {
             ctl_rx,
             events_tx.clone(),
             stop.clone(),
+            stun,
+            public,
         );
         let thread = thread::Builder::new().name("gachi-net-recv".into()).spawn(move || {
             prio::pro_audio();
@@ -437,6 +445,8 @@ pub fn now_us() -> u64 {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod nat_sim;
 
 /// Whether this local address sits behind a NAT router (private, or the carrier-grade
 /// 100.64/10 range), as opposed to a public address handed straight to the PC.

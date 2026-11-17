@@ -185,7 +185,9 @@ mod nat_tests {
 #[tauri::command]
 pub async fn create_room(app: AppHandle, opts: CreateOpts) -> Result<RoomView, String> {
     let gen = app.state::<AppState>().join_gen.fetch_add(1, Ordering::SeqCst) + 1;
-    let password = (!opts.password.is_empty()).then_some(opts.password);
+    // (no longer than the password box takes when joining: a longer one could not be typed in)
+    let password: String = opts.password.chars().take(session::PASSWORD_MAX).collect();
+    let password = (!password.is_empty()).then_some(password);
     let name = if opts.name.trim().is_empty() { "새 합주실".to_string() } else { opts.name };
     session::start(app, Intent::Create { name, max_peers: opts.max_peers, password }, gen).await
 }
