@@ -72,6 +72,10 @@ pub struct PeerEntry {
     pub copies_worse: u8,
     /// copies made it worse: not again before this
     pub copies_blocked: Option<Instant>,
+    /// with copies on: how long its reports must be clean before they go off again
+    pub copies_hold: Duration,
+    /// when it last reported a little loss of our audio (see `COPIES_REPEAT_WITHIN`)
+    pub last_loss: Option<Instant>,
     /// chat messages taken from it since when (see `CHAT_MAX`)
     pub chats: (Instant, u8),
 }
@@ -116,6 +120,19 @@ fn clean_room_state(mut state: RoomState, ours: &RoomState) -> RoomState {
 const COPIES_ON_LOSS: f32 = 0.3;
 /// Copies stay on at least this long, and stop after this long of clean reports.
 const COPIES_HOLD: Duration = Duration::from_secs(60);
+/// A little loss (under `COPIES_ON_LOSS`) reported twice within this: copies too. A Wi-Fi
+/// link loses a packet or two every minute or so, never much at once: over an hour one
+/// such link reported loss 50 times, 0.2% each time, and the copies never came on. (A
+/// wired link reported loss twice in that hour, ten minutes apart: it stays on single
+/// packets.)
+const COPIES_REPEAT_WITHIN: Duration = Duration::from_secs(120);
+/// …and at least this long after the last one: reports come every 2 s and each is of the
+/// last couple of seconds, so two in a row can be the same lost packet told twice.
+const COPIES_REPEAT_APART: Duration = Duration::from_secs(5);
+/// Copies that came on for a little loss that repeats stay on until this long of clean
+/// reports: such a link's losses come minutes apart, and at a minute the copies went off
+/// and on eleven times in the hour (and were off for most of the losses).
+const COPIES_HOLD_REPEATED: Duration = Duration::from_secs(300);
 
 /// Shown when the ASIO driver stops answering.
 pub const DRIVER_HUNG: &str = "오디오 드라이버가 응답하지 않아요. 오디오 장치를 다시 연결하거나 앱을 다시 시작해 주세요.";
@@ -126,6 +143,19 @@ const COPIES_CLEAN_LOSS: f32 = 0.05;
 const COPIES_WORSE_REPORTS: u8 = 3;
 /// Then no copies for this long.
 const COPIES_BACKOFF: Duration = Duration::from_secs(300);
+
+/// Whether a report of `raw_loss` (percent) calls for copies, and if so how long clean
+/// reports must last before they go off again. `last_loss_ago`: how long ago the peer last
+/// reported a little loss.
+fn copies_wanted(raw_loss: f32, last_loss_ago: Option<Duration>) -> Option<Duration> {
+    if raw_loss >= COPIES_ON_LOSS {
+        Some(COPIES_HOLD)
+    } else if raw_loss >= COPIES_CLEAN_LOSS && last_loss_ago.is_some_and(|ago| (COPIES_REPEAT_APART..=COPIES_REPEAT_WITHIN).contains(&ago)) {
+        Some(COPIES_HOLD_REPEATED)
+    } else {
+        None
+    }
+}
 
 /// Loss (percent) with copies on that is clearly worse than the loss before them: more
 /// than double, and at least 2 points more.
@@ -509,6 +539,8 @@ impl Session {
                 copies_before: 0.0,
                 copies_worse: 0,
                 copies_blocked: None,
+                copies_hold: COPIES_HOLD,
+                last_loss: None,
                 clean_since: None,
                 chats: (now, 0),
             },
@@ -1466,17 +1498,25 @@ impl Session {
         if !raw_loss.is_finite() {
             return;
         }
-        match p.copies_since {
-            None if raw_loss >= COPIES_ON_LOSS && p.copies_blocked.is_none_or(|until| now >= until) => {
+        // (a little loss, to be told from one that repeats: see `COPIES_REPEAT_WITHIN`)
+        let wanted = copies_wanted(raw_loss, p.last_loss.map(|t| now - t));
+        // (the report right after one of a loss may be of that same loss: it does not move
+        // the time the loss is counted from)
+        if raw_loss >= COPIES_CLEAN_LOSS && p.last_loss.is_none_or(|t| now - t >= COPIES_REPEAT_APART) {
+            p.last_loss = Some(now);
+        }
+        match (p.copies_since, wanted) {
+            (None, Some(hold)) if p.copies_blocked.is_none_or(|until| now >= until) => {
                 p.copies_since = Some(now);
+                p.copies_hold = hold;
                 p.clean_since = None;
                 p.copies_before = raw_loss;
                 p.copies_worse = 0;
                 p.copies_blocked = None;
-                tracing::info!(peer = from, raw_loss, "lossy link: sending every packet twice");
+                tracing::info!(peer = from, raw_loss, repeated = hold == COPIES_HOLD_REPEATED, "lossy link: sending every packet twice");
                 self.net.set_redundancy(from, true);
             }
-            Some(since) => {
+            (Some(since), _) => {
                 // loss that got much worse with the copies: a full link, which twice the
                 // packets only fill further. Back to single packets, and stay there a while
                 p.copies_worse = if copies_hurt(p.copies_before, raw_loss) { p.copies_worse + 1 } else { 0 };
@@ -1491,7 +1531,7 @@ impl Session {
                     p.clean_since = None;
                 } else {
                     let clean = *p.clean_since.get_or_insert(now);
-                    if now - clean >= COPIES_HOLD && now - since >= COPIES_HOLD {
+                    if now - clean >= p.copies_hold && now - since >= p.copies_hold {
                         p.copies_since = None;
                         p.clean_since = None;
                         tracing::info!(peer = from, "link clean again: single packets");
@@ -1499,7 +1539,7 @@ impl Session {
                     }
                 }
             }
-            None => {}
+            (None, _) => {}
         }
     }
 
@@ -2116,6 +2156,23 @@ mod tests {
     }
 
     #[test]
+    fn a_little_loss_that_repeats_calls_for_copies_too() {
+        use std::time::Duration;
+        let s = Duration::from_secs;
+        // much loss at once: copies, off again after a clean minute
+        assert_eq!(super::copies_wanted(0.4, None), Some(super::COPIES_HOLD));
+        // 0.2% once (a wired link does that every ten minutes): single packets
+        assert_eq!(super::copies_wanted(0.2, None), None);
+        assert_eq!(super::copies_wanted(0.2, Some(s(586))), None);
+        // 0.2% again within two minutes (Wi-Fi): copies, kept on over the minutes between
+        assert_eq!(super::copies_wanted(0.2, Some(s(51))), Some(super::COPIES_HOLD_REPEATED));
+        // the next report, 2 s on, may be the same lost packet told again: not a repeat
+        assert_eq!(super::copies_wanted(0.2, Some(s(2))), None);
+        // no loss to speak of is no reason, however recent the last one
+        assert_eq!(super::copies_wanted(0.0, Some(s(30))), None);
+    }
+
+    #[test]
     fn copies_that_fill_the_link_are_recognised() {
         // 0.5% before; 0.4% or 1.5% with copies is the same link, 6% is a full one
         assert!(!super::copies_hurt(0.5, 0.4));
@@ -2234,6 +2291,8 @@ mod tests {
             copies_before: 0.0,
             copies_worse: 0,
             copies_blocked: None,
+            copies_hold: COPIES_HOLD,
+            last_loss: None,
             clean_since: None,
         }
     }
