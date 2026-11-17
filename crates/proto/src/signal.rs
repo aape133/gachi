@@ -28,10 +28,17 @@ pub struct Profile {
     pub color: Option<u8>,
 }
 
-/// The preset colours people pick from, as hues (violet, blue, sky, teal, green, lime,
-/// yellow, orange, red, pink): far enough apart to tell at a glance. The UI gives each its
-/// lightness per theme, so they read on a dark and on a light background alike.
-pub const COLOR_HUES: [u16; 10] = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320];
+/// The preset colours people pick from, one for each of a full room, as hues: violet, blue,
+/// sky, teal, green, lime, yellow, orange, red, pink, purple, indigo; then four soft ones
+/// (brown, olive, slate, mauve), given as the hue plus [`COLOR_SOFT`]: sixteen plain hues
+/// are too close together to tell apart, a soft colour is told from the plain one of its
+/// hue at a glance. The UI gives each its lightness per theme, so they read on a dark and
+/// on a light background alike. The first ten are as they always were (a version that
+/// knows only those shows the others in a colour made from the peer id).
+pub const COLOR_HUES: [u16; 16] = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320, 288, 236, COLOR_SOFT + 28, COLOR_SOFT + 78, COLOR_SOFT + 212, COLOR_SOFT + 305];
+
+/// Added to a hue in [`COLOR_HUES`]: the colour is a soft (less saturated) one.
+pub const COLOR_SOFT: u16 = 1000;
 
 /// The most people a room holds.
 pub const ROOM_MAX: u8 = 16;

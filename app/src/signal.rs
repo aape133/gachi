@@ -10,8 +10,12 @@ use std::time::Duration;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio_tungstenite::tungstenite::Message;
 
-/// Keepalive: the server answers "ping" with "pong" without waking up (costs nothing).
-const KEEPALIVE: Duration = Duration::from_secs(20);
+/// Keepalive: the server answers "ping" with "pong" without waking up. Every 5 s: a
+/// connection that died on the way (a router that forgot it: seen ten times in an hour on
+/// one network) is only noticed when we next send on it, and until then the host is not
+/// reached by anyone asking to join. At 20 s that was up to 20 s of "the host does not
+/// answer"; the server noticed such a connection 17 minutes later.
+const KEEPALIVE: Duration = Duration::from_secs(5);
 
 /// How long a connection we are done with may take to finish closing.
 pub const CLOSE_WAIT: Duration = Duration::from_millis(1500);

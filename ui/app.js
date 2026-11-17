@@ -16,9 +16,14 @@
   const hue = (name) => [...String(name)].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
   // the colours people pick from (as in gachi_proto::signal::COLOR_HUES): the room shows
   // everyone in the one they picked
-  const HUES = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320];
-  const COLOR_NAMES = ['보라', '파랑', '하늘', '청록', '초록', '연두', '노랑', '주황', '빨강', '분홍'];
+  // (1000 + hue: a soft, less saturated colour of that hue; sixteen plain hues are too
+  // close together to tell apart)
+  const HUES = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320, 288, 236, 1028, 1078, 1212, 1305];
+  const COLOR_NAMES = ['보라', '파랑', '하늘', '청록', '초록', '연두', '노랑', '주황', '빨강', '분홍', '자주', '남색', '갈색', '올리브', '청회색', '연자주'];
   const myHue = () => HUES[backend.getSettings().color] ?? HUES[0];
+  /** a colour (as in HUES) as the two properties the styles draw it from */
+  const hueCss = (v) => `--hue:${v % 1000};--sat:${v >= 1000 ? 0.42 : 1}`;
+  const setHue = (el, v) => { el.style.setProperty('--hue', v % 1000); el.style.setProperty('--sat', v >= 1000 ? 0.42 : 1); };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const dbText = (db) => (db <= -40 ? '-∞' : (db > 0 ? '+' : '') + f1(db));
   const panText = (v) => (v === 0 ? 'C' : (v < 0 ? 'L' : 'R') + Math.abs(v));
@@ -330,7 +335,7 @@
           <button class="net-chip q-accent" data-act="local" title="오디오 설정 열기"><i class="dot"></i><span><span data-f="local"></span> ms</span></button>
         </div>
         <div class="who-big">
-          <button class="avatar lg" type="button" data-act="color" title="내 색 바꾸기" style="--hue:${myHue()}">${esc(initial(s.name))}</button>
+          <button class="avatar lg" type="button" data-act="color" title="내 색 바꾸기" style="${hueCss(myHue())}">${esc(initial(s.name))}</button>
           <div class="who">
             <div class="name"><button class="name-edit" data-act="rename" title="이름 바꾸기"><span class="nm" data-f="name">${esc(s.name)}</span>${icon('pencil')}</button></div>
             <button class="name-edit inst-edit" data-act="reinst" title="악기 바꾸기"><span class="inst" data-f="inst">${esc(s.instrument)}</span>${icon('pencil')}</button>
@@ -355,7 +360,7 @@
     const st = strips.get('self'); if (!st) return;
     const el = st.el, s = backend.getSettings(), self = backend.self;
     $('[data-f=name]', el).textContent = s.name;
-    st.avatar.style.setProperty('--hue', myHue());
+    setHue(st.avatar, myHue());
     $('.host-tag', el).hidden = !room?.isHost;
     $('[data-f=inst]', el).textContent = s.instrument || '악기 적기';
     $('[data-f=inst]', el).title = s.instrument;
@@ -405,7 +410,7 @@
           <button class="net-chip" data-act="lat" title="연결 · 지연 자세히"><i class="dot"></i><span data-f="total"></span><span class="warn-ic" data-f="warn" hidden>${icon('alert')}</span></button>
         </div>
         <div class="who-big">
-          <div class="avatar lg" style="--hue:${p.hue}">${esc(initial(p.name))}</div>
+          <div class="avatar lg" style="${hueCss(p.hue)}">${esc(initial(p.name))}</div>
           <div class="who">
             <div class="name"><span class="nm" title="${esc(p.name)}">${esc(p.name)}</span></div>
             <div class="inst" title="${esc(p.instrument)}">${esc(p.instrument)}</div>
@@ -656,7 +661,7 @@
       $('.name', st.el).innerHTML = `<span class="nm" title="${esc(p.name)}">${esc(p.name)}</span>` + (p.isHost ? '<span class="tag">호스트</span>' : '');
       $('.inst', st.el).textContent = p.instrument;
       $('.inst', st.el).title = p.instrument;
-      st.avatar.style.setProperty('--hue', p.hue);
+      setHue(st.avatar, p.hue);
       if (prev) { prev.name = p.name; prev.instrument = p.instrument; prev.hue = p.hue; }
     });
     updateRoomChrome();
@@ -1049,7 +1054,7 @@
   function addMsg({ from, text }) {
     if (from === 'me') { pushMsg(h(`<div class="msg me"><div class="bubble">${esc(text)}</div></div>`)); return; }
     const p = peers.get(from);
-    pushMsg(h(`<div class="msg"><span class="from" style="--hue:${p?.hue ?? 0}">${esc(p?.name ?? '?')}</span><div class="bubble">${esc(text)}</div></div>`));
+    pushMsg(h(`<div class="msg"><span class="from" style="${hueCss(p?.hue ?? 0)}">${esc(p?.name ?? '?')}</span><div class="bubble">${esc(text)}</div></div>`));
     if (!chatOpen()) { unread++; updateBadge(); }
   }
   $('#btn-chat').addEventListener('click', () => toggleChat());
@@ -1309,7 +1314,7 @@
   function openColorPop(anchor) {
     const mine = backend.getSettings().color;
     colorPop.innerHTML = '<div class="color-title">내 색</div><div class="swatches">'
-      + HUES.map((hh, i) => `<button class="swatch${i === mine ? ' on' : ''}" type="button" data-color="${i}" style="--hue:${hh}" title="${COLOR_NAMES[i]}" aria-label="${COLOR_NAMES[i]}"></button>`).join('')
+      + HUES.map((hh, i) => `<button class="swatch${i === mine ? ' on' : ''}" type="button" data-color="${i}" style="${hueCss(hh)}" title="${COLOR_NAMES[i]}" aria-label="${COLOR_NAMES[i]}"></button>`).join('')
       + '</div>';
     colorPop.classList.add('open');
     const a = anchor.getBoundingClientRect(), w = colorPop.offsetWidth, hgt = colorPop.offsetHeight;
@@ -1338,7 +1343,7 @@
     const first = !s.name || s.name === '나';
     if (document.activeElement !== homeName) homeName.value = first ? '' : s.name;
     $('#home-avatar').textContent = initial(first ? '?' : s.name);
-    $('#home-avatar').style.setProperty('--hue', myHue());
+    setHue($('#home-avatar'), myHue());
     $('#me-row').classList.toggle('first', first);
     $('#me-row').classList.toggle('loading', !backend.ready);
     // first run: put the cursor in the name box (once the saved name is known)

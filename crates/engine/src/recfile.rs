@@ -250,6 +250,13 @@ impl FlacSink {
             self.encode(0, left)?;
         }
         let info = self.stream.stream_info_mut();
+        // Every block is `FLAC_BLOCK` frames but the last, which does not count: the two
+        // block sizes in the header must stay the same. Counting each frame had put the last
+        // one's size in as the smallest, and a header whose two sizes differ says "blocks of
+        // any size", in which a frame's number is read as a count of samples, not of blocks:
+        // players that jump by those numbers landed in the wrong place (no sound after a
+        // while in a DAW, no jumping in some players; playing from the start was fine)
+        info.set_block_sizes(FLAC_BLOCK, FLAC_BLOCK).map_err(|e| e.to_string())?;
         info.set_md5_digest(&self.ctx.md5_digest());
         info.set_total_samples(self.ctx.total_samples());
         // the header again, now with the length and the checksum
@@ -330,6 +337,9 @@ mod tests {
         let mut r = claxon::FlacReader::open(&path).expect("a FLAC file a decoder accepts");
         let info = r.streaminfo();
         assert_eq!((info.channels, info.bits_per_sample, info.sample_rate, info.samples), (2, 24, 48_000, Some(frames as u64)));
+        // blocks of one size (the last, shorter one does not count): what lets a player
+        // jump to a time by the frames' numbers
+        assert_eq!((info.min_block_size, info.max_block_size), (FLAC_BLOCK as u16, FLAC_BLOCK as u16));
         let back: Vec<i32> = r.samples().map(|s| s.expect("every block decodes")).collect();
         let wrote: Vec<i32> = sound.iter().map(|&s| to_int(s, 24, 0.0)).collect();
         assert_eq!(back.len(), wrote.len());
