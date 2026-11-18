@@ -36,10 +36,50 @@
     ],
   };
 
+  /** The made-up people and words of the browser preview (and the website's demo), in the
+   *  preview's language (?lang=, else the browser's): names, instruments, chat. */
+  const DEMO_WORDS = {
+    ko: {
+      me: '나', inst: '기타', room: '새 합주실', jam: '금요일 합주',
+      names: ['지민', '현우', '서연', '도윤', '하은', '준서', '수아', '민재', '예린', '태오', '유나', '시우', '채원', '건우', '다인'],
+      insts: ['보컬', '베이스', '드럼', '기타', '건반', '색소폰', '바이올린', '코러스'],
+      hello: '다들 들려요? 한 곡 가볼까요', welcome: '왔구나! 소리 잘 들려요?',
+      wrongPw: '비밀번호가 맞지 않아요.', needPw: '비밀번호가 있는 방이에요.', noRoom: '방을 찾을 수 없어요. 코드를 다시 확인해 주세요.',
+      steps: ['후보 5개', 'IPv6 직결', '평균 10.4 ms'], recDir: '문서/gachi/녹음',
+      nearby: [['금요일 밤 합주', '지민'], ['밴드 연습', '현우']],
+    },
+    en: {
+      me: 'Me', inst: 'Guitar', room: 'New room', jam: 'Friday jam',
+      names: ['Mia', 'Leo', 'Chloe', 'Noah', 'Emma', 'Liam', 'Ava', 'Ethan', 'Zoe', 'Owen', 'Lily', 'Jack', 'Ruby', 'Max', 'Nora'],
+      insts: ['Vocals', 'Bass', 'Drums', 'Guitar', 'Keys', 'Sax', 'Violin', 'Backing vocals'],
+      hello: 'Can everyone hear me? Shall we play one?', welcome: 'You made it! Can you hear me okay?',
+      wrongPw: 'That password is not right.', needPw: 'This room has a password.', noRoom: 'No room with that code. Please check it again.',
+      steps: ['5 candidates', 'IPv6 direct', 'average 10.4 ms'], recDir: 'Documents/gachi/Recordings',
+      nearby: [['Friday night jam', 'Mia'], ['Band practice', 'Leo']],
+    },
+    ja: {
+      me: '自分', inst: 'ギター', room: '新しいルーム', jam: '金曜セッション',
+      names: ['ゆい', 'はると', 'さくら', 'そうた', 'ひな', 'れん', 'あおい', 'ゆうと', 'めい', 'かいと', 'りこ', 'はやと', 'ことね', 'そら', 'みお'],
+      insts: ['ボーカル', 'ベース', 'ドラム', 'ギター', 'キーボード', 'サックス', 'バイオリン', 'コーラス'],
+      hello: 'みんな聞こえてる?一曲やってみよう', welcome: '来たね!音、ちゃんと聞こえる?',
+      wrongPw: 'パスワードが違います。', needPw: 'パスワードのあるルームです。', noRoom: 'ルームが見つかりません。コードをもう一度確認してください。',
+      steps: ['候補 5 件', 'IPv6 直結', '平均 10.4 ms'], recDir: 'ドキュメント/gachi/録音',
+      nearby: [['金曜夜のセッション', 'ゆい'], ['バンド練習', 'はると']],
+    },
+  };
+  // (`let`: the website's demo changes language in place, see demoRoom)
+  let WORDS = (() => {
+    const want = String(new URLSearchParams(location.search).get('lang') || navigator.language || 'ko').slice(0, 2).toLowerCase();
+    return DEMO_WORDS[want] || DEMO_WORDS.en;
+  })();
+
+  /** The website's demo (?show): no waiting, no one coming in one by one. */
+  const SHOW = new URLSearchParams(location.search).has('show');
+
   const DEMO_PEERS = [
-    { id: 'p1', name: '지민', instrument: '보컬', hue: 320, conn: { type: 'p2p', ipv6: true, link: 'wired', encrypted: true, cipher: 'AES-256-GCM' }, netMs: 4.8, jitterMs: 0.35, loss: 0.0 },
-    { id: 'p2', name: '현우', instrument: '베이스', hue: 190, conn: { type: 'p2p', ipv6: false, link: 'wifi', encrypted: true, cipher: 'AES-256-GCM' }, netMs: 6.2, jitterMs: 2.3, loss: 0.4 },
-    { id: 'p3', name: '서연', instrument: '드럼', hue: 48, conn: { type: 'p2p', ipv6: false, link: 'wired', encrypted: true, cipher: 'AES-256-GCM' }, netMs: 15.5, jitterMs: 0.9, loss: 0.1 },
+    { id: 'p1', name: WORDS.names[0], instrument: WORDS.insts[0], hue: 320, conn: { type: 'p2p', ipv6: true, link: 'wired', encrypted: true, cipher: 'AES-256-GCM' }, netMs: 4.8, jitterMs: 0.35, loss: 0.0 },
+    { id: 'p2', name: WORDS.names[1], instrument: WORDS.insts[1], hue: 190, conn: { type: 'p2p', ipv6: false, link: 'wifi', encrypted: true, cipher: 'AES-256-GCM' }, netMs: 6.2, jitterMs: 2.3, loss: 0.4 },
+    { id: 'p3', name: WORDS.names[2], instrument: WORDS.insts[2], hue: 48, conn: { type: 'p2p', ipv6: false, link: 'wired', encrypted: true, cipher: 'AES-256-GCM' }, netMs: 15.5, jitterMs: 0.9, loss: 0.1 },
   ];
 
   /** Latency math shared by both backends (ms). */
@@ -193,7 +233,9 @@
       this.settings = {
         device: 'focusrite', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
         quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
-        name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, fixedPort: false, port: 24620, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
+        name: WORDS.me, instrument: WORDS.inst, metronomeVolume: 60, upnp: true, fixedPort: false, port: 24620,
+        // ?theme=dark|light: the preview (and the website's demo) in that look
+        theme: new URLSearchParams(location.search).get('theme') || 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
         // ?lang=en / ?lang=ja: the preview in another language
         language: new URLSearchParams(location.search).get('lang') || 'auto',
       };
@@ -250,55 +292,73 @@
     getRoom() { return this.room && { ...this.room, peers: [...this.peers.values()].map((p) => this._view(p)) }; }
 
     async createRoom({ name, maxPeers = 4, password = '' } = {}) {
-      await wait(350);
+      await wait(SHOW ? 0 : 350);
       let code = '';
       for (let i = 0; i < 6; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
-      this._openRoom({ code, name: name || '새 합주실', maxPeers, isHost: true, hasPassword: !!password });
+      this._openRoom({ code, name: name || WORDS.room, maxPeers, isHost: true, hasPassword: !!password });
       // ?peers=15: a full room at once (to look at big rooms); ?peers=0: alone
       const asked = new URLSearchParams(location.search).get('peers');
       if (asked !== null) {
         const many = Math.min(15, +asked || 0);
-        const names = ['지민', '현우', '서연', '도윤', '하은', '준서', '수아', '민재', '예린', '태오', '유나', '시우', '채원', '건우', '다인'];
-        const insts = ['보컬', '베이스', '드럼', '기타', '건반', '색소폰', '바이올린', '코러스'];
         for (let i = 0; i < many; i++) {
-          const d = DEMO_PEERS[i % DEMO_PEERS.length];
-          this._later(300 + i * 120, () => this._addPeer({ ...d, id: 'p' + (i + 1), name: names[i % names.length], instrument: insts[i % insts.length], hue: (i * 47 + 20) % 360 }));
+          // (the website's demo: everyone there at once; the preview: coming in one by one)
+          if (SHOW) this._addPeer(this._demoPeer(i), { silent: true });
+          else this._later(300 + i * 120, () => this._addPeer(this._demoPeer(i)));
         }
         return this.getRoom();
       }
       this._later(3000, () => this._addPeer(DEMO_PEERS[0]));
       this._later(6500, () => this._addPeer(DEMO_PEERS[1]));
-      this._later(10000, () => this.emit('chat', { from: 'p1', text: '다들 들려요? 한 곡 가볼까요' }));
+      this._later(10000, () => this.emit('chat', { from: 'p1', text: WORDS.hello }));
       return this.getRoom();
+    }
+
+    /** The made-up person number `i` of a room full of them, in the words of now. */
+    _demoPeer(i) {
+      const { names, insts } = WORDS;
+      return { ...DEMO_PEERS[i % DEMO_PEERS.length], id: 'p' + (i + 1), name: names[i % names.length], instrument: insts[i % insts.length], hue: (i * 47 + 20) % 360 };
+    }
+
+    /** The website's demo (worker/demo/demo.js), at once: the made-up words in `lang`, and
+     *  `peers` others in the room (the first ones of the list: added or let go). */
+    demoRoom({ lang, peers } = {}) {
+      if (lang) WORDS = DEMO_WORDS[lang] || DEMO_WORDS.en;
+      if (!this.room) return;
+      const want = Math.max(0, Math.min(15, peers ?? this.peers.size));
+      for (const id of [...this.peers.keys()].slice(want)) this.kickPeer(id);
+      for (let i = this.peers.size; i < want; i++) this._addPeer(this._demoPeer(i), { silent: true });
+      [...this.peers.values()].forEach((p, i) => { p.name = WORDS.names[i % WORDS.names.length]; p.instrument = WORDS.insts[i % WORDS.insts.length]; });
+      this.room.name = WORDS.jam;
+      this.emit('room', this.getRoom());
     }
 
     async joinRoom(code, onStep, password) {
       // demo: code PWPW22 is a password room (password 1234)
       if (code === 'PWPW22' && password !== '1234') {
-        const err = new Error(password ? '비밀번호가 맞지 않아요.' : '비밀번호가 있는 방이에요.');
+        const err = new Error(password ? WORDS.wrongPw : WORDS.needPw);
         err.kind = password ? 'wrong_password' : 'password_required';
         throw err;
       }
       const token = ++this._joinToken;
       const steps = [
         ['signal', 420, '7 ms'],
-        ['exchange', 480, '후보 5개'],
-        ['punch', 700, 'IPv6 직결'],
-        ['measure', 650, '평균 10.4 ms'],
+        ['exchange', 480, WORDS.steps[0]],
+        ['punch', 700, WORDS.steps[1]],
+        ['measure', 650, WORDS.steps[2]],
       ];
       for (const [id, ms, detail] of steps) {
         onStep?.(id, 'doing');
         await wait(ms);
         if (token !== this._joinToken) throw new Error('cancelled');
-        if (id === 'signal' && code === 'ZZZZZZ') throw new Error('방을 찾을 수 없어요. 코드를 다시 확인해 주세요.');
+        if (id === 'signal' && code === 'ZZZZZZ') throw new Error(WORDS.noRoom);
         onStep?.(id, 'done', detail);
       }
       await wait(250);
       if (token !== this._joinToken) throw new Error('cancelled');
-      this._openRoom({ code, name: '금요일 합주', maxPeers: 4, isHost: false });
+      this._openRoom({ code, name: WORDS.jam, maxPeers: 4, isHost: false });
       this._addPeer(DEMO_PEERS[0], { isHost: true, silent: true });
       this._addPeer(DEMO_PEERS[1], { silent: true });
-      this._later(4000, () => this.emit('chat', { from: 'p1', text: '왔구나! 소리 잘 들려요?' }));
+      this._later(4000, () => this.emit('chat', { from: 'p1', text: WORDS.welcome }));
       this._later(8000, () => this._addPeer(DEMO_PEERS[2]));
       return this.getRoom();
     }
@@ -344,7 +404,7 @@
     async setRecording(on) {
       this.recording = on;
       if (on) { this._recStart = Date.now(); return { recording: true }; }
-      return { recording: false, files: this.peers.size + 1, seconds: (Date.now() - this._recStart) / 1000, dir: '문서/gachi/녹음' };
+      return { recording: false, files: this.peers.size + 1, seconds: (Date.now() - this._recStart) / 1000, dir: WORDS.recDir };
     }
     async playTestTone() { /* native: plays a 1 kHz sine on the output */ }
     async openRecordings() {}
@@ -371,8 +431,8 @@
       this.emit('room', this.getRoom());
     }
     async nearbyRooms() {
-      return [{ code: 'K7MQ2X', name: '금요일 밤 합주', host: '지민', locked: false, members: 2, max_peers: 4 },
-        { code: 'P3RT8W', name: '밴드 연습', host: '현우', locked: true, members: 4, max_peers: 4 }];
+      return [{ code: 'K7MQ2X', name: WORDS.nearby[0][0], host: WORDS.nearby[0][1], locked: false, members: 2, max_peers: 4 },
+        { code: 'P3RT8W', name: WORDS.nearby[1][0], host: WORDS.nearby[1][1], locked: true, members: 4, max_peers: 4 }];
     }
     async qrSvg() { return null; } // browser preview draws it with qrcode.js instead
 

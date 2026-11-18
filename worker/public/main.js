@@ -1,4 +1,51 @@
-// The landing page's own few lines: the download buttons, and the language menu.
+// The landing page's own few lines: the font, the download buttons, and the language menu.
+
+// ── the font comes in pieces (a piece per range of characters, loaded as the page shows
+//    one): the text waits for every piece it needs and then shows at once, not a piece at
+//    a time. 3 s at most, then it shows as it is. ──
+const FONT = '400 1em "Pretendard Variable"'; // (one face per piece covers every weight)
+const WAIT_MS = 3000;
+
+/** Every character shown in `root` (text, not scripts or styles), each once. */
+function charsOf(root) {
+  const seen = new Set();
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(n.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  while (walk.nextNode()) for (const c of walk.currentNode.nodeValue) seen.add(c);
+  return [...seen].join('');
+}
+
+/** Resolves once the font pieces for `root`'s text are here (or failed, or `WAIT_MS`). */
+function fontFor(root) {
+  if (!document.fonts?.load) return Promise.resolve();
+  const loaded = document.fonts.load(FONT, charsOf(root)).catch(() => {});
+  return Promise.race([loaded, new Promise((r) => setTimeout(r, WAIT_MS))]);
+}
+
+// (this script runs after the stylesheets, so the font's pieces are known by now)
+fontFor(document.body).then(() => {
+  document.documentElement.classList.remove('fonts-wait');
+  performance.mark?.('gachi-text-shown'); // (when, for a look in the browser's tools)
+});
+
+// ── light / dark: the system's, until the switch in the top bar picks one (kept in this
+//    browser). The head of each page puts the kept choice on before the page paints. ──
+const BG = { dark: '#0b0a12', light: '#f7f5f0' };
+const systemTheme = () => (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+const theme = () => document.documentElement.dataset.theme || systemTheme();
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('site-theme', t); } catch { /* private window: for this visit */ }
+  showTheme();
+}
+/** The browser's bar in the page's colour. */
+function showTheme() {
+  const t = theme();
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = BG[t];
+}
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', showTheme);
+showTheme();
 
 // ── the download buttons point at the latest release's files (else the release page, as
 //    written in the page). Asked of GitHub once per visit; nothing else is loaded. ──
@@ -12,7 +59,7 @@ async function showRelease() {
   const file = (re) => (rel.assets || []).find((a) => re.test(a.name))?.browser_download_url;
   const app = file(/_x64-setup\.exe$/), vst = file(/_vst3\.zip$/);
   const set = (id, href) => { const el = document.getElementById(id); if (el && href) el.href = href; };
-  set('dl', app); set('dl2', app); set('vst', vst);
+  set('dl', app); set('vst', vst);
   const v = String(rel.tag_name || '').replace(/^v/, '');
   const ver = document.getElementById('ver');
   if (ver && /^\d+(\.\d+){1,3}$/.test(v)) ver.textContent = `v${v}`;
@@ -26,7 +73,8 @@ function page(path) {
   if (!pages.has(path)) {
     const got = fetch(path)
       .then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); })
-      .then((t) => new DOMParser().parseFromString(t, 'text/html'));
+      .then((t) => new DOMParser().parseFromString(t, 'text/html'))
+      .then(async (doc) => { await fontFor(doc.body); return doc; }); // (its font pieces first)
     got.catch(() => pages.delete(path));
     pages.set(path, got);
   }
@@ -59,6 +107,7 @@ addEventListener('popstate', () => { if (location.pathname !== document.body.dat
 function wire() {
   document.body.dataset.path = location.pathname;
   showRelease();
+  document.querySelector('[data-act="theme"]')?.addEventListener('click', () => setTheme(theme() === 'dark' ? 'light' : 'dark'));
   const menu = document.querySelector('details.lang');
   if (!menu) return;
   const links = [...menu.querySelectorAll('a[data-lang]')];

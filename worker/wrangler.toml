@@ -2,6 +2,8 @@
 name = "gachi"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
+# no usage reports to Cloudflare from wrangler (deploys and local runs)
+send_metrics = false
 # also served at https://gachi.<account>.workers.dev (versions up to 0.2.8 connect there)
 workers_dev = true
 # no per-version preview URLs: only the deployed version should be reachable

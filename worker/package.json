@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8787",
-    "deploy": "wrangler deploy",
-    "test": "node --test test/"
+    "deploy": "node scripts/stamp.mjs --check && wrangler deploy",
+    "test": "node --test test/",
+    "stamp": "node scripts/stamp.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.164.0"
