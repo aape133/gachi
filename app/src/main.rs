@@ -2,6 +2,7 @@
 
 mod commands;
 mod deeplink;
+mod diagnose;
 mod gate;
 mod link;
 mod session;
@@ -241,6 +242,7 @@ fn main() {
             commands::play_test_tone,
             commands::set_recording,
             commands::open_recordings,
+            commands::set_ui_visible,
             commands::open_logs,
             commands::open_repo,
             commands::window_ready,

@@ -171,6 +171,8 @@
     setRecording(on) { return this.call('set_recording', { on }); }
     playTestTone() { return this.call('play_test_tone'); }
     openRecordings() { return this.call('open_recordings'); }
+    /** the window is shown or hidden: the app sends no meters while hidden */
+    setUiVisible(visible) { this.call('set_ui_visible', { visible }).catch(() => {}); }
     openLogs() { this.call('open_logs').catch(() => {}); }
     openRepo() { this.call('open_repo').catch(() => {}); }
     appVersion() { return this.call('app_version'); }
@@ -321,7 +323,7 @@
       this.emit('peer-joined', { peer: this._view(p), silent });
     }
 
-    kickPeer(id) { if (this.peers.delete(id)) this.emit('peer-left', { id }); }
+    kickPeer(id) { if (this.peers.delete(id)) { delete this._levels[id]; this.emit('peer-left', { id }); } }
     /* ── mixer ── */
     setPeer(id, patch) {
       const p = this.peers.get(id);
@@ -341,14 +343,15 @@
     }
     async playTestTone() { /* native: plays a 1 kHz sine on the output */ }
     async openRecordings() {}
+    setUiVisible() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.2.7'; }
+    async appVersion() { return '0.2.8'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.2.8' };
+      return { version: '0.2.9' };
     }
     openRelease() {}
     async setPreview() {}

@@ -209,6 +209,8 @@ pub struct Net {
     pub candidates: Vec<SocketAddr>,
     /// how the router maps us (see [`stun::Mapping`])
     pub mapping: stun::Mapping,
+    /// our public address as a STUN server saw it when we started (`None`: none answered)
+    pub public: Option<SocketAddr>,
     /// our X25519 public key for this session
     pub public_key: [u8; 32],
 }
@@ -265,7 +267,7 @@ impl Net {
             });
         }
 
-        Ok(Self { socket, cfg, routes, ctl_tx, stats, events_rx, stop, thread: Some(thread), token, candidates, mapping, public_key })
+        Ok(Self { socket, cfg, routes, ctl_tx, stats, events_rx, stop, thread: Some(thread), token, candidates, mapping, public, public_key })
     }
 
     /// The packet sink to hand to the audio engine (PCM in the configured format).
@@ -466,6 +468,10 @@ pub fn behind_router(ip: IpAddr) -> bool {
 pub(crate) mod alloc_guard {
     use std::alloc::{GlobalAlloc, Layout, System};
     use std::cell::Cell;
+    use std::sync::atomic::{AtomicI64, Ordering::Relaxed};
+
+    /// bytes held from the allocator right now, all threads (see [`live_bytes`])
+    static LIVE: AtomicI64 = AtomicI64::new(0);
 
     thread_local! {
         static WATCHING: Cell<bool> = const { Cell::new(false) };
@@ -486,16 +492,30 @@ pub(crate) mod alloc_guard {
     unsafe impl GlobalAlloc for Counting {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             note();
-            System.alloc(layout)
+            let p = System.alloc(layout);
+            if !p.is_null() {
+                LIVE.fetch_add(layout.size() as i64, Relaxed);
+            }
+            p
         }
         unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
             note();
+            LIVE.fetch_sub(layout.size() as i64, Relaxed);
             System.dealloc(ptr, layout)
         }
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
             note();
-            System.realloc(ptr, layout, new_size)
+            let p = System.realloc(ptr, layout, new_size);
+            if !p.is_null() {
+                LIVE.fetch_add(new_size as i64 - layout.size() as i64, Relaxed);
+            }
+            p
         }
+    }
+
+    /// Bytes the whole process holds from the allocator (for leak tests: run alone).
+    pub fn live_bytes() -> i64 {
+        LIVE.load(Relaxed)
     }
 
     pub fn count(f: impl FnOnce()) -> u64 {

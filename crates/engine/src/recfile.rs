@@ -113,7 +113,7 @@ impl WavSink {
             bits_per_sample: bits as u16,
             sample_format: if bits == 32 { hound::SampleFormat::Float } else { hound::SampleFormat::Int },
         };
-        Ok(Self { w: hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?, bits, dither: Dither::default() })
+        Ok(Self { w: hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?, bits, dither: Dither::new() })
     }
 
     fn write(&mut self, samples: &[f32]) -> Result<(), String> {
@@ -147,10 +147,18 @@ fn to_int(s: f32, bits: u32, dither: f32) -> i32 {
 /// Triangular dither of one step for 16 bit: what is below a step becomes a faint even
 /// hiss instead of distortion that follows the sound. (24 bit needs none: its steps are
 /// below any converter's noise.)
-#[derive(Default)]
 struct Dither(u32);
 
 impl Dither {
+    /// Each file its own: tracks with the same hiss would add it up in step when mixed
+    /// (16 tracks: 24 dB more of it instead of 12).
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+        Dither(n.wrapping_mul(0x9E37_79B9) ^ t)
+    }
+
     /// The dither for the sample `s`: none for digital silence (the stretches a recording
     /// fills in stay exactly silent).
     #[inline]
@@ -211,7 +219,7 @@ impl FlacSink {
             channels,
             bits: bits as u32,
             frame_no: 0,
-            dither: Dither::default(),
+            dither: Dither::new(),
         })
     }
 
@@ -319,6 +327,82 @@ mod tests {
             assert!(worst <= tol, "{bits} bit: off by {worst}");
             std::fs::remove_file(path).ok();
         }
+    }
+
+    /// What a recording does to the sound, measured on a tone read back from each format:
+    /// level kept, error no more than the format's own rounding (16 bit: the dither's
+    /// even hiss, ~ 91 dB below full scale; 24 bit and float: far below).
+    #[test]
+    fn recordings_keep_the_sound() {
+        let (rate, hz, frames) = (48_000u32, 997.0f64, 48_000usize);
+        let w = std::f64::consts::TAU * hz / rate as f64;
+        for level in [-6.0f64, -40.0] {
+            let amp = 10f64.powf(level / 20.0);
+            let sound: Vec<f32> = (0..frames).map(|k| (amp * (w * k as f64).sin()) as f32).collect();
+            for format in [RecFormat::Wav { bits: 16 }, RecFormat::Wav { bits: 24 }, RecFormat::Wav { bits: 32 }, RecFormat::Flac { bits: 16 }, RecFormat::Flac { bits: 24 }] {
+                let path = temp(&format!("q{level}.{}", format.ext()));
+                let mut s = Sink::create(&path, format, 1, rate).unwrap();
+                s.write(&sound).unwrap();
+                s.finish().unwrap();
+                let back: Vec<f64> = match format {
+                    RecFormat::Wav { bits: 32 } => hound::WavReader::open(&path).unwrap().samples::<f32>().map(|s| s.unwrap() as f64).collect(),
+                    RecFormat::Wav { bits } => {
+                        let max = ((1i64 << (bits - 1)) - 1) as f64;
+                        hound::WavReader::open(&path).unwrap().samples::<i32>().map(|s| s.unwrap() as f64 / max).collect()
+                    }
+                    RecFormat::Flac { bits } => {
+                        let max = ((1i64 << (bits - 1)) - 1) as f64;
+                        claxon::FlacReader::open(&path).unwrap().samples().map(|s| s.unwrap() as f64 / max).collect()
+                    }
+                };
+                std::fs::remove_file(&path).ok();
+                assert_eq!(back.len(), frames);
+                let (a, snr) = fit(&back, w);
+                let gain = 20.0 * (a / amp).log10();
+                println!("{format:?} at {level} dBFS: level {gain:+.4} dB, signal/error {snr:.1} dB");
+                assert!(gain.abs() < 0.01, "{format:?}: level moved {gain:+.4} dB");
+                let bits = match format {
+                    RecFormat::Wav { bits } | RecFormat::Flac { bits } => bits,
+                };
+                let wanted = match bits {
+                    16 => 85.0 + level,
+                    24 => 120.0 + level,
+                    _ => 130.0,
+                };
+                assert!(snr > wanted, "{format:?} at {level} dBFS: signal/error {snr:.1} dB (wanted > {wanted})");
+            }
+        }
+    }
+
+    /// Two files written at once do not get the same hiss.
+    #[test]
+    fn each_file_gets_its_own_dither() {
+        let (mut a, mut b) = (Dither::new(), Dither::new());
+        let same = (0..1000).filter(|_| a.next() == b.next()).count();
+        assert!(same < 10, "{same} of 1000 the same");
+    }
+
+    /// Least-squares fit of `x` to a sine at `w` rad/sample: (amplitude, signal/error dB).
+    fn fit(x: &[f64], w: f64) -> (f64, f64) {
+        let (mut ss, mut cc, mut sc, mut xs, mut xc) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (k, &v) in x.iter().enumerate() {
+            let (s, c) = (w * k as f64).sin_cos();
+            ss += s * s;
+            cc += c * c;
+            sc += s * c;
+            xs += v * s;
+            xc += v * c;
+        }
+        let det = ss * cc - sc * sc;
+        let (a, b) = ((xs * cc - xc * sc) / det, (xc * ss - xs * sc) / det);
+        let (mut sig, mut err) = (0.0, 0.0);
+        for (k, &v) in x.iter().enumerate() {
+            let (s, c) = (w * k as f64).sin_cos();
+            let m = a * s + b * c;
+            sig += m * m;
+            err += (v - m) * (v - m);
+        }
+        ((a * a + b * b).sqrt(), 10.0 * (sig / err.max(1e-300)).log10())
     }
 
     /// FLAC is lossless: what a decoder gives back is the 24 bit samples we wrote, block

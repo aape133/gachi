@@ -40,6 +40,12 @@ const TIMERS_EVERY: Duration = Duration::from_millis(1);
 /// With nothing to read, the loop waits this long for a datagram (it wakes at once when one
 /// comes) before it looks at the timers and the app's requests again.
 const IDLE_WAIT: Duration = Duration::from_millis(5);
+/// How long the keys of a removed peer are kept (see `Receiver::retired`). A peer comes
+/// back with the same key within moments (it is the same session of its app: a network
+/// hiccup, a re-introduction); after a longer absence its app has rejoined with new keys.
+/// Kept for good, they added ~110 bytes for everyone who ever left. (Short in tests, to
+/// see the memory level off.)
+const RETIRED_KEEP: Duration = if cfg!(test) { Duration::from_secs(5) } else { Duration::from_secs(3600) };
 
 /// How direct a path to `addr` is: 0 = on our network (private IPv4, loopback), 1 = IPv6
 /// (no NAT on the way), 2 = a public IPv4 address (through the NATs; between two PCs in one
@@ -170,7 +176,15 @@ pub(crate) struct Receiver {
     /// keys of removed peers. If one comes back with the same key, its keys (and their
     /// send counter) are taken up again: deriving them anew would restart the counter at 0
     /// and reuse nonces under the same key, which breaks the encryption.
-    retired: HashMap<PeerId, (crate::crypto::PeerKey, Arc<PeerCrypto>, ReplayWindow)>,
+    /// (and when it was removed: kept for `RETIRED_KEEP`)
+    retired: HashMap<PeerId, (crate::crypto::PeerKey, Arc<PeerCrypto>, ReplayWindow, Instant)>,
+}
+
+/// Keeps a removed peer's keys (see `Receiver::retired`), and forgets the ones kept long enough.
+fn retire(retired: &mut HashMap<PeerId, (crate::crypto::PeerKey, Arc<PeerCrypto>, ReplayWindow, Instant)>, id: PeerId, key: crate::crypto::PeerKey, keys: Arc<PeerCrypto>, replay: ReplayWindow) {
+    let now = Instant::now();
+    retired.retain(|_, e| now - e.3 < RETIRED_KEEP);
+    retired.insert(id, (key, keys, replay, now));
 }
 
 impl Receiver {
@@ -303,11 +317,11 @@ impl Receiver {
                         if p.key != Some(key) {
                             if let Some(old) = p.key.zip(p.keys.take()) {
                                 // a new key for a known peer: keep the old one's counter too
-                                self.retired.insert(id, (old.0, old.1, std::mem::take(&mut p.replay)));
+                                retire(&mut self.retired, id, old.0, old.1, std::mem::take(&mut p.replay));
                             }
                             match self.retired.remove(&id) {
                                 // the same peer, same key, back again: same keys, counter goes on
-                                Some((k, keys, replay)) if k == key => {
+                                Some((k, keys, replay, _)) if k == key => {
                                     p.keys = Some(keys);
                                     p.replay = replay;
                                 }
@@ -357,7 +371,7 @@ impl Receiver {
                 Ctl::RemovePeer(id) => {
                     if let Some(p) = self.peers.remove(&id) {
                         if let (Some(key), Some(keys)) = (p.key, p.keys) {
-                            self.retired.insert(id, (key, keys, p.replay));
+                            retire(&mut self.retired, id, key, keys, p.replay);
                         }
                     }
                     self.stats.lock().unwrap().remove(&id);

@@ -78,6 +78,24 @@ pub struct PeerInfo {
     /// The biggest room this peer's version can be in (see [`seats_of`]).
     #[serde(default)]
     pub seats: u8,
+    /// How the peer's network lets direct connections through, as it found out itself
+    /// (to tell the room why a connection failed). Older versions do not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nat: Option<NatKind>,
+}
+
+/// How a network lets direct (UDP) connections through, as seen from inside it.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NatKind {
+    /// the same public address whoever we talk to (ordinary home routers)
+    Steady,
+    /// another public port for everyone we talk to (mobile hotspots, company networks)
+    Varies,
+    /// no STUN server answered: UDP to the internet does not get out
+    Blocked,
+    /// not found out (one STUN server answered)
+    Unknown,
 }
 
 /// What each peer tells the others about its own setup, so latency breakdowns
@@ -120,6 +138,9 @@ pub struct JoinRequest {
     /// The biggest room the newcomer's version can be in (see [`seats_of`])
     #[serde(default)]
     pub seats: u8,
+    /// see [`PeerInfo::nat`]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nat: Option<NatKind>,
 }
 
 /// A [`JoinRequest`] sealed to the host's join key, as the server passes it on.

@@ -568,6 +568,15 @@ pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
     }
 }
 
+/// The window cannot be seen (minimized): the meters are not sent meanwhile (30 a second,
+/// each waking the page for nothing). Told by the page as it is hidden and shown.
+pub static UI_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+pub fn set_ui_visible(visible: bool) {
+    UI_HIDDEN.store(!visible, Ordering::Relaxed);
+}
+
 /// Opens the recordings folder in Explorer/Finder.
 #[tauri::command]
 pub fn open_recordings(app: AppHandle) -> Result<(), String> {

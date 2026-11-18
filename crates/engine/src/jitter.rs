@@ -4,9 +4,12 @@
 //! - Waits until `target` packets are buffered before playing (priming).
 //! - **Concealment**: a missing packet, or a buffer that ran dry, is filled by continuing the
 //!   sound: the pitch period of the last ~20 ms is found (normalized autocorrelation) and
-//!   repeated, at full level for 10 ms, fading out by 60 ms. When real sound comes back it
-//!   is crossfaded in over 2 ms. (It used to repeat the last 32-frame packet at half volume,
-//!   a 1.5 kHz buzz, and fall silent when the buffer ran dry.)
+//!   repeated, at full level for 10 ms, fading out by 60 ms. From 10 ms on the last two
+//!   periods take turns, from 20 ms the last three (as ITU-T G.711 Appendix I): one period
+//!   over and over for longer turned anything that is not a steady tone into one, a beep.
+//!   When real sound comes back it is crossfaded in over 2 ms. (It used to repeat the last
+//!   32-frame packet at half volume, a 1.5 kHz buzz, and fall silent when the buffer ran
+//!   dry.)
 //! - **No clicks**: wherever the sound does not continue on its own (a concealed packet, the
 //!   real one after it, a skipped packet, starting after silence) the jump between the last
 //!   sample played and the new one is spread over `SMOOTH` samples (~0.3 ms), and running
@@ -76,6 +79,10 @@ const NOT_PERIODIC: f32 = 0.3;
 /// 10 ms and 60 ms at 48 kHz).
 const PLC_FULL: u32 = 480;
 const PLC_END: u32 = 2880;
+/// Made-up sound: from this many frames on, one more period of the past takes part in
+/// the repetition (10 ms: two periods, 20 ms: three), up to `PLC_PERIODS`.
+const PLC_WIDEN: u32 = 480;
+const PLC_PERIODS: usize = 3;
 /// Crossfade from made-up sound back into the real one (frames, 2 ms).
 const XFADE: u32 = 96;
 
@@ -184,9 +191,13 @@ pub struct JitterBuffer {
     hist: Box<[(f32, f32)]>,
     hist_w: usize,
     hist_n: usize,
-    /// the period being repeated (frames), a copy of it, position in it, frames made so far
+    /// the last periods before the gap (up to `PLC_PERIODS`, oldest first), the period
+    /// (frames), frames in the copy, the stretch at its end repeated now (one period, then
+    /// more: see `PLC_WIDEN`), position in that stretch, frames made so far
     plc_tmpl: Box<[(f32, f32)]>,
     plc_period: usize,
+    plc_len: usize,
+    plc_loop: usize,
     plc_pos: usize,
     plc_t: u32,
     /// a made-up stream is running (and can be continued or crossfaded out of)
@@ -238,8 +249,10 @@ impl JitterBuffer {
             hist: vec![(0.0, 0.0); HIST].into_boxed_slice(),
             hist_w: 0,
             hist_n: 0,
-            plc_tmpl: vec![(0.0, 0.0); PITCH_MAX].into_boxed_slice(),
+            plc_tmpl: vec![(0.0, 0.0); HIST].into_boxed_slice(),
             plc_period: PITCH_MIN,
+            plc_len: PITCH_MIN,
+            plc_loop: PITCH_MIN,
             plc_pos: 0,
             plc_t: 0,
             plc_on: false,
@@ -630,20 +643,28 @@ impl JitterBuffer {
         if fine.1 < NOT_PERIODIC { max_lag } else { fine.0 }
     }
 
-    /// Starts a made-up stream from the end of the history.
+    /// Starts a made-up stream from the end of the history: the last periods before the
+    /// gap are copied (the history fills with made-up sound from here on), as many whole
+    /// periods as it holds, up to `PLC_PERIODS`.
     fn plc_start(&mut self) {
         let p = self.pitch().clamp(1, PITCH_MAX);
-        for k in 0..p {
-            self.plc_tmpl[k] = self.hist_at(p - k);
+        let periods = (self.hist_n.min(HIST) / p).clamp(1, PLC_PERIODS);
+        let len = (p * periods).min(HIST);
+        for k in 0..len {
+            self.plc_tmpl[k] = self.hist_at(len - k);
         }
         self.plc_period = p;
+        self.plc_len = len;
+        self.plc_loop = p.min(len);
         self.plc_pos = 0;
         self.plc_t = 0;
         self.plc_on = true;
     }
 
-    /// The next made-up frame: the period repeated, full level for `PLC_FULL`, then fading
-    /// to silence at `PLC_END`.
+    /// The next made-up frame: the last period repeated, then the last two, three (each
+    /// time round, from `PLC_WIDEN` frames on, one period further back: it starts where a
+    /// period starts, as the one repeated does); full level for `PLC_FULL`, then fading to
+    /// silence at `PLC_END`.
     fn plc_next(&mut self) -> (f32, f32) {
         let g = if self.plc_t < PLC_FULL {
             1.0
@@ -652,9 +673,14 @@ impl JitterBuffer {
         } else {
             0.0
         };
-        let (l, r) = self.plc_tmpl[self.plc_pos];
-        self.plc_pos = (self.plc_pos + 1) % self.plc_period;
+        let (l, r) = self.plc_tmpl[self.plc_len - self.plc_loop + self.plc_pos];
+        self.plc_pos += 1;
         self.plc_t = self.plc_t.saturating_add(1);
+        if self.plc_pos >= self.plc_loop {
+            self.plc_pos = 0;
+            let periods = (1 + (self.plc_t / PLC_WIDEN) as usize).min(PLC_PERIODS);
+            self.plc_loop = (self.plc_period * periods).min(self.plc_len);
+        }
         (l * g, r * g)
     }
 

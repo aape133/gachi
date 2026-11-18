@@ -287,6 +287,13 @@ fn exchange(a: &mut Audio, end: &mut Bridge, n: usize) {
     }
     let got = end.read_down(&mut a.down[..n * 2]);
     a.down[got * 2..n * 2].fill(0.0);
+    // what came back goes into the DAW's mix: nothing that is not a number (one would
+    // spoil the DAW's mix bus until it is restarted), nothing far over full scale. The
+    // app's mix is limited and never is either; the shared region is anyone's on this
+    // desktop to write
+    for x in &mut a.down[..got * 2] {
+        *x = if x.is_finite() { x.clamp(-4.0, 4.0) } else { 0.0 };
+    }
 }
 
 #[cfg(not(windows))]
@@ -698,8 +705,9 @@ impl IEditControllerTrait for Controller {
         if self.cell(id).is_none() || string.is_null() || value.is_null() {
             return kInvalidArgument;
         }
+        // (a String128 at most: no reading past it when the host left out the end mark)
         let mut len = 0;
-        while *string.add(len) != 0 {
+        while len < 128 && *string.add(len) != 0 {
             len += 1;
         }
         let text = String::from_utf16_lossy(slice::from_raw_parts(string as *const u16, len)).to_lowercase();
@@ -875,9 +883,9 @@ mod tests {
         let mut current = 0;
         let blocks = 40;
         for k in 1..=blocks {
-            a.up.fill(k as f32);
+            a.up.fill(k as f32 * 0.05); // (each block marked, within full scale)
             exchange(&mut a, &mut end, n);
-            if k > blocks - 20 && a.down.iter().all(|&s| s == k as f32) {
+            if k > blocks - 20 && a.down.iter().all(|&s| s == k as f32 * 0.05) {
                 current += 1;
             }
             std::thread::sleep(Duration::from_millis(2));
@@ -885,5 +893,27 @@ mod tests {
         stop.store(true, Ordering::Relaxed);
         worker.join().unwrap();
         assert!(current >= 18, "{current} of the last 20 blocks played their own mix");
+    }
+
+    /// Whatever is in the shared region, the plugin hands the DAW numbers only, and none far
+    /// over full scale (a NaN in a DAW's mix bus silences it until restarted).
+    #[test]
+    fn what_comes_back_is_always_a_number() {
+        let name = format!("gachi-plugin-test-nan-{}", std::process::id());
+        let app = gachi_bridge::AppEnd::create(&name).expect("bridge");
+        let mut end = gachi_bridge::PluginEnd::open(&name, 9).expect("plugin end");
+        let n = 64;
+        let mut a = Audio { sample_rate: 48_000, missed: 0, own: f32::NAN, up: vec![0.0; n * 2], down: vec![0.0; n * 2] };
+        let mut bad = vec![0.25f32; n * 2];
+        bad[0] = f32::NAN;
+        bad[1] = f32::INFINITY;
+        bad[2] = -f32::INFINITY;
+        bad[3] = 1e30;
+        bad[4] = -1e30;
+        app.write_down(&bad);
+        exchange(&mut a, &mut end, n);
+        assert!(a.down.iter().all(|x| x.is_finite() && x.abs() <= 4.0), "{:?}", &a.down[..6]);
+        assert_eq!(&a.down[..6], &[0.0, 0.0, 0.0, 4.0, -4.0, 0.25]);
+        assert!((0.0..=4.0).contains(&end.own_gain()));
     }
 }

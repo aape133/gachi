@@ -166,6 +166,70 @@ fn connected_pair(stun: &str) -> (Net, Net, rtrb::Consumer<Frame>) {
     (a, b, b_rx)
 }
 
+/// Memory over a long room: two peers stream audio and room messages to each other while
+/// others come and go many times a second (each with its own keys, punching, stats). What
+/// the process holds must level off, not grow with every one who came and went.
+/// Run alone (it measures the whole process):
+/// `cargo test -p gachi-net --release --lib -- --ignored --exact tests::memory_levels_off_while_people_come_and_go --nocapture`
+/// (`GACHI_SOAK_SECS` for longer than 40 s)
+#[test]
+#[ignore]
+fn memory_levels_off_while_people_come_and_go() {
+    let secs: u64 = std::env::var("GACHI_SOAK_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(40);
+    let (a, b, mut b_rx) = connected_pair(&spawn_stun());
+    let mut sender = a.sender();
+    let mut f = Frame { channels: 2, frames: 32, ..Frame::EMPTY };
+    let start = Instant::now();
+    let (mut seq, mut next_id, mut churned) = (0u32, 100u16, 0u32);
+    let mut last_churn = Instant::now();
+    let mut visitor: Option<PeerId> = None;
+    let mut samples = Vec::new();
+    let mut next_sample = Duration::from_secs(5);
+    while start.elapsed() < Duration::from_secs(secs) {
+        // ~1000 audio packets a second, a room message now and then
+        for _ in 0..2 {
+            f.seq = seq;
+            seq = seq.wrapping_add(1);
+            sender.send(&f);
+        }
+        if seq % 100 == 0 {
+            a.send_control(2, vec![7u8; 200]);
+        }
+        while b_rx.pop().is_ok() {}
+        while a.try_event().is_some() {}
+        while b.try_event().is_some() {}
+        // someone comes in and goes again, every 50 ms
+        if last_churn.elapsed() >= Duration::from_millis(50) {
+            last_churn = Instant::now();
+            if let Some(id) = visitor.take() {
+                b.remove_peer(id);
+                churned += 1;
+            } else {
+                let id = next_id;
+                next_id = next_id.wrapping_add(1).max(100);
+                let (tx, _) = rtrb::RingBuffer::<Frame>::new(64);
+                b.add_peer(id, tx);
+                let key = crypto::PeerKey { public: crypto::Identity::generate().public, aes: false };
+                b.set_candidates(id, a.candidates.clone(), rand::random(), key);
+                b.send_control(id, vec![1u8; 100]);
+                visitor = Some(id);
+            }
+        }
+        if start.elapsed() >= next_sample {
+            next_sample += Duration::from_secs(5);
+            let live = alloc_guard::live_bytes();
+            println!("{:>4} s: {:>9} bytes held, {churned} came and went", start.elapsed().as_secs(), live);
+            samples.push(live);
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    // from 10 s on (everything warmed up) to the end
+    let (first, last) = (samples[1], *samples.last().unwrap());
+    let per_visit = (last - first) as f64 / (churned as f64 * (samples.len() - 2) as f64 / samples.len() as f64).max(1.0);
+    println!("grew {} bytes after warm-up ({per_visit:.0} per one who came and went)", last - first);
+    assert!(last - first < 64 * 1024, "held {first} at 10 s, {last} at the end: grows");
+}
+
 #[test]
 fn drops_unencrypted_and_wrongly_keyed_audio() {
     let (a, b, mut b_rx) = connected_pair(&spawn_stun());

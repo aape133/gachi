@@ -443,9 +443,11 @@ impl PluginEnd {
     }
 
     /// How loud to pass the player's own sound through, as the app asks (see
-    /// [`AppEnd::set_own_gain`]).
+    /// [`AppEnd::set_own_gain`]). Checked here too: it goes into the DAW's mix, and the
+    /// region is anyone's on this desktop to write.
     pub fn own_gain(&self) -> f32 {
-        f32::from_bits(self.map.shared().own_gain.load(Ordering::Acquire))
+        let g = f32::from_bits(self.map.shared().own_gain.load(Ordering::Acquire));
+        if g.is_finite() { g.clamp(0.0, 4.0) } else { 0.0 }
     }
 
     /// The app is running and looked in within `STALE_MS`.

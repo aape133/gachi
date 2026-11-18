@@ -126,7 +126,11 @@ fn clip_room_name(name: &str) -> String {
 /// any other (whoever has been in longest): its word decides, but a broken or hostile one
 /// must not hand us a room of 255, a name that fills the screen, or a list without end
 /// (we keep all of it, and run the room by it if we become host).
+/// The oldest a room can say it is (30 days; anything older is not believed).
+const ROOM_AGE_MAX_MS: u64 = 30 * 24 * 3600 * 1000;
+
 fn clean_room_state(mut state: RoomState, ours: &RoomState) -> RoomState {
+    state.age_ms = state.age_ms.filter(|a| *a <= ROOM_AGE_MAX_MS);
     state.name = clip_room_name(&state.name);
     state.max_peers = state.max_peers.clamp(2, gachi_proto::signal::ROOM_MAX);
     state.code = gachi_proto::code::normalize(&state.code).unwrap_or_else(|| ours.code.clone());
@@ -783,7 +787,10 @@ impl Session {
     /// the state holds the code's host key.
     pub fn broadcast_room_state(&self) {
         if self.is_host {
-            let bytes = PeerMsg::RoomState(fitting(self.room_state.clone())).to_bytes();
+            let mut state = self.room_state.clone();
+            // (how long the room has been open: see `RoomState::age_ms`)
+            state.age_ms = Some(now_ms().saturating_sub(self.started_at));
+            let bytes = PeerMsg::RoomState(fitting(state)).to_bytes();
             for &id in self.peers.keys().filter(|id| !self.kicked.iter().any(|(k, _)| k == *id)) {
                 self.net.send_control(id, bytes.clone());
             }
@@ -817,6 +824,7 @@ impl Session {
             aes: gachi_net::crypto::aes_in_hardware(),
             audio: Some(self.my_audio()),
             seats: gachi_proto::signal::ROOM_MAX,
+            nat: Some(crate::diagnose::nat_kind(self.net.mapping, self.net.public)),
         }
     }
 
@@ -894,6 +902,7 @@ impl Session {
             aes: join.aes,
             audio: None,
             seats: join.seats,
+            nat: join.nat,
         };
         // everyone already here (us first), for the newcomer to connect to
         let mut peers = vec![self.my_info()];
@@ -976,6 +985,14 @@ impl Session {
                 if from == self.host_id() {
                     let was_open = self.room_state.open;
                     self.room_state = clean_room_state(state, &self.room_state);
+                    // the room's own time (see `RoomState::age_ms`): ours from here on, also
+                    // to pass on if we become host
+                    if let Some(age) = self.room_state.age_ms.take() {
+                        let opened = now_ms().saturating_sub(age);
+                        if opened.abs_diff(self.started_at) > 1000 {
+                            self.started_at = opened;
+                        }
+                    }
                     if was_open != self.room_state.open {
                         notice(
                             app,
@@ -1205,22 +1222,12 @@ impl Session {
                 }
                 NetEvent::PunchFailed { id } => {
                     if let Some(p) = self.peers.get(&id) {
-                        // our own router is the hard kind: say so, and what helps
-                        let hard = matches!(self.net.mapping, gachi_net::stun::Mapping::Varies { .. });
-                        notice(
-                            app,
-                            if hard {
-                                format!(
-                                    "{}님과 직접 연결이 안 돼요. 내 인터넷이 직접 연결이 어려운 유형(대칭형 NAT: 모바일 핫스팟, 회사망 등)이에요. 집 유선 인터넷으로 바꾸거나, 공유기의 UPnP 또는 IPv6를 켜면 연결될 수 있어요.",
-                                    p.info.profile.name
-                                )
-                            } else {
-                                format!(
-                                    "{}님과 직접 연결이 안 돼요. 상대 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)일 수 있어요. 상대가 집 유선 인터넷으로 바꾸거나, 두 사람 다 IPv6를 켜거나, 내 공유기의 UPnP를 켜면 연결될 수 있어요.",
-                                    p.info.profile.name
-                                )
-                            },
-                        );
+                        // why, from what both sides know of their networks, and what helps
+                        let me = crate::diagnose::Side::new(Some(crate::diagnose::nat_kind(self.net.mapping, self.net.public)), &self.my_candidates);
+                        let them = crate::diagnose::Side::new(p.info.nat, &p.info.candidates);
+                        let text = crate::diagnose::no_direct_path(&me, &them, &p.info.profile.name);
+                        tracing::info!(id, mine = ?me.nat, theirs = ?them.nat, "no direct path");
+                        notice(app, text);
                     }
                 }
                 NetEvent::Candidates(addrs) => {
@@ -1873,6 +1880,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
                 password: password.clone(),
                 host_key: Some(o.host_key.clone()),
                 next_id: 2,
+                age_ms: None,
             };
             (1, room_state, Vec::new(), Some(o.gate), Some(media))
         }
@@ -1907,6 +1915,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
                 key: gathered.public_key,
                 aes: gachi_net::crypto::aes_in_hardware(),
                 seats: gachi_proto::signal::ROOM_MAX,
+                nat: Some(crate::diagnose::nat_kind(gathered.mapping, gathered.public)),
             };
             // seal it to the host (the password goes into the key, never on the wire)
             let code = code.clone();
@@ -1942,6 +1951,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
                 password: None,
                 host_key: None,
                 next_id: 0,
+                age_ms: None,
             };
             (welcome.you, room_state, welcome.peers, None, None)
         }
@@ -2064,7 +2074,10 @@ async fn ticker(app: AppHandle) {
         if let Some(e) = s.engine.as_mut() {
             e.collect_garbage();
         }
-        let _ = app.emit("levels", s.levels());
+        // (nobody is looking: see `commands::UI_HIDDEN`)
+        if !crate::commands::UI_HIDDEN.load(Ordering::Relaxed) {
+            let _ = app.emit("levels", s.levels());
+        }
         // the figures in the log: every 2 s when the full log is on, else every 30 s (what
         // goes wrong is logged when it happens either way)
         let full = crate::settings::VERBOSE_LOG.load(Ordering::Relaxed);
@@ -2231,6 +2244,7 @@ mod tests {
             host_key: Some("f".repeat(32)),
             next_id: u16::MAX,
             banned: (0..super::MAX_BANNED as u16).map(|k| IpAddr::V6(Ipv6Addr::new(0xfedc, 0xba98, 0x7654, k | 0xf000, 0, 0, 0, 0))).collect(),
+            age_ms: Some(super::ROOM_AGE_MAX_MS),
         };
         let n = PeerMsg::RoomState(super::fitting(state.clone())).to_bytes().len();
         println!("room state: {} bytes as is, {n} as sent", PeerMsg::RoomState(state).to_bytes().len());
@@ -2245,6 +2259,8 @@ mod tests {
             aes: true,
             audio: Some(AudioInfo { input_ms: 123.456_79, sample_rate: 384_000, link: Link::Wifi }),
             seats: 16,
+            // (the longest kind of network to name)
+            nat: Some(gachi_proto::signal::NatKind::Unknown),
         };
         let n = PeerMsg::Introduce { peer }.to_bytes().len();
         println!("introduction: {n} bytes");
@@ -2344,7 +2360,7 @@ mod tests {
 
     #[test]
     fn the_hosts_room_state_is_kept_within_what_a_room_can_be() {
-        let ours = RoomState { code: "K7MQ2X".into(), name: "합주".into(), open: true, max_peers: 4, password: None, host_key: None, next_id: 3, banned: vec![] };
+        let ours = RoomState { code: "K7MQ2X".into(), name: "합주".into(), open: true, max_peers: 4, password: None, host_key: None, next_id: 3, banned: vec![], age_ms: None };
         let wild = RoomState {
             code: "<script>".into(),
             name: format!("  {}\u{202E}\n", "가".repeat(500)),
@@ -2354,6 +2370,7 @@ mod tests {
             host_key: Some("not a key".into()),
             next_id: 9,
             banned: (0..200u8).map(|n| std::net::IpAddr::from([203, 0, 113, n])).collect(),
+            age_ms: Some(u64::MAX),
         };
         let got = clean_room_state(wild, &ours);
         assert_eq!(got.code, "K7MQ2X", "a code that is none: ours stays");
@@ -2363,8 +2380,9 @@ mod tests {
         assert_eq!(got.banned.len(), MAX_BANNED);
         assert_eq!(got.banned.last(), Some(&std::net::IpAddr::from([203, 0, 113, 199])), "the latest are kept");
         assert!(!got.open);
+        assert_eq!(got.age_ms, None, "a room older than any is not believed");
         // an ordinary one passes as it is
-        let fine = RoomState { code: "ABCDEF".into(), host_key: Some("0f".repeat(16)), password: Some("pw".into()), max_peers: 16, ..ours.clone() };
+        let fine = RoomState { code: "ABCDEF".into(), host_key: Some("0f".repeat(16)), password: Some("pw".into()), max_peers: 16, age_ms: Some(3_600_000), ..ours.clone() };
         assert_eq!(clean_room_state(fine.clone(), &ours), fine);
         assert_eq!(clip_room_name("   "), "새 합주실");
     }
@@ -2373,6 +2391,7 @@ mod tests {
         PeerEntry {
             info: PeerInfo {
                 seats: 0,
+                nat: None,
                 id: 2,
                 profile: Profile { name: "B".into(), instrument: "기타".into(), color: None },
                 is_host: false,

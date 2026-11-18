@@ -1973,6 +1973,130 @@ mod monitor_tests {
         assert!(crate::alloc_guard::count(|| drop(std::hint::black_box(vec![1u8; 100]))) >= 2);
     }
 
+    /// Frames as the network would carry them: kept to be handed to a peer's slot.
+    struct Wire(Arc<std::sync::Mutex<Vec<Frame>>>);
+    impl PacketSink for Wire {
+        fn send(&mut self, f: &Frame) {
+            self.0.lock().unwrap().push(*f);
+        }
+    }
+
+    /// Least-squares fit of `x` to a sine at `w` rad/sample: (amplitude, signal/error dB).
+    fn fit_tone(x: &[f64], w: f64) -> (f64, f64) {
+        let (mut ss, mut cc, mut sc, mut xs, mut xc) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (k, &v) in x.iter().enumerate() {
+            let (s, c) = (w * k as f64).sin_cos();
+            ss += s * s;
+            cc += c * c;
+            sc += s * c;
+            xs += v * s;
+            xc += v * c;
+        }
+        let det = ss * cc - sc * sc;
+        let (a, b) = ((xs * cc - xc * sc) / det, (xc * ss - xs * sc) / det);
+        let (mut sig, mut err) = (0.0, 0.0);
+        for (k, &v) in x.iter().enumerate() {
+            let (s, c) = (w * k as f64).sin_cos();
+            let m = a * s + b * c;
+            sig += m * m;
+            err += (v - m) * (v - m);
+        }
+        ((a * a + b * b).sqrt(), 10.0 * (sig / err.max(1e-300)).log10())
+    }
+
+    /// One PC plays a tone into its input; the packets go through the wire format (16 or 24
+    /// bit) into another PC's peer slot, which mixes it out. Returns (level change dB,
+    /// signal/error dB, left−right difference) of what that PC's speakers get.
+    fn through_the_room(level_db: f64, freq: f64, format: gachi_proto::audio::SampleFormat, peers: usize) -> (f64, f64, f64) {
+        use gachi_proto::audio::{decode, decode_samples, encode_audio, Packet, MAX_PACKET};
+        let cfg = EngineConfig {
+            host: HostChoice::Asio,
+            input_device: None,
+            output_device: None,
+            sample_rate: 48_000,
+            buffer_size: 64,
+            packet_frames: 32,
+            input: InputChannels::Stereo(0, 1),
+        };
+        let wire = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // the player
+        let (_c1, cmd_rx) = rtrb::RingBuffer::new(8);
+        let (g1, _g1) = rtrb::RingBuffer::new(8);
+        let (mut player, _) = processors(&cfg, Box::new(Wire(wire.clone())), cmd_rx, g1, shared(), (48_000, 2, 2, 64), true);
+        // the listener, with `peers` others in the room playing the same
+        let (mut cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
+        let (g2, _g2) = rtrb::RingBuffer::new(8);
+        let (_, mut listener) = processors(&cfg, Box::new(Nowhere), cmd_rx, g2, shared(), (48_000, 2, 2, 64), true);
+        let mut rings = Vec::new();
+        for id in 1..=peers as u16 {
+            let (tx, rx) = rtrb::RingBuffer::<Frame>::new(PEER_RING);
+            let handle = PeerHandle { params: Arc::new(PeerParams::default()), meter: Arc::new(Meter::default()), stats: Arc::new(SharedJitterStats::default()) };
+            let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle, gains: (f32::NAN, f32::NAN), channels: 2 });
+            assert!(cmd_tx.push(Cmd::AddPeer(slot)).is_ok());
+            rings.push(tx);
+        }
+        let amp = 10f64.powf(level_db / 20.0);
+        let w = std::f64::consts::TAU * freq / 48_000.0;
+        let (mut inbuf, mut out) = (vec![0f32; 64 * 2], vec![0f32; 64 * 2]);
+        let (mut left, mut right) = (Vec::new(), Vec::new());
+        let mut packet = [0u8; MAX_PACKET];
+        let blocks = 1500; // 2 s
+        for b in 0..blocks {
+            for k in 0..64 {
+                let v = (amp * (w * (b * 64 + k) as f64).sin()) as f32;
+                inbuf[k * 2] = v;
+                inbuf[k * 2 + 1] = v;
+            }
+            player.process(&inbuf);
+            for f in wire.lock().unwrap().drain(..) {
+                let n = encode_audio(&mut packet, 1, f.seq, f.channels, format, f.samples());
+                let Ok(Packet::Audio { header, payload, .. }) = decode(&packet[..n]) else { panic!("not audio") };
+                let mut g = Frame { seq: header.seq, channels: header.channels, frames: header.frames, ..Frame::EMPTY };
+                decode_samples(&header, payload, &mut g.data);
+                for tx in rings.iter_mut() {
+                    assert!(tx.push(g).is_ok());
+                }
+            }
+            listener.process(&mut out);
+            if b >= blocks - 750 {
+                left.extend(out.chunks(2).map(|s| s[0] as f64));
+                right.extend(out.chunks(2).map(|s| s[1] as f64));
+            }
+        }
+        let (a, snr) = fit_tone(&left, w);
+        let lr = left.iter().zip(&right).map(|(l, r)| (l - r).abs()).fold(0.0, f64::max);
+        (20.0 * (a / amp).log10(), snr, lr)
+    }
+
+    /// What one player sends reaches the others as it was played: level kept, nothing added
+    /// beyond the wire format's own rounding (16 bit: dither noise ~ -91 dBFS; 24 bit: far
+    /// below), both sides alike. Several playing loud at once: the limiter keeps the sum
+    /// under full scale without distortion.
+    #[test]
+    fn the_room_hears_what_was_played() {
+        use gachi_proto::audio::SampleFormat::{Pcm16, Pcm24};
+        for (format, name) in [(Pcm16, "16 bit"), (Pcm24, "24 bit")] {
+            for level in [-6.0, -20.0, -40.0] {
+                for freq in [100.0, 1000.0, 10_000.0] {
+                    let (gain, snr, lr) = through_the_room(level, freq, format, 1);
+                    println!("{name}: {level:>5} dBFS {freq:>6} Hz -> level {gain:+.3} dB, signal/error {snr:5.1} dB, L-R {lr:.1e}");
+                    assert!(gain.abs() < 0.05, "{name} {level} dB {freq} Hz: level moved {gain:+.3} dB");
+                    // (16 bit: each side gets its own dither, a step or two apart)
+                    let lr_max = if format == Pcm16 { 3.0 / 32768.0 } else { 1e-6 };
+                    assert!(lr < lr_max, "{name}: left and right differ by {lr:.1e}");
+                    // (16 bit: the dither's noise floor sets it, ~ 91 dB below full scale)
+                    let floor = if format == Pcm16 { 85.0 + level } else { 100.0f64.min(120.0 + level) };
+                    assert!(snr > floor, "{name} {level} dB {freq} Hz: signal/error {snr:.1} dB (wanted > {floor:.0})");
+                }
+            }
+        }
+        // three playing a loud tone together: 3 × -6 dBFS sums over full scale
+        let (gain, snr, _) = through_the_room(-6.0, 1000.0, Pcm24, 3);
+        let peak = 20.0 * (3.0f64 * 10f64.powf(-6.0 / 20.0)).log10();
+        println!("3 × -6 dBFS: sum {peak:+.1} dBFS -> {:+.2} dBFS out, signal/error {snr:.1} dB", gain - 6.0);
+        assert!(snr > 60.0, "the limiter distorted a steady sum: {snr:.1} dB");
+    }
+
     /// A host that runs the output before the input: one block late, still unbroken.
     #[test]
     fn the_software_monitor_survives_output_first() {

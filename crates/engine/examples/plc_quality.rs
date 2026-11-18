@@ -42,12 +42,22 @@ fn signal(kind: usize, n: usize, noise: &mut Rng) -> f32 {
         }
         // cymbals / noise
         3 => 0.3 * (noise.next() * 2.0 - 1.0),
+        // a sung or bowed note as played: 196 Hz whose pitch wanders a little (a slow
+        // random wobble, not a regular vibrato), harmonics that fade with height, some breath
+        4 => {
+            let wobble = 0.004 * ((std::f64::consts::TAU * 2.3 * t).sin() + 0.6 * (std::f64::consts::TAU * 3.7 * t + 1.0).sin() + 0.4 * (std::f64::consts::TAU * 7.9 * t + 2.0).sin());
+            let phase = std::f64::consts::TAU * 196.0 * (t + wobble / (std::f64::consts::TAU * 2.3));
+            let tone: f64 = (1..=8).map(|k| (phase * k as f64).sin() * 0.8f64.powi(k)).sum();
+            0.25 * tone + 0.03 * (noise.next() * 2.0 - 1.0)
+        }
         // a ramp: each sample says where it came from (to measure the buffer's delay)
         _ => n as f64 * 1e-5,
     }) as f32
 }
 
-const KINDS: [&str; 4] = ["bass 110 Hz", "chord C-E-G", "vibrato 220 Hz", "noise"];
+const KINDS: [&str; 5] = ["bass 110 Hz", "chord C-E-G", "vibrato 220 Hz", "noise", "voice, breathy"];
+/// the ramp (`signal`): each sample is its own index
+const RAMP: usize = 99;
 
 /// Plays `secs` of sound `kind` through a jitter buffer (target 3 packets, reads of 64);
 /// `arrival(seq)` = the read index at which packet `seq` arrives (`None` = lost).
@@ -82,7 +92,7 @@ fn play(kind: usize, pitch: bool, secs: f64, arrival: &dyn Fn(u32) -> Option<u64
 /// it tells (each sample is its own index).
 fn delay(arrival: &dyn Fn(u32) -> Option<u64>) -> usize {
     let all = |s: u32| arrival(s).or(Some((s as u64 * PF as u64) / READ as u64));
-    let (_, out) = play(4, true, 1.0, &all);
+    let (_, out) = play(RAMP, true, 1.0, &all);
     let i = 20_000;
     i - (out[i] as f64 / 1e-5).round() as usize
 }
@@ -143,6 +153,8 @@ fn main() {
         println!("{:<16} {:>8} ms / {:>4.2}× {:>11} ms / {:>4.2}×", name, row[0].0, row[0].1, row[1].0, row[1].1);
     }
 
+    long_gaps();
+
     // cost of starting the concealment (the pitch search), on this machine
     let mut jb = JitterBuffer::new(1);
     jb.set_drift_correction(false);
@@ -173,4 +185,60 @@ fn main() {
         s += 4;
     }
     println!("\nread that starts the concealment (pitch search included): worst {worst:?} of 200");
+}
+
+/// How much a stretch of sound repeats itself: the highest normalized correlation between
+/// `x[i..i + win]` and the same `lag` frames earlier, over lags `lo..=hi` (1 = one period
+/// played over and over: a steady tone, the "beep"; real music and noise much less).
+fn tonality(x: &[f32], at: usize, win: usize, lo: usize, hi: usize) -> f64 {
+    let mut best = 0f64;
+    for lag in lo..=hi {
+        let (mut xy, mut xx, mut yy) = (0f64, 0f64, 0f64);
+        for i in at..at + win {
+            let (a, b) = (x[i] as f64, x[i - lag] as f64);
+            xy += a * b;
+            xx += a * a;
+            yy += b * b;
+        }
+        if xx * yy > 1e-18 {
+            best = best.max(xy / (xx * yy).sqrt());
+        }
+    }
+    best
+}
+
+/// Long gaps: every 2 s, 40 ms of packets never come (a stall too long to wait for, a
+/// Wi-Fi hiccup). What fills them, from 10 ms in (when one period has been repeated a few
+/// times): how much it repeats itself (`tonality`, against the real sound at that spot)
+/// and how loud it still is (against the real sound).
+fn long_gaps() {
+    const GAP_MS: usize = 40;
+    let gap = GAP_MS * FS as usize / 1000 / PF; // packets
+    let every = 2 * FS as usize / PF;
+    println!("
+long gaps: every 2 s, {GAP_MS} ms lost; made-up sound from 10 ms on, how much it");
+    println!("varies from one repeat to the next (1 - best self-similarity, dB: real sound varies;");
+    println!("one period copied over and over does not, a steady beep):");
+    println!("{:<16} {:>14} {:>16} {:>14}", "sound", "real varies", "made up varies", "level 10-37 ms");
+    for (kind, name) in KINDS.iter().enumerate() {
+        let lost = |s: u32| s as usize > every && (s as usize) % every < gap;
+        let arrival = |s: u32| (!lost(s)).then_some((s as u64 * PF as u64) / READ as u64);
+        let (orig, out) = play(kind, true, 10.0, &arrival);
+        let d = delay(&arrival);
+        let (mut real, mut made, mut lvl, mut n) = (0f64, 0f64, 0f64, 0f64);
+        let (win, start) = (480usize, 480usize); // 10 ms windows, from 10 ms into the gap
+        for g in (every..orig.len() / PF - every).step_by(every) {
+            let at = g * PF + start; // in the original
+            if at + win + d >= out.len() {
+                break;
+            }
+            let varies = |c: f64| 10.0 * (1.0 - c).max(1e-9).log10();
+            real += varies(tonality(&orig, at, win, 40, 800));
+            made += varies(tonality(&out, at + d, win, 40, 800));
+            let rms = |x: &[f32]| (x.iter().map(|v| (v * v) as f64).sum::<f64>() / x.len() as f64).sqrt();
+            lvl += rms(&out[at + d..at + d + 1300]) / rms(&orig[at..at + 1300]).max(1e-9);
+            n += 1.0;
+        }
+        println!("{:<16} {:>11.1} dB {:>13.1} dB {:>13.0}%", name, real / n, made / n, 100.0 * lvl / n);
+    }
 }

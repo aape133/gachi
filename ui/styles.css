@@ -273,6 +273,9 @@ input[type=range]::-webkit-slider-thumb {
 }
 input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
 input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.18); }
+/* clicked: the mouse wheel moves it (see app.js) */
+input[type=range]:focus { outline: none; }
+input[type=range]:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent), 0 1px 4px rgba(0,0,0,.5); }
 input[type=range]:hover { --fill: var(--text); }
 
 .ctrl {
@@ -606,8 +609,10 @@ input[type=range]:hover { --fill: var(--text); }
   border: 1px solid transparent; font-weight: 800; font-size: 12px; color: var(--text-3); transition: all .12s;
 }
 .ms:hover { color: var(--text); border-color: var(--line-2); }
-.ms.m.on { background: var(--bad); color: #fff; border-color: var(--bad); }
-.ms.s.on { background: var(--warn); color: #1a1200; border-color: var(--warn); }
+/* mute and solo when on: the same solid colours in both themes (red and amber read
+   apart from each other and from the card in either) */
+.ms.m.on { background: #e5484d; color: #fff; border-color: #e5484d; }
+.ms.s.on { background: #f5a524; color: #1a1200; border-color: #f5a524; }
 /* the record button: a ring when this track is left out, a red dot when a recording takes
    it, and the whole button red while one is being made */
 .ms.r { display: inline-grid; place-items: center; }
@@ -787,6 +792,11 @@ input[type=range]:hover { --fill: var(--text); }
 @keyframes pop { from { opacity: 0; transform: scale(.96); } }
 @keyframes out { to { opacity: 0; transform: scale(.96); } }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+/* the window is minimized or covered: no animation starts. Nothing draws then, and the
+   browser holds every element that started one (and everything around it) until it can
+   draw a frame again, also after it was taken off the page: a room where people come and
+   go while gachi is minimized kept all their cards and notices */
+.page-hidden *, .page-hidden *::before, .page-hidden *::after { animation: none !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
 }
@@ -872,6 +882,29 @@ input[type=range]:hover { --fill: var(--text); }
   font-size: 12.5px; line-height: 1.5; color: var(--text-3); text-align: center;
 }
 .nearby-empty[hidden] { display: none; }
+/* the room left last: a slim bar between the name row and the cards (they keep their
+   height), only while there is one */
+.recent-bar {
+  display: flex; align-items: center; gap: 12px; width: min(780px, 100%); margin-top: 16px;
+  padding: 10px 14px 10px 14px; border-radius: var(--r-lg); text-align: left; color: var(--text);
+  background: var(--surface); border: 1px solid var(--line); cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.recent-bar[hidden] { display: none; }
+.recent-bar:hover { border-color: var(--accent); }
+.recent-bar .avatar { flex: none; }
+.recent-bar .rb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.recent-bar .rb-label { font-size: 11px; font-weight: 600; color: var(--text-3); }
+.recent-bar .rb-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.recent-bar .rb-name b { font-size: 14.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-bar .rb-code { flex: none; font-size: 12.5px; color: var(--text-3); }
+.recent-bar .rb-lock { flex: none; display: grid; color: var(--text-3); }
+.recent-bar .rb-lock svg { width: 14px; height: 14px; }
+.recent-bar .rb-go {
+  flex: none; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  background: var(--accent-soft); color: var(--accent-2); transition: background .15s, color .15s;
+}
+.recent-bar:hover .rb-go { background: var(--accent); color: #fff; }
 .nearby-room {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left; flex: none;
   background: var(--surface-2); border: 1px solid transparent; border-radius: var(--r-sm); color: var(--text);

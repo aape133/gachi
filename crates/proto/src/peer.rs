@@ -67,6 +67,11 @@ pub struct RoomState {
     /// nobody in from there. Part of the room's state so that the next host keeps to it.
     #[serde(default)]
     pub banned: Vec<std::net::IpAddr>,
+    /// How long the room has been open (ms), as the host sends it: every member shows the
+    /// room's time, not its own since joining, and the next host goes on from it. An age
+    /// rather than a time of day: the PCs' clocks need not agree. Older versions do not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age_ms: Option<u64>,
 }
 
 impl PeerMsg {

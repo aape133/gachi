@@ -305,12 +305,15 @@ pub fn encode_audio(
     // silence (muted: stays exactly silent). 24 bits needs none: its steps are below the
     // noise of any converter.
     let dither = format == SampleFormat::Pcm16 && samples.iter().any(|&s| s != 0.0);
+    // (each sender its own: senders with the same packet numbers would add up the same hiss
+    // in step in a listener's mix)
+    let stream = seq ^ (sender as u32).wrapping_mul(0x27D4_EB2D);
     let mut i = AUDIO_HEADER;
     for (k, &s) in samples.iter().enumerate() {
         let s = s.clamp(-1.0, 1.0);
         match format {
             SampleFormat::Pcm16 => {
-                let noise = if dither { tpdf(seq, k as u32) } else { 0.0 };
+                let noise = if dither { tpdf(stream, k as u32) } else { 0.0 };
                 out[i..i + 2].copy_from_slice(&((s * 32767.0 + noise).round() as i16).to_le_bytes());
                 i += 2;
             }

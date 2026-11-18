@@ -100,6 +100,47 @@
   }
   const setMeter = (el, lv) => { if (!el) return; meterBar(el.children[0], lv[0]); meterBar(el.children[1], lv[1]); };
 
+  /* a slider clicked once follows the mouse wheel while the pointer is on it (until
+     something else is clicked; the wheel scrolls as usual everywhere else): a notch moves
+     it about 1/40 of its range (1 dB, 5 on the pan, 3 % of the click), with Shift one step */
+  // (by how far the wheel turned, not by events: one notch of a mouse wheel is 100 px, a
+  // wheel turned fast sends several in one event, a touchpad many small ones)
+  const WHEEL_NOTCH = 100;
+  let wheelLeft = 0, wheelOn = null;
+  function sliderWheel(e) {
+    const t = e.currentTarget;
+    if (t !== document.activeElement || t.disabled) return;
+    e.preventDefault();
+    const min = +t.min, max = +t.max, step = +t.step || 1;
+    const notch = e.shiftKey ? step : Math.max(step, Math.round((max - min) / 40 / step) * step);
+    // (Shift turns the wheel sideways in some systems; lines rather than pixels in others)
+    let d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (e.deltaMode === 1) d *= WHEEL_NOTCH / 3;
+    if (wheelOn !== t) { wheelOn = t; wheelLeft = 0; }
+    wheelLeft -= d;
+    const notches = Math.trunc(wheelLeft / WHEEL_NOTCH);
+    if (!notches) return;
+    wheelLeft -= notches * WHEEL_NOTCH;
+    const v = clamp(+t.value + notches * notch, min, max);
+    if (v === +t.value) return;
+    t.value = v;
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  // (on a slider once it is clicked, not on the page: a wheel handler that may stop the
+  // scrolling makes every scroll of the page wait for the script)
+  const hookWheel = (e) => {
+    const t = e.target;
+    if (t instanceof HTMLInputElement && t.type === 'range' && !t.wheelHooked) {
+      t.wheelHooked = true;
+      t.addEventListener('wheel', sliderWheel, { passive: false });
+    }
+  };
+  // (pressed, or focused from the keyboard; a window that is not in front gets no focus
+  // events until it is)
+  document.addEventListener('pointerdown', hookWheel, true);
+  document.addEventListener('focusin', hookWheel);
+
   function toast(text) {
     const el = h(`<div class="toast" title="눌러서 닫기">${esc(text)}</div>`);
     $('#toasts').append(el);
@@ -159,12 +200,9 @@
     const btn = $('#btn-create');
     btn.disabled = true; btn.textContent = '만드는 중…';
     try {
-      const r = await backend.createRoom({
-        name: $('#create-name').value.trim(),
-        maxPeers: createMax,
-        password: $('#create-pw-on').checked ? $('#create-pw').value : '',
-      });
-      enterRoom(r);
+      const password = $('#create-pw-on').checked ? $('#create-pw').value : '';
+      const r = await backend.createRoom({ name: $('#create-name').value.trim(), maxPeers: createMax, password });
+      enterRoom(r, password);
       openInvite();
     } catch (err) {
       toast(err.message);
@@ -232,10 +270,12 @@
         if (st === 'done') { li.querySelector('.st').innerHTML = icon('check'); li.querySelector('.detail').textContent = detail || ''; }
       }, password);
       codeReal.value = ''; renderCode();
-      enterRoom(r);
+      enterRoom(r, password);
       return 'ok';
     } catch (err) {
       show('home');
+      // the room left last has closed meanwhile (everyone left): nothing to go back to
+      if (err.kind === 'not_found' && recent?.code === code) { recent = null; renderRecent(); }
       if (err.kind === 'password_required' || err.kind === 'wrong_password') { askPassword(code, err.kind === 'wrong_password'); return 'stop'; }
       if (err.message !== 'cancelled') { setHint(err.message, true); shake(); }
       return err.kind || err.message === 'cancelled' ? 'stop' : 'retry';
@@ -284,10 +324,16 @@
   let room = null;
   const peers = new Map();   // id → PeerView
   const strips = new Map();  // id → { el, meter, avatar }
+  // the room left last (see `renderRecent`), the nearby list as last looked up
+  let recent = null, lastNearby = [], recentTimer = null;
   let clockTimer = null;
 
-  function enterRoom(r) {
+  /** `password`: what the room was entered with (kept in memory, for going back in: see
+   *  `recent`) */
+  function enterRoom(r, password = '') {
     room = r;
+    clearInterval(recentTimer);
+    room.pw = password || '';
     peers.clear(); strips.clear();
     $('#room-name').textContent = r.name; $('#room-name').title = r.name; // (a long name is cut short in the bar)
     $('#room-code').textContent = fmtCode(r.code);
@@ -309,6 +355,9 @@
 
   function leaveRoom() {
     backend.leaveRoom();
+    // to go back in with one click (a room with its code turned off cannot be joined)
+    recent = room && room.open !== false ? { code: room.code, name: room.name, pw: room.pw || '', at: Date.now() } : null;
+    renderRecent();
     room = null;
     clearInterval(clockTimer);
     closePop();
@@ -593,6 +642,8 @@
   backend.on('kicked', () => {
     if (!room) return;
     leaveRoom();
+    // (put out: it would not let us back in)
+    recent = null; renderRecent();
     toast('방장이 방에서 내보냈어요');
   });
   backend.on('stats', ({ peers: list }) => {
@@ -651,6 +702,8 @@
       $('#stage .invite-slot')?.remove();
     }
     if (r.open !== undefined) room.open = r.open;
+    // the room's own time, as the host tells it (the clock reads it every second)
+    if (r.startedAt) room.startedAt = r.startedAt;
     if (r.maxPeers) room.maxPeers = r.maxPeers;
     if (r.inviteUrl) room.inviteUrl = r.inviteUrl;
     if ($('#modal-invite').classList.contains('open')) fillRoomPanel();
@@ -916,8 +969,13 @@
     $('#metro-vol-menu-val').textContent = metroVolMenu.value + '%';
     backend.updateSettings({ metronomeVolume: +metroVolMenu.value });
   });
+  // a double click puts the click back at its usual loudness
+  const METRO_VOL_DEFAULT = 60;
+  for (const el of [metroVolMenu, $('#set-metro-vol')]) {
+    el.addEventListener('dblclick', () => { el.value = METRO_VOL_DEFAULT; el.dispatchEvent(new Event('input')); });
+  }
   function syncMetroVol() {
-    metroVolMenu.value = backend.getSettings().metronomeVolume ?? 60; paintRange(metroVolMenu);
+    metroVolMenu.value = backend.getSettings().metronomeVolume ?? METRO_VOL_DEFAULT; paintRange(metroVolMenu);
     $('#metro-vol-menu-val').textContent = metroVolMenu.value + '%';
   }
 
@@ -1165,6 +1223,14 @@
   }
   window.addEventListener('focus', probeDevice);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) probeDevice(); });
+  // no animations while nothing is drawn (see `.page-hidden` in the styles)
+  // and no meters sent (see `commands::UI_HIDDEN`)
+  const syncHidden = () => {
+    document.documentElement.classList.toggle('page-hidden', document.hidden);
+    backend.setUiVisible?.(!document.hidden);
+  };
+  document.addEventListener('visibilitychange', syncHidden);
+  syncHidden();
   $$('.modal-backdrop').forEach((bd) => {
     bd.addEventListener('pointerdown', (e) => { if (e.target === bd) closeModal(bd); });
     $$('[data-close]', bd).forEach((b) => b.addEventListener('click', () => closeModal(bd)));
@@ -1389,6 +1455,9 @@
   }
   $('#nearby-refresh').addEventListener('click', refreshNearby);
   function renderNearby(rooms) {
+    // (the room left last is shown above it already)
+    lastNearby = rooms;
+    rooms = rooms.filter((r) => r.code !== recent?.code);
     $('#nearby-empty').hidden = rooms.length > 0;
     $('#nearby-list').innerHTML = rooms.map((r) => {
       const full = r.members >= r.max_peers;
@@ -1405,6 +1474,32 @@
     const b = e.target.closest('.nearby-room');
     if (b && !b.disabled) join(b.dataset.code);
   });
+
+  /* ── the room left last: one click back in, while the app runs. Kept in memory only
+     (code, name, the password it was entered with): closing the app forgets it ── */
+  const ago = (ms) => {
+    const m = Math.floor(ms / 60000);
+    return m < 1 ? '방금' : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
+  };
+  function renderRecent() {
+    const box = $('#recent');
+    clearInterval(recentTimer);
+    box.hidden = !recent;
+    if (!recent) { renderNearby(lastNearby); return; }
+    box.innerHTML = `
+      <span class="avatar sm" style="--hue:${hue(recent.name)}">${esc(initial(recent.name))}</span>
+      <span class="rb-text">
+        <span class="rb-label">최근 들어간 방 · ${ago(Date.now() - recent.at)}</span>
+        <span class="rb-name"><b>${esc(recent.name || '이름 없는 방')}</b><span class="rb-code mono">${fmtCode(recent.code)}</span></span>
+      </span>
+      ${recent.pw ? '<span class="rb-lock" data-icon="lock" title="비밀번호 방 (들어갈 때 쓴 비밀번호로 들어가요)"></span>' : ''}
+      <span class="rb-go">참여</span>`;
+    hydrateIcons(box);
+    // ("방금" → "3분 전")
+    recentTimer = setInterval(() => { if (recent && !room) renderRecent(); }, 30_000);
+    renderNearby(lastNearby);
+  }
+  $('#recent').addEventListener('click', () => { if (recent) join(recent.code, recent.pw || undefined); });
 
   /* ═══════════════════════ SETTINGS ═══════════════════════ */
 
