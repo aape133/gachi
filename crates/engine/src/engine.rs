@@ -772,7 +772,8 @@ fn open_streams(
     let (in_cfg, in_fmt) = pick_config(&in_dev, true)?;
     let (out_cfg, out_fmt) = pick_config(&out_dev, false)?;
     if in_cfg.sample_rate != out_cfg.sample_rate {
-        // TODO: resample (rubato) instead of refusing
+        // (only reachable without ASIO, in a dev build: an ASIO driver is one device for
+        // both directions at one rate, and the app offers only ASIO or the DAW plugin)
         return Err(EngineError::Unsupported(gachi_lang::tr!("audio.input_device_runs", input = in_cfg.sample_rate.0, output = out_cfg.sample_rate.0)));
     }
 

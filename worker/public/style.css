@@ -1,11 +1,5 @@
 /* gachi.band — the landing page. The app's own colours, font and logo. */
-@font-face {
-  font-family: "Pretendard Variable";
-  font-weight: 45 920;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardVariable.woff2") format("woff2-variations");
-}
+/* the font: /fonts/pretendard.css (pieces loaded only as the page needs them) */
 
 :root {
   --bg: #121419;

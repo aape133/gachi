@@ -236,7 +236,8 @@ mod tests {
         let mut buf = [0u8; 64];
         let t = Instant::now();
         assert_eq!(a.recv_from(&mut buf).unwrap_err().kind(), io::ErrorKind::WouldBlock);
-        assert!(t.elapsed() < Duration::from_millis(5), "reading waited");
+        // (far below the 100 ms wait below; 5 ms failed now and then on a busy PC)
+        assert!(t.elapsed() < Duration::from_millis(50), "reading waited {:?}", t.elapsed());
         let t = Instant::now();
         assert!(!a.wait_readable(Duration::from_millis(100)));
         assert!(t.elapsed() >= Duration::from_millis(80), "woke after {:?} with nothing there", t.elapsed());

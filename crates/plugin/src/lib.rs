@@ -219,7 +219,10 @@ impl Processor {
     /// Lets go of the bridge (deactivated or removed): another instance may take it.
     fn disconnect(&self) {
         self.link.stop.store(true, Relaxed);
-        if let Some(t) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        // (taken out first: joining while holding the lock would keep a `connect` from
+        // another host thread waiting for as long as the link takes to stop)
+        let worker = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(t) = worker {
             t.thread().unpark();
             let _ = t.join();
         }
