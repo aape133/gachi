@@ -76,6 +76,13 @@ pub struct Settings {
     /// also one file of everyone together, as heard here
     #[serde(default = "yes")]
     pub rec_mix: bool,
+    /// the app's language: "ko", "en", "ja", or "auto" (Windows' display language)
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    "auto".into()
 }
 
 fn default_rec_format() -> String {
@@ -133,8 +140,8 @@ impl Default for Settings {
             packet_size: 0,
             jitter_mode: "auto".into(),
             jitter_packets: 3,
-            name: "나".into(),
-            instrument: "기타".into(),
+            name: gachi_lang::tr!("settings.default_name"),
+            instrument: gachi_lang::tr!("settings.default_instrument"),
             color: None,
             // the connection server (Cloudflare Worker); GACHI_SERVER overrides it
             server: std::env::var("GACHI_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.into()),
@@ -152,6 +159,7 @@ impl Default for Settings {
             rec_format: default_rec_format(),
             rec_bits: default_rec_bits(),
             rec_mix: true,
+            language: default_language(),
         }
     }
 }
@@ -229,7 +237,8 @@ impl Settings {
                 }
             }
         }
-        *self = serde_json::from_value(v).map_err(|e| format!("잘못된 설정 값: {e}"))?;
+        *self = serde_json::from_value(v).map_err(|e| gachi_lang::tr!("settings.invalid_setting_e", e))?;
+        gachi_lang::choose(&self.language);
         Ok(())
     }
 

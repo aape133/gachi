@@ -26,6 +26,7 @@
 | 🔒 **암호화** | 방 안의 모든 소리와 채팅은 종단 간 암호화돼요. |
 | 🎚 **DAW 연동** | VST3 플러그인으로 DAW의 소리를 그대로 방에 보내요. |
 | 👥 **최대 16명** | 6자리 코드나 초대 링크 하나로 들어와요. 방 크기는 2명부터 16명까지 정해요. |
+| 🌐 **한국어 · English · 日本語** | 앱 화면과 안내를 세 언어로 볼 수 있어요. 처음에는 Windows 언어를 따르고, 설정 → 일반에서 바꿔요. |
 
 ## 🚀 시작하기
 
@@ -149,7 +150,7 @@ gachi는 사람들끼리 직접 연결하려고 네트워크 주소를 여러 �
 
 ## 🛠 소스에서 빌드하기
 
-이 저장소에 앱, VST3 플러그인, 연결 서버의 소스와 빌드·설치 스크립트가 모두 들어 있어요. 릴리스마다 같은 이름의 태그(`v0.3.0` 등)가 그 릴리스를 만든 소스예요.
+이 저장소에 앱, VST3 플러그인, 연결 서버의 소스와 빌드·설치 스크립트가 모두 들어 있어요. 릴리스마다 같은 이름의 태그(`v0.4.0` 등)가 그 릴리스를 만든 소스예요.
 
 ### 준비물 (Windows 10 / 11, 64비트)
 
@@ -201,13 +202,26 @@ cargo test --workspace
 
 방에 들어갈 때만 쓰는 작은 서버(Cloudflare Worker)예요. 직접 띄우거나 배포하는 방법은 [worker/README.md](worker/README.md)에 있어요. 앱이 다른 서버를 쓰게 하려면 `GACHI_SERVER` 환경 변수를 주거나 `app/src/settings.rs`의 `DEFAULT_SERVER`를 바꿔 빌드해요.
 
+## 🌐 번역
+
+앱의 모든 문구는 `ui/locales/`의 언어 파일에 있어요. 언어마다 파일이 하나씩 있고(`en-US.json`, `ko-KR.json`, `ja-JP.json`), 영어(`en-US`)가 기준이에요. 다른 언어 파일에 없는 문구는 영어로 나와요.
+
+새 언어를 더하려면:
+
+1. `ui/locales/en-US.json`을 복사해 언어 코드로 이름을 바꾸고(예: `fr-FR.json`), 값만 번역해요. 키와 `{name}` 같은 자리 표시는 그대로 둬요.
+2. `"language.name"`에는 그 언어로 쓴 언어 이름을 적어요(예: `"Français"`).
+3. `ui/locales/languages.json` 목록에 코드를 더해요.
+4. `cargo test -p gachi-lang`으로 빠진 문구나 자리 표시가 다른 곳이 없는지 확인해요.
+
+다시 빌드하면 설정 → 일반의 언어 목록에 저절로 나타나요. 한 줄에 다 들어가지 않는 버튼 글자는 앱이 알아서 줄이거나 아이콘만 보여 줘요.
+
 ## 📄 라이선스
 
 gachi는 자유 소프트웨어예요. **GNU General Public License 버전 3**(GPLv3)에 따라 쓰고, 고치고, 다시 배포할 수 있어요. 전문은 [LICENSE](LICENSE)에 있어요. 보증은 없어요.
 
 - 앱은 Steinberg ASIO SDK를 그 SDK의 GPLv3 선택지로 써서 빌드돼요. SDK 자체는 이 저장소에 없어요.
 - 녹음 파일은 WAV는 hound, FLAC은 flacenc 라이브러리로 써요(둘 다 Apache-2.0). FLAC 형식 자체는 누구나 자유롭게 쓸 수 있어요.
-- 같이 쓰는 오픈소스 라이브러리는 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)에, 글꼴 Pretendard의 라이선스(SIL OFL 1.1)는 [ui/fonts/LICENSE.txt](ui/fonts/LICENSE.txt)에 있어요.
+- 같이 쓰는 오픈소스 라이브러리는 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)에, 글꼴 Pretendard·Pretendard JP의 라이선스(SIL OFL 1.1)는 [ui/fonts/LICENSE.txt](ui/fonts/LICENSE.txt)에 있어요.
 
 <p>
   <img src="ui/steinberg/asio-compatible-bw.svg" alt="ASIO Compatible" width="120">

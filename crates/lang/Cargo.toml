@@ -1,0 +1,8 @@
+[package]
+name = "gachi-lang"
+description = "The language gachi speaks to its user (Korean, English, Japanese) and the tr! macro"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

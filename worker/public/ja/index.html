@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gachi - 離れていても、一緒にセッション</title>
+<meta name="description" content="gachiは、インターネットで一緒に演奏できるセッションアプリです。音はサーバーを通らず、お互いに直接届きます。無料のオープンソース（GPLv3）、Windows用。">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#121419" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://gachi.band/ja/">
+<link rel="alternate" hreflang="ko" href="https://gachi.band/">
+<link rel="alternate" hreflang="en" href="https://gachi.band/en/">
+<link rel="alternate" hreflang="ja" href="https://gachi.band/ja/">
+<link rel="alternate" hreflang="x-default" href="https://gachi.band/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="gachi">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:title" content="gachi - 離れていても、一緒にセッション">
+<meta property="og:description" content="gachiは、インターネットで一緒に演奏できるセッションアプリです。無料のオープンソース、Windows用。">
+<meta property="og:image" content="https://gachi.band/img/og-ja.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://gachi.band/ja/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "name": "gachi",
+      "url": "https://gachi.band/",
+      "inLanguage": "ja"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "gachi",
+      "description": "インターネットで一緒に演奏できるセッションアプリ。音はサーバーを通らず、お互いに直接届きます。",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Windows 10, Windows 11",
+      "url": "https://gachi.band/ja/",
+      "downloadUrl": "https://github.com/aape133/gachi/releases/latest",
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "JPY" }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/ja/" aria-label="gachi ホーム">
+      <svg class="mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/><path d="M15 3.76 A8 8 0 0 1 15 16.24 A8 8 0 0 1 15 3.76Z"/></svg>
+      gachi
+    </a>
+    <nav class="nav">
+      <a href="#features">機能</a>
+      <a href="#start">はじめかた</a>
+      <a href="#faq">よくある質問</a>
+      <a href="https://github.com/aape133/gachi" class="nav-gh">GitHub</a>
+      <details class="lang">
+        <summary aria-label="言語を選ぶ"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>日本語</summary>
+        <ul>
+          <li><a href="/" hreflang="ko" lang="ko" data-lang="ko">한국어</a></li>
+          <li><a href="/en/" hreflang="en" lang="en" data-lang="en">English</a></li>
+          <li><a href="/ja/" hreflang="ja" lang="ja" data-lang="ja" aria-current="page">日本語</a></li>
+        </ul>
+      </details>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- hero -->
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow"><span class="dot"></span>無料 · オープンソース · Windows</p>
+      <h1>離れていても、<br><span class="grad">一緒にセッション</span></h1>
+      <p class="lead"><span>gachiは、インターネットで一緒に演奏できるセッションアプリです。</span>
+        <span>音はサーバーを通らず、お互いに直接届きます。</span>
+        <span>アプリ、VST3プラグイン、接続サーバーまで、<b>すべてのソースを公開したオープンソース</b>です。</span></p>
+      <div class="cta">
+        <a class="btn primary" id="dl" href="https://github.com/aape133/gachi/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+          Windows版をダウンロード
+        </a>
+        <a class="btn" href="https://github.com/aape133/gachi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1.3-4-2-6-2.5m12 4.5v-3.3a2.9 2.9 0 0 0-.8-2.2c2.7-.3 5.6-1.4 5.6-6a4.7 4.7 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.6 2.4 5.6 2.7 5.6 2.7a4.3 4.3 0 0 0-.1 3.2A4.7 4.7 0 0 0 4.2 9c0 4.6 2.9 5.7 5.6 6a2.9 2.9 0 0 0-.8 2.2V21"/></svg>
+          ソースコードを見る
+        </a>
+      </div>
+      <p class="meta"><span id="ver">最新バージョン</span> · Windows 10 / 11（64ビット） · ASIOオーディオインターフェイス</p>
+
+      <figure class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="/img/room-light-800.webp 800w, /img/room-light.webp 1600w" sizes="(max-width: 1100px) 100vw, 1060px">
+          <img src="/img/room-dark.webp" srcset="/img/room-dark-800.webp 800w, /img/room-dark.webp 1600w" sizes="(max-width: 1100px) 100vw, 1060px" width="1600" height="1000" alt="gachiのルーム画面：6人分のカードに、名前、楽器、音量レベル、ボリュームとパン、遅延が表示されています">
+        </picture>
+      </figure>
+    </div>
+  </section>
+
+  <!-- features -->
+  <section class="features" id="features">
+    <div class="wrap">
+      <h2>セッションに必要なものを、しっかりと</h2>
+      <div class="grid">
+        <article class="feat">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+          <h3>サーバーを通さず直接接続</h3>
+          <p>音は中継サーバーを通らず、お互いに直接届きます。16・24ビットの無圧縮で送り、接続状態に合わせてバッファを自動で調整します。遅延がどこで生じているかを、メンバーごとに分けて表示します。</p>
+        </article>
+        <article class="feat">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg></div>
+          <h3>最大16人</h3>
+          <p>6桁のコード、招待リンク、QRコードで参加できます。ホストが抜けても次の人が引き継ぎ、インターネットが一時的に切れても自動で戻ります。</p>
+        </article>
+        <article class="feat">
+          <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" class="fill"/></svg></div>
+          <h3>トラックごとの録音</h3>
+          <p>メンバーごとに別々のWAV・FLACファイルで保存し、自分が聴いたとおりのミックスも一緒に残します。録音する人だけを選べます。</p>
+        </article>
+        <article class="feat">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M8 21h8l-3-17h-2zM12 14l5-5"/></svg></div>
+          <h3>全員が同じタイミングのメトロノーム</h3>
+          <p>ルーム全体が同じ瞬間にクリックを聴きます。BPM、拍子、カウントインを決めれば、全員に同じように鳴ります。</p>
+        </article>
+        <article class="feat">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></div>
+          <h3>DAWと一緒に</h3>
+          <p>VST3プラグインをDAWのトラックの最後に挿せば、エフェクトを通した音でセッションでき、ほかのメンバーの音がその場でミックスされます。DAWに遅延を加えません。</p>
+        </article>
+        <article class="feat">
+          <div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <h3>エンドツーエンド暗号化</h3>
+          <p>音とチャットは、ルームのメンバーにしか開けないよう暗号化されます。ルームのパスワードもサーバーには送りません。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- open source -->
+  <section class="oss">
+    <div class="wrap oss-in">
+      <div>
+        <p class="eyebrow">オープンソース</p>
+        <h2>すべてのコードを公開しています</h2>
+        <p>アプリ、VST3プラグイン、接続サーバーまで、すべてGitHubで公開しています。誰でも仕組みを確かめたり、改変して使ったり、自分の接続サーバーを立てたりできます。ライセンスはGPLv3です。</p>
+        <a class="link" href="https://github.com/aape133/gachi">github.com/aape133/gachi →</a>
+      </div>
+      <ul class="oss-list">
+        <li><b>アプリ</b><span>Rust · Tauri</span></li>
+        <li><b>VST3プラグイン</b><span>Rust</span></li>
+        <li><b>接続サーバー</b><span>Cloudflare Workers</span></li>
+        <li><b>ライセンス</b><span>GPLv3</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- start -->
+  <section class="start" id="start">
+    <div class="wrap">
+      <h2>3ステップではじめられます</h2>
+      <ol class="steps">
+        <li><span class="n">1</span><h3>インストール</h3><p>インストーラーを実行し、設定でオーディオインターフェイスを選びます。</p></li>
+        <li><span class="n">2</span><h3>ルームを作る</h3><p>名前を決めてルームを作り、コードか招待リンクを友だちに送ります。</p></li>
+        <li><span class="n">3</span><h3>一緒に演奏する</h3><p>友だちがコードで入ると、すぐにお互いの音が聞こえます。</p></li>
+      </ol>
+      <div class="req">
+        <h3>必要なもの</h3>
+        <ul>
+          <li>Windows 10 / 11（64ビット）</li>
+          <li>ASIOドライバーのあるオーディオインターフェイス（DAWと一緒に使うときは、DAWがデバイスを扱います）</li>
+          <li>有線のインターネット接続をおすすめします。人数の多いルームでは、十分なアップロード速度が必要です。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- faq -->
+  <section class="faq" id="faq">
+    <div class="wrap narrow">
+      <h2>よくある質問</h2>
+      <details>
+        <summary>遅延はどのくらいですか？</summary>
+        <p>距離、インターネット、オーディオ機器によって変わります。同じ都市くらいの近さで有線接続なら、お互いの音を聴いて合わせられるほど短くなります。アプリがメンバーごとの遅延を、相手の機器、ネットワーク、バッファ、自分の機器に分けて表示するので、どこを改善すればよいかがわかります。</p>
+      </details>
+      <details>
+        <summary>無料ですか？</summary>
+        <p>はい、無料です。広告もなく、ソースコードもすべて公開しています。</p>
+      </details>
+      <details>
+        <summary>接続できません</summary>
+        <p>gachiは中継サーバーを使わずに直接接続します。双方がモバイルホットスポットの場合や、会社・学校のネットワークのように直接接続を遮断する環境では、接続できないことがあります。その場合は、アプリが原因と対処法を表示します。ルーターにUPnPがない場合は、設定の固定ポートをルーターでポート転送してみてください。</p>
+      </details>
+      <details>
+        <summary>個人情報はどう扱われますか？</summary>
+        <p>音とチャットはサーバーを通らず、暗号化されてやり取りされます。接続サーバーは最初にお互いをつなぐだけで、誰が接続したかを保存しません。</p>
+        <p>アプリの画面にほかの人のIPアドレスが表示されることはなく、問題調査用の記録（ログ）にもアドレスの一部しか残しません。ただし、音をお互いに直接送るにはコンピューター同士が相手のアドレスを知る必要があるため、ネットワーク解析ツールを使えば同じルームのメンバーのIPアドレスを確認できます。知らない人と一緒に使うときは、この点にご注意ください。</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- last call -->
+  <section class="last">
+    <div class="wrap">
+      <h2>さあ、一緒に演奏しましょう</h2>
+      <div class="cta">
+        <a class="btn primary" id="dl2" href="https://github.com/aape133/gachi/releases/latest">Windows版をダウンロード</a>
+        <a class="btn" id="vst" href="https://github.com/aape133/gachi/releases/latest">VST3プラグインをダウンロード</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="brand sm">
+      <svg class="mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/><path d="M15 3.76 A8 8 0 0 1 15 16.24 A8 8 0 0 1 15 3.76Z"/></svg>
+      gachi
+    </div>
+    <p><a href="https://github.com/aape133/gachi/blob/main/LICENSE">GPLv3</a> オープンソース · <a href="https://github.com/aape133/gachi">GitHub</a> · <a href="https://github.com/aape133/gachi/releases">すべてのバージョン</a></p>
+    <p class="fine">gachiはGPLv3に基づき「現状のまま」提供される無料ソフトウェアで、いかなる保証もありません。ご利用によって生じた結果については、ご自身の責任でお願いします。大切な録音は、必ずバックアップを取っておいてください。</p>
+    <p class="tm">ASIO® is a registered trademark of Steinberg Media Technologies GmbH. VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
+  </div>
+</footer>
+
+<script src="/main.js" defer></script>
+</body>
+</html>

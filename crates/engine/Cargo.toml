@@ -10,6 +10,7 @@ edition.workspace = true
 asio = ["cpal/asio", "dep:asio-sys"]
 
 [dependencies]
+gachi-lang.workspace = true
 gachi-proto.workspace = true
 cpal.workspace = true
 rtrb.workspace = true

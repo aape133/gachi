@@ -86,13 +86,13 @@ async fn open_once(
     let started = Instant::now();
     let hello = ToWorker::HostOpen { code: code.clone(), host_key, max_peers, members, join_key: gachi_proto::to_hex(&JOIN_KEY.public), locked };
     let url = Endpoint::parse(server).host_url(code.as_deref());
-    let (tx, mut rx) = signal::connect(&url).await.map_err(|e| (ErrorKind::BadRequest, format!("서버에 연결할 수 없어요 ({e})")))?;
+    let (tx, mut rx) = signal::connect(&url).await.map_err(|e| (ErrorKind::BadRequest, gachi_lang::tr!("code.cant_reach_server", e)))?;
     let _ = tx.send(hello);
     let (code, host_key) = match tokio::time::timeout(Duration::from_secs(8), rx.recv()).await {
         Ok(Some(FromWorker::Opened { code, host_key })) => (code, host_key),
-        Ok(Some(FromWorker::Error { kind, message })) => return Err((kind, message)),
-        Ok(_) => return Err((ErrorKind::BadRequest, "서버 연결이 끊겼어요".into())),
-        Err(_) => return Err((ErrorKind::Timeout, "서버 응답이 없어요".into())),
+        Ok(Some(FromWorker::Error { kind, message })) => return Err((kind, crate::refusal::localize(kind, &message))),
+        Ok(_) => return Err((ErrorKind::BadRequest, gachi_lang::tr!("code.lost_connection_server"))),
+        Err(_) => return Err((ErrorKind::Timeout, gachi_lang::tr!("app.no_answer_server"))),
     };
     tracing::info!(ms = started.elapsed().as_millis() as u64, "room code opened");
     let task = tauri::async_runtime::spawn(serve(app.clone(), rx));
@@ -194,14 +194,15 @@ async fn take_over_inner(app: AppHandle) {
                     Ok(o) => {
                         let new = o.code.clone();
                         install(&app, o).await;
-                        notice(&app, format!("방 코드가 {}(으)로 바뀌었어요.", gachi_proto::code::display(&new)));
+                        let new = gachi_proto::code::display(&new);
+                        notice(&app, gachi_lang::tr!("code.room_code_changed", new));
                     }
-                    Err((_, e)) => notice(&app, format!("입장 코드를 다시 열지 못했어요 ({e})")),
+                    Err((_, e)) => notice(&app, gachi_lang::tr!("code.couldnt_reopen_room", e)),
                 }
                 return;
             }
             Err((_, e)) if Instant::now() > deadline => {
-                notice(&app, format!("입장 코드를 다시 열지 못했어요 ({e}). 합주는 계속돼요."));
+                notice(&app, gachi_lang::tr!("code.couldnt_reopen_room_code", e));
                 return;
             }
             Err(_) => {
@@ -233,9 +234,9 @@ pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Optio
     // apply what needs no network first
     let (server, code, key, max, members, want_open, reconnect, locked) = {
         let mut guard = state.session.lock().await;
-        let s = guard.as_mut().ok_or("방에 있지 않아요")?;
+        let s = guard.as_mut().ok_or_else(|| gachi_lang::tr!("code.not_room"))?;
         if !s.is_host {
-            return Err("방장만 바꿀 수 있어요".into());
+            return Err(gachi_lang::tr!("code.only_host_change"));
         }
         if let Some(n) = max_peers {
             // never below the people already here
@@ -278,7 +279,8 @@ pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Optio
             let o = open(&app, &server, None, None, max, members, locked).await.map_err(|(_, e)| e)?;
             let new = o.code.clone();
             install(&app, o).await;
-            notice(&app, format!("예전 코드는 다른 방이 쓰고 있어서 새 코드 {}(으)로 열었어요.", gachi_proto::code::display(&new)));
+            let new = gachi_proto::code::display(&new);
+            notice(&app, gachi_lang::tr!("code.another_room_has", new));
             Ok(())
         }
         Err((_, e)) => Err(e),

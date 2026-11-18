@@ -9,6 +9,11 @@ preview_urls = false
 # the app's address (the workers.dev one stays on for older versions and links)
 routes = [{ pattern = "gachi.band", custom_domain = true }]
 
+# the landing page (gachi.band/, /en/, /ja/): static files from public/, served before the
+# Worker runs. What is not a file there (/ws/…, /j/…, /health) goes on to the Worker.
+[assets]
+directory = "./public"
+
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Jam"

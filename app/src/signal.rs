@@ -135,7 +135,7 @@ async fn connect_once(url: &str) -> Result<(UnboundedSender<ToWorker>, Unbounded
     let connecting = tokio_tungstenite::connect_async_tls_with_config(url, None, true, tls());
     let (ws, _) = tokio::time::timeout(Duration::from_secs(8), connecting)
         .await
-        .map_err(|_| "시간 초과".to_string())?
+        .map_err(|_| gachi_lang::tr!("net.timed_out"))?
         .map_err(|e| e.to_string())?;
     let (mut sink, mut stream) = ws.split();
     let (out_tx, mut out_rx) = unbounded_channel::<ToWorker>();

@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>gachi</title>
   <script src="theme.js"></script>
+  <link rel="stylesheet" href="fonts/pretendard-jp.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -17,33 +18,33 @@
       gachi
     </div>
     <div class="top-actions">
-      <button class="update-pill" id="update-pill" type="button" hidden>새 버전 <span class="num" id="update-pill-v"></span></button>
-      <button class="icon-btn" data-act="theme" title="라이트/다크 모드"></button>
-      <button class="icon-btn" data-open="settings" title="설정" data-icon="sliders"></button>
+      <button class="update-pill" id="update-pill" type="button" hidden><span data-i18n="home.new_version">New version</span> <span class="num" id="update-pill-v"></span></button>
+      <button class="icon-btn" data-act="theme" title="Light/dark mode" data-i18n-title="home.light_dark_mode"></button>
+      <button class="icon-btn" data-open="settings" title="Settings" data-icon="sliders" data-i18n-title="home.settings"></button>
     </div>
   </header>
 
   <main class="home-main">
 
     <div class="me-row loading" id="me-row">
-      <button class="avatar" id="home-avatar" type="button" data-act="color" title="내 색 바꾸기" style="--hue:255"></button>
+      <button class="avatar" id="home-avatar" type="button" data-act="color" title="Change my color" style="--hue:255" data-i18n-title="home.change_my_color"></button>
       <label class="me-name">
-        <span class="me-label">내 이름</span>
-        <input id="home-name" maxlength="12" placeholder="이름을 정해 주세요" autocomplete="off" spellcheck="false">
+        <span class="me-label" data-i18n="home.my_name">My name</span>
+        <input id="home-name" maxlength="12" placeholder="Pick a name" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.pick_name">
       </label>
       <span class="me-sep" aria-hidden="true"></span>
       <label class="me-inst">
-        <span class="me-label">악기</span>
-        <input id="home-inst" maxlength="12" placeholder="예: 기타, 첼로" autocomplete="off" spellcheck="false" aria-label="악기">
+        <span class="me-label" data-i18n="home.instrument">Instrument</span>
+        <input id="home-inst" maxlength="12" placeholder="e.g. guitar, cello" autocomplete="off" spellcheck="false" aria-label="Instrument" data-i18n-placeholder="home.e_g_guitar" data-i18n-aria="home.instrument">
       </label>
     </div>
 
     <div class="no-asio card" id="no-asio" hidden>
-      <h2>ASIO 오디오 장치가 필요해요</h2>
-      <p>gachi는 지연을 줄이려고 <b>ASIO</b>로만 소리를 주고받아요. 이 PC에서는 ASIO 드라이버를 찾지 못했어요.</p>
-      <p>오디오 인터페이스 제조사 홈페이지에서 ASIO 드라이버를 설치한 뒤 다시 확인해 주세요. DAW와 함께 쓴다면 설정 → 오디오에서 <b>VST 연결</b>을 고르면 앱에는 ASIO 장치가 없어도 돼요.</p>
+      <h2 data-i18n="home.asio_audio_device">An ASIO audio device is needed</h2>
+      <p data-i18n-html="home.keep_latency_low">To keep latency low, gachi sends and receives sound through <b>ASIO</b> only. No ASIO driver was found on this PC.</p>
+      <p data-i18n-html="home.install_asio_driver">Install the ASIO driver from your audio interface maker's website, then check again. If you use a DAW, choose <b>VST link</b> in Settings → Audio, and the app needs no ASIO device of its own.</p>
       <div class="no-asio-actions">
-        <button class="btn primary" id="no-asio-retry">설치했어요, 다시 확인</button>
+        <button class="btn primary" id="no-asio-retry" data-i18n="home.installed_check_again">Installed it, check again</button>
       </div>
     </div>
 
@@ -53,57 +54,57 @@
     <div class="home-cards" id="home-cards">
       <!-- create -->
       <div class="card action-card">
-        <h2>방 만들기</h2>
+        <h2 data-i18n="home.create_room">Create room</h2>
         <label class="field">
-          <span class="label">방 이름</span>
-          <input class="input" id="create-name" placeholder="예: 금요일 합주" maxlength="24" autocomplete="off" spellcheck="false">
+          <span class="label" data-i18n="home.room_name">Room name</span>
+          <input class="input" id="create-name" placeholder="e.g. Friday jam" maxlength="24" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.e_g_friday">
         </label>
         <div class="field">
-          <span class="label">최대 인원 (명)</span>
+          <span class="label" data-i18n="home.max_people">Max people</span>
           <div class="seg" id="create-max">
             <button data-v="2">2</button><button data-v="4">4</button><button data-v="6">6</button><button data-v="8" class="on">8</button><button data-v="10">10</button><button data-v="12">12</button><button data-v="14">14</button><button data-v="16">16</button>
           </div>
         </div>
         <div class="field">
           <label class="row">
-            <span class="label">비밀번호</span>
+            <span class="label" data-i18n="home.password">Password</span>
             <input type="checkbox" class="switch" id="create-pw-on">
           </label>
-          <input class="input" id="create-pw" type="password" placeholder="참여자가 입력할 비밀번호" hidden autocomplete="new-password" spellcheck="false" maxlength="64">
+          <input class="input" id="create-pw" type="password" placeholder="Password for people joining" hidden autocomplete="new-password" spellcheck="false" maxlength="64" data-i18n-placeholder="home.password_people_joining">
         </div>
         <div class="spacer"></div>
-        <button class="btn primary lg" id="btn-create">방 만들기</button>
+        <button class="btn primary lg" id="btn-create" data-i18n="home.create_room">Create room</button>
       </div>
 
       <!-- join -->
       <div class="card action-card">
-        <h2>참여하기</h2>
+        <h2 data-i18n="home.join">Join</h2>
         <div class="code-wrap" id="code-wrap">
           <div class="code-boxes" aria-hidden="true">
             <span class="box"></span><span class="box"></span><span class="box"></span>
             <span class="code-dash"></span>
             <span class="box"></span><span class="box"></span><span class="box"></span>
           </div>
-          <input id="code-real" autocomplete="off" spellcheck="false" aria-label="참여 코드" maxlength="12">
+          <input id="code-real" autocomplete="off" spellcheck="false" aria-label="Room code" maxlength="12" data-i18n-aria="home.room_code">
         </div>
-        <p class="hint" id="join-hint">붙여넣기(Ctrl+V)도 돼요</p>
+        <p class="hint" id="join-hint" data-i18n="home.paste_too_ctrl">You can paste it too (Ctrl+V)</p>
         <div class="nearby" id="nearby">
           <div class="nearby-head">
-            <span class="label">같은 공유기의 방</span>
-            <button class="icon-btn sm" id="nearby-refresh" type="button" title="새로고침" data-icon="refresh"></button>
+            <span class="label" data-i18n="home.rooms_router">Rooms on your router</span>
+            <button class="icon-btn sm" id="nearby-refresh" type="button" title="Refresh" data-icon="refresh" data-i18n-title="home.refresh"></button>
           </div>
           <div class="nearby-list" id="nearby-list"></div>
-          <p class="nearby-empty" id="nearby-empty">같은 공유기에서 열린 방이 여기에 보여요<br>방금 만든 방이 안 보이면 새로고침을 눌러 주세요</p>
+          <p class="nearby-empty" id="nearby-empty"><span data-i18n="home.rooms_open_same">Rooms open on the same router show up here</span><br><span data-i18n="home.dont_see_room">Don't see a room that was just made? Press refresh</span></p>
         </div>
-        <button class="btn primary lg" id="btn-join" disabled>참여</button>
+        <button class="btn primary lg" id="btn-join" disabled data-i18n="home.join_2">Join</button>
       </div>
     </div>
 
     <button class="status-strip" data-open="settings">
-      <div class="status-item"><span class="dot" id="st-audio-dot"></span><div><b>오디오</b><span class="v" id="st-audio"></span></div></div>
-      <div class="status-item"><span class="dot pending" id="st-net-dot"></span><div><b>네트워크</b><span class="v" id="st-net">검사 중…</span></div></div>
-      <div class="status-item"><div><b>내 장치 지연</b><span class="v num" id="st-local"></span></div></div>
-      <span class="status-more">설정 ›</span>
+      <div class="status-item"><span class="dot" id="st-audio-dot"></span><div><b data-i18n="home.audio">Audio</b><span class="v" id="st-audio"></span></div></div>
+      <div class="status-item"><span class="dot pending" id="st-net-dot"></span><div><b data-i18n="home.network">Network</b><span class="v" id="st-net" data-i18n="home.checking">Checking…</span></div></div>
+      <div class="status-item"><div><b data-i18n="home.my_device_latency">My device latency</b><span class="v num" id="st-local"></span></div></div>
+      <span class="status-more" data-i18n="home.settings_2">Settings ›</span>
     </button>
   </main>
 </section>
@@ -111,10 +112,10 @@
 <!-- ───────────────────────── CONNECTING ───────────────────────── -->
 <section class="screen connecting" id="screen-connecting">
   <div class="connect-box">
-    <div class="connect-label">연결하는 중</div>
+    <div class="connect-label" data-i18n="connect.connecting">Connecting</div>
     <div class="connect-code mono" id="connect-code"></div>
     <ol class="steps" id="connect-steps"></ol>
-    <button class="btn ghost" id="btn-cancel-connect">취소</button>
+    <button class="btn ghost" id="btn-cancel-connect" data-i18n="connect.cancel">Cancel</button>
   </div>
 </section>
 
@@ -123,7 +124,7 @@
   <header class="topbar">
     <div class="room-meta">
       <span class="room-name" id="room-name"></span>
-      <button class="code-chip" id="btn-room" title="초대 · 입장 코드 · 인원">
+      <button class="code-chip" id="btn-room" title="Invite · room code · size" data-i18n-title="room.invite_room_code">
         <span class="code-text" id="room-code"></span>
         <span class="chip-sep"></span>
         <span class="num" id="room-count"></span>
@@ -134,10 +135,10 @@
       <!-- two buttons in two parts each: the main part switches the thing on and off, the
            small arrow opens its menu -->
       <div class="split" id="metro">
-        <button class="split-main" id="metro-toggle" title="메트로놈 켜기/끄기 (방 전체)" data-icon="metronome"><i class="beat" id="metro-beat"></i></button>
-        <button class="split-more" id="metro-more" title="메트로놈 설정" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down"></button>
+        <button class="split-main" id="metro-toggle" title="Metronome on/off (whole room)" data-icon="metronome" data-i18n-title="room.metronome_off_whole"><i class="beat" id="metro-beat"></i></button>
+        <button class="split-more" id="metro-more" title="Metronome settings" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down" data-i18n-title="room.metronome_settings"></button>
         <div class="menu" id="metro-menu" hidden>
-          <div class="menu-row"><span class="label">메트로놈</span><input type="checkbox" class="switch" id="metro-on" aria-label="메트로놈 켜기"></div>
+          <div class="menu-row"><span class="label" data-i18n="room.metronome">Metronome</span><input type="checkbox" class="switch" id="metro-on" aria-label="Turn on the metronome" data-i18n-aria="room.turn_metronome"></div>
           <div class="menu-row">
             <span class="label">BPM</span>
             <div class="bpm">
@@ -146,109 +147,109 @@
               <button class="step-btn" id="bpm-inc" title="BPM +1" data-icon="plus"></button>
             </div>
           </div>
-          <div class="menu-row"><span class="label">박자</span>
-            <div class="seg" id="metro-sig" title="첫 박에 강세가 들어가요">
+          <div class="menu-row"><span class="label" data-i18n="room.time">Time</span>
+            <div class="seg" id="metro-sig" title="The first beat is accented" data-i18n-title="room.first_beat_accented">
               <button data-v="2">2/4</button><button data-v="3">3/4</button><button data-v="4">4/4</button><button data-v="6">6/8</button>
             </div>
           </div>
-          <div class="menu-row"><span class="label">카운트인</span>
-            <div class="seg" id="metro-count" title="켤 때 먼저 세어 주는 마디 (더 높은 소리)">
-              <button data-v="0">없음</button><button data-v="1">1마디</button><button data-v="2">2마디</button>
+          <div class="menu-row"><span class="label" data-i18n="room.count">Count-in</span>
+            <div class="seg" id="metro-count" title="Bars counted before it starts (a higher click)" data-i18n-title="room.bars_counted_before">
+              <button data-v="0" data-i18n="room.none">None</button><button data-v="1" data-i18n="room.1_bar">1 bar</button><button data-v="2" data-i18n="room.2_bars">2 bars</button>
             </div>
           </div>
           <div class="menu-sep"></div>
-          <div class="menu-row"><span class="label">내 클릭 음량</span><input type="range" id="metro-vol" min="0" max="100" step="1"><span class="val num" id="metro-vol-menu-val"></span></div>
-          <p class="note">켜기 · BPM · 박자 · 카운트인은 방 전체에 적용돼요. 음량은 나에게만 적용돼요.</p>
+          <div class="menu-row"><span class="label" data-i18n="room.my_click_volume">My click volume</span><input type="range" id="metro-vol" min="0" max="100" step="1"><span class="val num" id="metro-vol-menu-val"></span></div>
+          <p class="note" data-i18n="room.off_bpm_time">On/off, BPM, time and count-in apply to the whole room. The volume is yours alone.</p>
         </div>
       </div>
       <div class="split" id="rec">
-        <button class="split-main" id="rec-btn" title="녹음 시작/끝내기"><span class="rec-dot"></span><span id="rec-label">녹음</span></button>
-        <button class="split-more" id="rec-more" title="녹음 설정" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down"></button>
+        <button class="split-main" id="rec-btn" title="Start/stop recording" data-i18n-title="room.start_stop_recording"><span class="rec-dot"></span><span id="rec-label" data-i18n="room.record">Record</span></button>
+        <button class="split-more" id="rec-more" title="Recording settings" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down" data-i18n-title="room.recording_settings"></button>
         <div class="menu" id="rec-menu" hidden>
-          <div class="menu-row lockable"><span class="label">형식</span>
+          <div class="menu-row lockable"><span class="label" data-i18n="room.format">Format</span>
             <div class="seg" id="rec-format">
               <button data-v="wav">WAV</button><button data-v="flac">FLAC</button>
             </div>
           </div>
-          <div class="menu-row lockable" id="rec-bits-row"><span class="label">비트 수</span>
+          <div class="menu-row lockable" id="rec-bits-row"><span class="label" data-i18n="room.bit_depth">Bit depth</span>
             <div class="seg" id="rec-bits">
               <button data-v="16">16bit</button><button data-v="24">24bit</button><button data-v="32">32bit float</button>
             </div>
           </div>
-          <div class="menu-row lockable"><span class="label">전체 믹스 파일도 저장</span><input type="checkbox" class="switch" id="rec-mix" aria-label="전체 믹스 파일도 저장"></div>
+          <div class="menu-row lockable"><span class="label" data-i18n="room.also_save_full">Also save the full mix</span><input type="checkbox" class="switch" id="rec-mix" aria-label="Also save the full mix" data-i18n-aria="room.also_save_full"></div>
           <p class="note" id="rec-note"></p>
-          <p class="note" id="rec-locked" hidden>녹음 중에는 형식을 바꿀 수 없어요.</p>
+          <p class="note" id="rec-locked" hidden data-i18n="room.format_cant_change">The format can't change while recording.</p>
           <div class="menu-sep"></div>
-          <button class="btn" id="rec-open">녹음 폴더 열기</button>
+          <button class="btn" id="rec-open" data-i18n="room.open_recordings_folder">Open recordings folder</button>
         </div>
       </div>
     </div>
 
     <div class="topbar-right">
       <span class="session-time num" id="session-time">00:00</span>
-      <button class="icon-btn" data-act="theme" title="라이트/다크 모드"></button>
-      <button class="icon-btn" id="btn-chat" title="채팅" data-icon="chat"><span class="badge" id="chat-badge" hidden></span></button>
-      <button class="icon-btn" data-open="settings" title="설정" data-icon="sliders"></button>
+      <button class="icon-btn" data-act="theme" title="Light/dark mode" data-i18n-title="home.light_dark_mode"></button>
+      <button class="icon-btn" id="btn-chat" title="Chat" data-icon="chat" data-i18n-title="room.chat"><span class="badge" id="chat-badge" hidden></span></button>
+      <button class="icon-btn" data-open="settings" title="Settings" data-icon="sliders" data-i18n-title="home.settings"></button>
     </div>
   </header>
-  <div class="feedback-warn" id="feedback-warn" role="alert" hidden><span>상대 소리가 되돌아가고 있어요: 상대에게 자기 소리가 다시 들려요. 입력 연결을 확인해 주세요.</span><button class="warn-close" id="feedback-close" title="닫기" aria-label="닫기" data-icon="x"></button></div>
+  <div class="feedback-warn" id="feedback-warn" role="alert" hidden><span data-i18n="room.sound_going_back">Their sound is going back to them: the others hear themselves again. Please check your input connections.</span><button class="warn-close" id="feedback-close" title="Close" aria-label="Close" data-icon="x" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
 
   <div class="room-body">
     <main class="stage" id="stage"></main>
 
     <aside class="chat" id="chat">
-      <div class="chat-head">채팅<button class="icon-btn sm" id="btn-chat-close" data-icon="x" title="닫기"></button></div>
+      <div class="chat-head"><span data-i18n="room.chat">Chat</span><button class="icon-btn sm" id="btn-chat-close" data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
       <div class="chat-list" id="chat-list"></div>
       <form class="chat-form" id="chat-form" autocomplete="off">
-        <input class="input" id="chat-input" placeholder="메시지 입력" maxlength="300" autocomplete="off" spellcheck="false">
-        <button class="icon-btn send" title="보내기" data-icon="send"></button>
+        <input class="input" id="chat-input" placeholder="Type a message" maxlength="300" autocomplete="off" spellcheck="false" data-i18n-placeholder="room.type_message">
+        <button class="icon-btn send" title="Send" data-icon="send" data-i18n-title="room.send"></button>
       </form>
     </aside>
   </div>
 
   <footer class="bottombar">
     <div class="self-quick">
-      <button class="mic-btn" id="mic-btn" title="마이크 켜기/끄기 (M)" data-icon="mic"></button>
+      <button class="mic-btn" id="mic-btn" title="Mic on/off (M)" data-icon="mic" data-i18n-title="room.mic_off_m"></button>
       <div class="meter mini" id="mini-meter"><i></i><i></i></div>
     </div>
 
     <div class="latency-summary">
-      <span class="label">평균 지연</span>
+      <span class="label" data-i18n="room.average_latency">Average latency</span>
       <span class="big num" id="avg-latency">--</span>
       <span class="unit">ms</span>
-      <span class="sub" id="avg-sub">편도 · 귀에서 귀까지</span>
+      <span class="sub" id="avg-sub" data-i18n="room.one_way_ear">One way · ear to ear</span>
     </div>
 
     <div class="master">
-      <span class="ctrl-label">마스터</span>
+      <span class="ctrl-label" data-i18n="room.master">Master</span>
       <input type="range" id="master-vol" min="-40" max="6" step="0.5" value="0">
       <span class="val num" id="master-val">0.0 dB</span>
-      <button class="btn leave" id="btn-leave"><span data-icon="log-out"></span><span class="leave-label">나가기</span></button>
+      <button class="btn leave" id="btn-leave"><span data-icon="log-out"></span><span class="leave-label" data-i18n="room.leave">Leave</span></button>
     </div>
   </footer>
 </section>
 
 <!-- ───────────────────────── LATENCY POPOVER ───────────────────────── -->
-<div class="popover" id="lat-pop" role="dialog" aria-label="지연 상세"></div>
+<div class="popover" id="lat-pop" role="dialog" aria-label="Latency details" data-i18n-aria="room.latency_details"></div>
 
 
 <div class="modal-backdrop" id="modal-pw">
   <div class="modal sm" role="dialog" aria-labelledby="pw-title">
-    <div class="modal-head"><h3 id="pw-title">비밀번호</h3><button class="icon-btn" data-close data-icon="x" title="닫기"></button></div>
+    <div class="modal-head"><h3 id="pw-title" data-i18n="home.password">Password</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
     <form class="modal-body" id="pw-form">
-      <p class="note" id="pw-note">이 방은 비밀번호가 있어요. 방장에게 받은 비밀번호를 입력하세요.</p>
-      <input class="input" id="pw-input" type="password" autocomplete="new-password" maxlength="64" placeholder="비밀번호">
-      <button class="btn primary" type="submit" style="width:100%;margin-top:12px">참여</button>
+      <p class="note" id="pw-note" data-i18n="dialog.room_has_password">This room has a password. Enter the one the host gave you.</p>
+      <input class="input" id="pw-input" type="password" autocomplete="new-password" maxlength="64" placeholder="Password" data-i18n-placeholder="home.password">
+      <button class="btn primary" type="submit" style="width:100%;margin-top:12px" data-i18n="home.join_2">Join</button>
     </form>
   </div>
 </div>
 
 <div class="modal-backdrop" id="modal-link">
   <div class="modal sm" role="dialog" aria-labelledby="link-title">
-    <div class="modal-head"><h3 id="link-title">초대 링크</h3><button class="icon-btn" data-close data-icon="x" title="닫기"></button></div>
+    <div class="modal-head"><h3 id="link-title" data-i18n="dialog.invite_link">Invite link</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
     <div class="modal-body">
-      <p class="note">초대 링크로 <b id="link-code"></b> 방에 참여할까요? 참여하면 방에 있는 사람들이 내 소리를 들어요. 모르는 링크라면 닫아 주세요.</p>
-      <button class="btn primary" id="link-join" style="width:100%;margin-top:12px">참여</button>
+      <p class="note"><span data-i18n="dialog.join_room">Join room</span> <b id="link-code"></b> <span data-i18n="dialog.invite_link_once">from this invite link? Once you join, the people in the room hear you. If you don't know this link, close this.</span></p>
+      <button class="btn primary" id="link-join" style="width:100%;margin-top:12px" data-i18n="home.join_2">Join</button>
     </div>
   </div>
 </div>
@@ -256,11 +257,11 @@
 <!-- ───────────────────────── A NEWER VERSION ───────────────────────── -->
 <div class="modal-backdrop" id="modal-update">
   <div class="modal sm" role="dialog" aria-labelledby="update-title">
-    <div class="modal-head"><h3 id="update-title">새 버전이 나왔어요</h3><button class="icon-btn" data-close data-icon="x" title="닫기"></button></div>
+    <div class="modal-head"><h3 id="update-title" data-i18n="dialog.new_version_out">A new version is out</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
     <div class="modal-body">
       <p class="update-versions"><span class="num" id="update-from"></span> → <b class="num" id="update-to"></b></p>
-      <p class="note">내려받기 페이지에서 설치 파일을 받아 실행하면 지금 설정 그대로 새 버전으로 바뀌어요.</p>
-      <button class="btn primary" id="update-open" style="width:100%;margin-top:12px">내려받기 페이지 열기</button>
+      <p class="note" data-i18n="dialog.get_installer_download">Get the installer from the download page and run it: you'll have the new version with your settings as they are.</p>
+      <button class="btn primary" id="update-open" style="width:100%;margin-top:12px" data-i18n="dialog.open_download_page">Open download page</button>
     </div>
   </div>
 </div>
@@ -268,46 +269,46 @@
 <!-- ───────────────────────── ROOM PANEL: invite + code + size ───────────────────────── -->
 <div class="modal-backdrop" id="modal-invite">
   <div class="modal sm" role="dialog" aria-labelledby="invite-title">
-    <div class="modal-head"><h3 id="invite-title">방</h3><button class="icon-btn" data-close data-icon="x" title="닫기"></button></div>
+    <div class="modal-head"><h3 id="invite-title" data-i18n="dialog.room">Room</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
     <div class="modal-body">
       <div class="invite" id="invite-open">
         <div class="invite-main">
-          <div class="label">입장 코드</div>
+          <div class="label" data-i18n="dialog.room_code">Room code</div>
           <div class="invite-code" id="invite-code"></div>
           <div class="link-box mono" id="invite-link"></div>
         </div>
         <div class="qr" id="qr"></div>
       </div>
       <div class="copy-row" id="copy-row">
-        <button class="btn" id="copy-code"><span data-icon="copy"></span>코드 복사</button>
-        <button class="btn" id="copy-link"><span data-icon="link"></span>링크 복사</button>
-        <button class="btn primary" id="copy-msg"><span data-icon="chat"></span>초대 메시지 복사</button>
+        <button class="btn" id="copy-code"><span data-icon="copy"></span><span data-i18n="dialog.copy_code">Copy code</span></button>
+        <button class="btn" id="copy-link"><span data-icon="link"></span><span data-i18n="dialog.copy_link">Copy link</span></button>
+        <button class="btn primary" id="copy-msg"><span data-icon="chat"></span><span data-i18n="dialog.copy_invite">Copy invite</span></button>
       </div>
       <p class="invite-closed" id="invite-closed" hidden></p>
 
       <div class="room-settings">
         <label class="rs-row">
-          <div><div class="rs-title">입장 코드</div><div class="rs-note" id="rm-code-note"></div></div>
+          <div><div class="rs-title" data-i18n="dialog.room_code">Room code</div><div class="rs-note" id="rm-code-note"></div></div>
           <input type="checkbox" class="switch" id="rm-open">
         </label>
         <div class="rs-row">
-          <div><div class="rs-title">최대 인원</div><div class="rs-note" id="rm-size-note"></div></div>
+          <div><div class="rs-title" data-i18n="dialog.max_people">Max people</div><div class="rs-note" id="rm-size-note"></div></div>
           <div class="stepper">
-            <button class="step-btn" id="rm-dec" title="줄이기" data-icon="minus"></button>
+            <button class="step-btn" id="rm-dec" title="Fewer" data-icon="minus" data-i18n-title="dialog.fewer"></button>
             <span class="num" id="rm-size"></span>
-            <button class="step-btn" id="rm-inc" title="늘리기" data-icon="plus"></button>
+            <button class="step-btn" id="rm-inc" title="More" data-icon="plus" data-i18n-title="dialog.more"></button>
           </div>
         </div>
         <div class="rs-row">
-          <div><div class="rs-title">새 코드</div><div class="rs-note">예전 코드로는 더 이상 못 들어와요</div></div>
-          <button class="btn sm" id="rm-new"><span data-icon="refresh"></span>새로 만들기</button>
+          <div><div class="rs-title" data-i18n="dialog.new_code">New code</div><div class="rs-note" data-i18n="dialog.old_code_stops">The old code stops working</div></div>
+          <button class="btn sm" id="rm-new"><span data-icon="refresh"></span><span data-i18n="dialog.make_new">Make new</span></button>
         </div>
-        <p class="rm-guest" id="rm-guest">방장만 바꿀 수 있어요.</p>
+        <p class="rm-guest" id="rm-guest" data-i18n="dialog.only_host_change">Only the host can change these.</p>
       </div>
 
       <div class="safety">
-        <div class="safety-head"><span class="label">보안 확인 코드</span><span class="safety-code mono" id="safety-code"></span></div>
-        <p class="note">모두의 화면에 같은 숫자가 보이면 중간에 엿듣는 사람이 없어요.</p>
+        <div class="safety-head"><span class="label" data-i18n="dialog.security_check_code">Security check code</span><span class="safety-code mono" id="safety-code"></span></div>
+        <p class="note" data-i18n="dialog.if_everyone_sees">If everyone sees the same numbers, no one is listening in between.</p>
       </div>
     </div>
   </div>
@@ -316,57 +317,57 @@
 <!-- ───────────────────────── SETTINGS MODAL ───────────────────────── -->
 <div class="modal-backdrop" id="modal-settings">
   <div class="modal" role="dialog" aria-labelledby="settings-title">
-    <div class="modal-head"><h3 id="settings-title">설정</h3><button class="icon-btn" data-close data-icon="x" title="닫기"></button></div>
+    <div class="modal-head"><h3 id="settings-title" data-i18n="home.settings">Settings</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
     <nav class="tabs" id="settings-tabs">
-      <button data-tab="audio" class="on">오디오</button>
-      <button data-tab="network">네트워크</button>
-      <button data-tab="display">일반</button>
-      <button data-tab="about">정보</button>
+      <button data-tab="audio" class="on" data-i18n="home.audio">Audio</button>
+      <button data-tab="network" data-i18n="home.network">Network</button>
+      <button data-tab="display" data-i18n="settings.general">General</button>
+      <button data-tab="about" data-i18n="settings.about">About</button>
     </nav>
     <div class="modal-body">
 
       <!-- AUDIO -->
       <div class="tab-panel on" data-panel="audio">
         <div class="setting">
-          <div class="setting-head"><span class="label">연결 방식</span><span class="aside" id="daw-status"></span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.connection">Connection</span><span class="aside" id="daw-status"></span></div>
           <div class="seg" data-key="connection">
-            <button data-v="device">오디오 인터페이스 직접</button><button data-v="daw">VST 연결</button>
+            <button data-v="device" data-i18n="settings.audio_interface">Audio interface</button><button data-v="daw" data-i18n="settings.vst_link">VST link</button>
           </div>
           <p class="note" id="conn-note"></p>
         </div>
         <div class="setting" data-device-only>
-          <div class="setting-head"><span class="label">ASIO 장치</span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.asio_device">ASIO device</span></div>
           <div class="row">
             <select class="select grow" id="set-device"></select>
-            <button class="btn" id="open-panel" title="오디오 인터페이스 드라이버의 설정 창 (버퍼 크기, 샘플레이트)"><span data-icon="sliders"></span>컨트롤 패널</button>
+            <button class="btn" id="open-panel" title="The audio interface driver's settings (buffer size, sample rate)" data-i18n-title="settings.audio_interface_drivers"><span data-icon="sliders"></span><span data-i18n="settings.control_panel">Control panel</span></button>
           </div>
           <p class="note warn" id="device-warn" hidden></p>
         </div>
         <div class="setting">
-          <div class="setting-head"><span class="label">장치 형식</span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.device_format">Device format</span></div>
           <div class="fmt-boxes">
-            <div class="fmt-box"><span class="k">샘플레이트</span><span class="v num" id="fmt-rate">-</span></div>
-            <div class="fmt-box"><span class="k">버퍼 크기</span><span class="v num" id="fmt-buf">-</span></div>
-            <div class="fmt-box wide" title="버퍼 말고도 USB 전송, 드라이버 안전 여유가 더해진 실제 지연"><span class="k" id="fmt-lat-k">장치 지연</span><span class="v num" id="fmt-lat">-</span></div>
+            <div class="fmt-box"><span class="k" data-i18n="settings.sample_rate">Sample rate</span><span class="v num" id="fmt-rate">-</span></div>
+            <div class="fmt-box"><span class="k" data-i18n="settings.buffer_size">Buffer size</span><span class="v num" id="fmt-buf">-</span></div>
+            <div class="fmt-box wide" title="The real latency: the buffer plus USB transfer and the driver's safety margin" data-i18n-title="settings.real_latency_buffer"><span class="k" id="fmt-lat-k" data-i18n="settings.device_latency">Device latency</span><span class="v num" id="fmt-lat">-</span></div>
           </div>
           <p class="note" id="fmt-note"></p>
         </div>
         <div class="setting" data-device-only>
-          <div class="setting-head"><span class="label">입력 채널</span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.input_channel">Input channel</span></div>
           <select class="select" id="set-input"></select>
           <div class="ch-meters" id="ch-meters" hidden></div>
-          <p class="note" id="ch-note" hidden>소리를 내 보면 신호가 들어오는 채널에 막대가 올라와요. ‘마이크 + 스테레오’로 마이크와 루프백(PC 소리)을 함께 보낼 수 있어요. <b>테스트 톤에 막대가 올라오는 루프백은 고르지 마세요</b>: 이 앱의 출력(상대 소리)이 다시 들어오는 채널이라, 상대에게 자기 소리가 되돌아가요.</p>
+          <p class="note" id="ch-note" hidden data-i18n-html="settings.make_sound_bar">Make a sound and a bar rises on the channel the signal comes in on. With 'Mic + stereo' you can send your mic and a loopback (PC sound) together. <b>Don't pick a loopback whose bar rises with the test tone</b>: that channel carries this app's output (the others' sound), so they would hear themselves back.</p>
         </div>
         <div class="setting">
-          <div class="setting-head"><span class="label">메트로놈 음량</span><span class="aside num" id="metro-vol-val"></span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.metronome_volume">Metronome volume</span><span class="aside num" id="metro-vol-val"></span></div>
           <input type="range" id="set-metro-vol" min="0" max="100" step="1">
-          <p class="note">클릭 소리는 나에게만 들리고 상대에게는 보내지 않아요.</p>
+          <p class="note" data-i18n="settings.only_hear_click">Only you hear the click; it isn't sent to the others.</p>
         </div>
         <div class="setting">
-          <div class="setting-head"><span class="label">테스트</span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.test">Test</span></div>
           <div class="row">
             <div class="meter grow" id="set-meter"><i></i><i></i></div>
-            <button class="btn" id="test-tone"><span data-icon="headphones"></span>테스트 톤</button>
+            <button class="btn" id="test-tone"><span data-icon="headphones"></span><span data-i18n="settings.test_tone">Test tone</span></button>
           </div>
         </div>
       </div>
@@ -375,59 +376,59 @@
       <div class="tab-panel" data-panel="network">
         <div class="setting">
           <label class="row">
-            <span class="label">같은 네트워크에 내 방 보여주기</span>
+            <span class="label" data-i18n="settings.show_my_room">Show my room on the same network</span>
             <input type="checkbox" class="switch" id="set-nearby">
           </label>
-          <p class="note">방장일 때, 같은 공유기(Wi-Fi·유선)에 있는 사람의 첫 화면에 방이 떠요. 코드가 켜져 있을 때만 보이고, 다른 네트워크에는 보이지 않아요.</p>
+          <p class="note" data-i18n="settings.when_host_room">When you host, your room appears on the home screen of people on the same router (Wi-Fi or wired). Only while the code is on, and never on other networks.</p>
         </div>
         <div class="setting">
-          <div class="setting-head"><span class="label">음질</span><span class="aside num" id="q-bw"></span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.sound_quality">Sound quality</span><span class="aside num" id="q-bw"></span></div>
           <div class="seg" data-key="quality">
             <button data-v="pcm16">16bit</button><button data-v="pcm24">24bit</button>
           </div>
           <p class="note" id="q-note"></p>
         </div>
         <details class="advanced">
-          <summary>고급 설정</summary>
+          <summary data-i18n="settings.advanced">Advanced</summary>
         <div class="setting">
-          <div class="setting-head"><span class="label">패킷 크기</span><span class="aside num" id="pkt-ms"></span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.packet_size">Packet size</span><span class="aside num" id="pkt-ms"></span></div>
           <div class="seg" data-key="packetSize" data-num>
-            <button data-v="0">자동 (권장)</button><button data-v="16">16</button><button data-v="32">32</button><button data-v="64">64</button>
+            <button data-v="0" data-i18n="settings.auto_recommended">Auto (recommended)</button><button data-v="16">16</button><button data-v="32">32</button><button data-v="64">64</button>
           </div>
-          <p class="note">자동은 장치 버퍼 크기에 맞춰 보내요(64보다 크면 똑같이 나눠서). 직접 고를 때는 작을수록 빠르지만 업로드 패킷 수가 늘고, 장치 버퍼보다 작게 해도 더 빨라지지는 않아요.</p>
+          <p class="note" data-i18n="settings.auto_sends_one">Auto sends one packet per device buffer (split evenly above 64). Picking by hand, smaller is faster but means more upload packets, and going below the device buffer doesn't make it faster.</p>
         </div>
         <div class="setting">
-          <div class="setting-head"><span class="label">지터 버퍼</span></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.jitter_buffer">Jitter buffer</span></div>
           <div class="seg" data-key="jitterMode">
-            <button data-v="auto">자동 (권장)</button><button data-v="manual">수동</button>
+            <button data-v="auto" data-i18n="settings.auto_recommended">Auto (recommended)</button><button data-v="manual" data-i18n="settings.manual">Manual</button>
           </div>
           <div id="jb-style">
             <div class="seg" data-key="jitterStyle">
-              <button data-v="fast">빠르게</button><button data-v="balanced">균형 (권장)</button><button data-v="steady">안정</button>
+              <button data-v="fast" data-i18n="settings.fast">Fast</button><button data-v="balanced" data-i18n="settings.balanced_recommended">Balanced (recommended)</button><button data-v="steady" data-i18n="settings.steady">Steady</button>
             </div>
-            <p class="note">연결이 가끔 멈칫할 때 어느 쪽을 택할지예요. ‘빠르게’는 버퍼를 작게 두고 멈칫한 순간을 소리 이어 붙이기로 넘겨요(지연 ↓, 짧은 끊김 ↑). ‘안정’은 버퍼를 키워 막아요(지연 ↑, 끊김 ↓). 고른 연결에서는 셋이 같아요.</p>
+            <p class="note" data-i18n="settings.what_favor_when">What to favor when the connection stalls now and then. 'Fast' keeps the buffer small and fills the stalls by patching the sound (latency ↓, short gaps ↑). 'Steady' grows the buffer to prevent them (latency ↑, gaps ↓). On an even connection all three are the same.</p>
           </div>
           <label class="ctrl wide" id="jb-manual" hidden>
-            <span>패킷</span>
+            <span data-i18n="settings.packets">packets</span>
             <input type="range" min="1" max="12" step="1" data-key-range="jitterPackets">
             <span class="val num" id="jb-val"></span>
           </label>
-          <p class="note">자동은 상대별로 끊김 없는 최소 크기를 계속 맞춰요. 상대 카드의 지연 숫자를 눌러 개별 조정할 수도 있어요.</p>
+          <p class="note" data-i18n="settings.auto_keeps_each">Auto keeps each person at the smallest size without dropouts. You can also press the latency number on someone's card to adjust theirs.</p>
         </div>
         <div class="setting">
           <label class="row">
-            <span class="label">직접 연결 포트 고정</span>
+            <span class="label" data-i18n="settings.fixed_port_direct">Fixed port for direct connections</span>
             <input type="checkbox" class="switch" id="set-fixed-port">
           </label>
           <label class="row port-row" id="port-row" hidden>
-            <span class="label">UDP 포트</span>
-            <input class="input num port-input" id="set-port" type="text" inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false" aria-label="UDP 포트 (1024~65535)">
+            <span class="label" data-i18n="settings.udp_port">UDP port</span>
+            <input class="input num port-input" id="set-port" type="text" inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false" aria-label="UDP port (1024–65535)" data-i18n-aria="settings.udp_port_1024">
           </label>
-          <p class="note">공유기에 UPnP가 없거나 꺼져 있을 때 켜요. 공유기 관리 페이지에서 이 <b>UDP</b> 포트를 이 PC로 포워딩해 주세요. 같은 공유기의 다른 PC와는 다른 번호를 써야 해요. 다음에 방에 들어갈 때부터 적용돼요.</p>
+          <p class="note" data-i18n-html="settings.turn_when_router">Turn this on when your router has no UPnP or it's off. On the router's admin page, forward this <b>UDP</b> port to this PC. Other PCs on the same router need different numbers. Applies from the next room you join.</p>
         </div>
         </details>
         <div class="setting">
-          <div class="setting-head"><span class="label">연결 상태</span><button class="link-btn" id="net-recheck">다시 검사</button></div>
+          <div class="setting-head"><span class="label" data-i18n="settings.connection_status">Connection status</span><button class="link-btn" id="net-recheck" data-i18n="settings.check_again">Check again</button></div>
           <div class="check-list" id="net-checks"></div>
         </div>
       </div>
@@ -435,30 +436,38 @@
       <!-- DISPLAY -->
       <div class="tab-panel" data-panel="display">
         <div class="setting">
-          <label class="row">
-            <span class="label">하드웨어 가속 (GPU)</span>
-            <input type="checkbox" class="switch" id="set-gpu">
-          </label>
-          <p class="note">화면을 그릴 때 그래픽카드를 써요. 화면이 깜빡이거나 깨지면 꺼 보세요. 소리와 암호화(AES-256)에는 영향이 없어요. 앱을 다시 시작하면 적용돼요.</p>
-          <div class="row" id="gpu-restart" hidden>
-            <span class="note">다시 시작해야 적용돼요.</span>
-            <button class="btn primary" id="gpu-restart-btn">지금 다시 시작</button>
+          <div class="setting-head"><span class="label" data-i18n="settings.language">Language</span></div>
+          <div class="row">
+            <select class="select grow" id="set-language" aria-label="Language" data-i18n-aria="settings.language">
+              <option value="auto" data-i18n="settings.auto_windows_language">Auto (Windows language)</option>
+            </select>
           </div>
         </div>
         <div class="setting">
           <label class="row">
-            <span class="label">시작할 때 새 버전 확인</span>
-            <input type="checkbox" class="switch" id="set-updates">
+            <span class="label" data-i18n="settings.hardware_acceleration_gpu">Hardware acceleration (GPU)</span>
+            <input type="checkbox" class="switch" id="set-gpu">
           </label>
-          <p class="note">프로그램을 켤 때 GitHub에 새 버전이 나왔는지 한 번 물어봐요. 새 버전이 있으면 첫 화면에 알려 주기만 하고, 스스로 내려받거나 설치하지 않아요. 물어보는 순간 GitHub가 내 인터넷 주소(IP)를 볼 수 있어요.</p>
+          <p class="note" data-i18n="settings.draws_window_graphics">Draws the window with the graphics card. If the screen flickers or breaks up, turn it off. Sound and encryption (AES-256) are not affected. Applies after a restart.</p>
+          <div class="row" id="gpu-restart" hidden>
+            <span class="note" data-i18n="settings.applies_after_restart">Applies after a restart.</span>
+            <button class="btn primary" id="gpu-restart-btn" data-i18n="settings.restart_now">Restart now</button>
+          </div>
         </div>
         <div class="setting">
           <label class="row">
-            <span class="label">자세한 진단 로그</span>
+            <span class="label" data-i18n="settings.check_new_version">Check for a new version at start</span>
+            <input type="checkbox" class="switch" id="set-updates">
+          </label>
+          <p class="note" data-i18n="settings.start_app_asks">At start, the app asks GitHub once whether a new version is out. If there is one, the home screen only says so; nothing is downloaded or installed by itself. While asking, GitHub can see your internet address (IP).</p>
+        </div>
+        <div class="setting">
+          <label class="row">
+            <span class="label" data-i18n="settings.detailed_diagnostic_log">Detailed diagnostic log</span>
             <input type="checkbox" class="switch" id="set-verbose">
           </label>
-          <p class="note">문제를 조사할 때만 켜세요. 꺼 두면 일어난 일만 짧게 남기고, 켜면 연결 상태를 2초마다 자세히 남겨요. 로그는 이 PC에만 저장되고(최근 5개) 어디로도 보내지 않아요. 닉네임·채팅·비밀번호는 남지 않아요.</p>
-          <div class="row"><span></span><button class="btn sm" id="open-logs">로그 폴더 열기</button></div>
+          <p class="note" data-i18n="settings.turn_only_when">Turn on only when looking into a problem. Off, the log keeps brief events; on, it records the connection in detail every 2 seconds. Logs stay on this PC (the last 5) and are never sent anywhere. Names, chat and passwords are never logged.</p>
+          <div class="row"><span></span><button class="btn sm" id="open-logs" data-i18n="settings.open_log_folder">Open log folder</button></div>
         </div>
       </div>
 
@@ -466,38 +475,38 @@
         <div class="about-head">
           <svg class="brand-mark about-mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/></svg>
           <div class="about-name">gachi</div>
-          <div class="about-version">버전 <span class="num" id="about-version"></span></div>
+          <div class="about-version"><span data-i18n="settings.version">Version</span> <span class="num" id="about-version"></span></div>
           <div class="about-update">
-            <button class="btn sm" id="update-check" type="button">새 버전 확인</button>
+            <button class="btn sm" id="update-check" type="button" data-i18n="settings.check_updates">Check for updates</button>
             <span class="note" id="update-result" hidden></span>
           </div>
-          <p class="about-tag">친구들과 인터넷으로 같이 연주하는 저지연 P2P 합주</p>
+          <p class="about-tag" data-i18n="settings.low_latency_p2p">Low-latency P2P jamming with friends over the internet</p>
         </div>
         <div class="setting">
-          <span class="label">라이선스</span>
-          <p class="note">gachi는 자유 소프트웨어예요. GNU General Public License 버전 3(GPLv3)에 따라 누구나 쓰고, 고치고, 다시 배포할 수 있어요. 이 프로그램은 어떠한 보증도 없이 있는 그대로 제공돼요. 라이선스 전문은 프로그램과 함께 설치된 LICENSE 파일에 있어요.</p>
+          <span class="label" data-i18n="settings.license">License</span>
+          <p class="note" data-i18n="settings.gachi_free_software">gachi is free software. Under the GNU General Public License version 3 (GPLv3), anyone may use, change and redistribute it. It comes as is, without any warranty. The full license is in the LICENSE file installed with the program.</p>
           <div class="row">
-            <span class="note">소스 코드: <span class="repo-url">github.com/aape133/gachi</span></span>
-            <button class="btn sm" id="open-repo">저장소 열기</button>
+            <span class="note"><span data-i18n="settings.source_code">Source code:</span> <span class="repo-url">github.com/aape133/gachi</span></span>
+            <button class="btn sm" id="open-repo" data-i18n="settings.open_repository">Open repository</button>
           </div>
         </div>
         <div class="setting">
-          <span class="label">개인정보</span>
-          <p class="note">소리와 채팅은 방에 있는 사람들끼리 직접(P2P) 암호화해서 주고받고, 서버를 거치지 않아요. 연결 서버는 방을 소개만 하고, 누가 접속했는지(인터넷 주소 포함)를 저장하지 않아요. 다만 접속하는 순간에는 연결 서버와 그 운영자, 서버를 호스팅하는 Cloudflare가 인터넷 주소(IP)를 볼 수 있어요. 또 직접 연결이라 같은 방 사람들끼리는 서로의 IP를 알 수 있어요.</p>
+          <span class="label" data-i18n="settings.privacy">Privacy</span>
+          <p class="note" data-i18n="settings.sound_chat_go">Sound and chat go encrypted directly (P2P) between the people in a room, never through a server. The connection server only introduces rooms and doesn't keep who connected (internet addresses included). While connecting, though, the connection server, its operator and Cloudflare, which hosts it, can see your internet address (IP). And since the connection is direct, people in the same room can find each other's IP.</p>
         </div>
         <div class="setting">
-          <span class="label">고지</span>
+          <span class="label" data-i18n="settings.notices">Notices</span>
           <div class="compat-logos">
             <img src="steinberg/asio-compatible-bw.svg" alt="ASIO Compatible. ASIO is a registered trademark of Steinberg Media Technologies GmbH" width="120">
             <img src="steinberg/vst-compatible.svg" alt="VST Compatible. VST is a registered trademark of Steinberg Media Technologies GmbH" width="120">
           </div>
           <p class="note">ASIO® is a registered trademark of Steinberg Media Technologies GmbH.<br>VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
-          <p class="note">글꼴 Pretendard (SIL Open Font License 1.1). 그 밖에 Tauri, cpal, Tokio, rustls, RustCrypto(ChaCha20-Poly1305, AES-GCM, X25519), vst3 등 MIT·Apache-2.0 라이선스의 오픈소스 라이브러리를 사용해요.</p>
+          <p class="note" data-i18n="settings.font_pretendard_sil">Font: Pretendard (SIL Open Font License 1.1). gachi also uses open source libraries under the MIT and Apache-2.0 licenses, such as Tauri, cpal, Tokio, rustls, RustCrypto (ChaCha20-Poly1305, AES-GCM, X25519) and vst3.</p>
         </div>
       </div>
 
     </div>
-    <div class="modal-foot">변경 사항은 바로 적용돼요</div>
+    <div class="modal-foot" data-i18n="settings.changes_apply_right">Changes apply right away</div>
   </div>
 </div>
 
@@ -505,6 +514,7 @@
 
 <script src="preview.js"></script>
 <script src="backend.js"></script>
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

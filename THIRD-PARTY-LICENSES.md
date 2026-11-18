@@ -11,7 +11,7 @@ Not from crates.io:
   Not in this repository; fetched when building. ASIO is a registered trademark of
   Steinberg Media Technologies GmbH.
 - **Microsoft WebView2 runtime** (draws the window): part of Windows, not distributed by gachi.
-- **Pretendard** (the font), SIL Open Font License 1.1: `ui/fonts/LICENSE.txt`.
+- **Pretendard** and **Pretendard JP** (the fonts; Pretendard JP builds on Source Han Sans, Inter and M PLUS 1p), SIL Open Font License 1.1: `ui/fonts/LICENSE.txt`.
 
 ## Rust packages (359, for the Windows build)
 

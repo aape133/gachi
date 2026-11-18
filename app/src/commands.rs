@@ -85,10 +85,10 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
                         if let Some(rec) = rec {
                             let _ = app.emit("recording", recording_json(rec));
                         }
-                        session::notice(&app, format!("오디오 설정을 적용했어요: {summary}"));
+                        session::notice(&app, gachi_lang::tr!("app.audio_settings_applied", summary));
                     }
                     Err(e) => {
-                        session::notice(&app, format!("{e}. 설정에서 다른 장치를 골라 주세요."));
+                        session::notice(&app, gachi_lang::tr!("app.e_please_choose", e));
                         return Err(e);
                     }
                 }
@@ -114,7 +114,7 @@ pub fn list_devices() -> Value {
             .map(|d| d.input_names.clone())
             .unwrap_or_default();
         let mut list =
-            vec![json!({ "id": "", "label": "기본 ASIO 장치", "inputs": default_inputs, "inputNames": default_names })];
+            vec![json!({ "id": "", "label": gachi_lang::tr!("app.default_asio_device"), "inputs": default_inputs, "inputNames": default_names })];
         list.extend(devices.into_iter().map(
             |d| json!({ "id": d.id, "label": d.label, "inputs": d.inputs, "inputNames": d.input_names }),
         ));
@@ -188,7 +188,7 @@ pub async fn create_room(app: AppHandle, opts: CreateOpts) -> Result<RoomView, S
     // (no longer than the password box takes when joining: a longer one could not be typed in)
     let password: String = opts.password.chars().take(session::PASSWORD_MAX).collect();
     let password = (!password.is_empty()).then_some(password);
-    let name = if opts.name.trim().is_empty() { "새 합주실".to_string() } else { opts.name };
+    let name = if opts.name.trim().is_empty() { session::new_room_name() } else { opts.name };
     session::start(app, Intent::Create { name, max_peers: opts.max_peers, password }, gen).await
 }
 
@@ -197,12 +197,13 @@ pub async fn create_room(app: AppHandle, opts: CreateOpts) -> Result<RoomView, S
 #[tauri::command]
 pub async fn join_room(app: AppHandle, code: String, password: Option<String>) -> Result<RoomView, Value> {
     let fail = |kind: &str, message: &str| json!({ "kind": kind, "message": message });
-    let code = code::normalize(&code).ok_or_else(|| fail("bad_code", "코드 형식이 맞지 않아요"))?;
+    let code = code::normalize(&code)
+        .ok_or_else(|| fail("bad_code", &gachi_lang::tr!("app.doesnt_look_like")))?;
     let gen = app.state::<AppState>().join_gen.fetch_add(1, Ordering::SeqCst) + 1;
     let password = password.filter(|p| !p.is_empty());
     session::start(app, Intent::Join { code, password }, gen).await.map_err(|e| match e.as_str() {
-        session::ERR_PASSWORD_REQUIRED => fail(&e, "비밀번호가 있는 방이에요."),
-        session::ERR_WRONG_PASSWORD => fail(&e, "비밀번호가 맞지 않아요."),
+        session::ERR_PASSWORD_REQUIRED => fail(&e, &gachi_lang::tr!("app.room_has_password")),
+        session::ERR_WRONG_PASSWORD => fail(&e, &gachi_lang::tr!("app.wrong_password")),
         _ => fail("other", &e),
     })
 }
@@ -383,7 +384,7 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
                     gachi_engine::DriverCheck::NoAnswer => {
                         if !hung {
                             hung = true;
-                            session::notice(&app2, session::DRIVER_HUNG.into());
+                            session::notice(&app2, session::driver_hung());
                         }
                     }
                     check => {
@@ -487,7 +488,7 @@ pub async fn probe_device(app: AppHandle) -> Result<(), String> {
 /// The device changed under the settings screen (driver panel, unplugged): open it again.
 async fn restart_preview_after_change(app: AppHandle, settings: Settings) {
     restart_preview(&app, &settings).await;
-    session::notice(&app, "오디오 장치 설정이 바뀌어서 다시 열었어요.".into());
+    session::notice(&app, gachi_lang::tr!("app.audio_device_settings"));
 }
 
 /// Device settings changed while the settings screen is open outside a room.
@@ -517,7 +518,7 @@ pub async fn play_test_tone(app: AppHandle) -> Result<(), String> {
     }
     let cfg = state.settings.lock().unwrap().engine_config();
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = gachi_engine::Engine::start(cfg, Box::new(Nowhere)).map_err(|e| format!("오디오 장치를 열 수 없어요 ({e})"))?;
+        let engine = gachi_engine::Engine::start(cfg, Box::new(Nowhere)).map_err(|e| gachi_lang::tr!("app.cant_open_audio", e))?;
         engine.play_test_tone(SECS);
         std::thread::sleep(std::time::Duration::from_secs_f32(SECS + 0.2));
         Ok(())
@@ -527,8 +528,14 @@ pub async fn play_test_tone(app: AppHandle) -> Result<(), String> {
 }
 
 fn recordings_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let docs = app.path().document_dir().map_err(|e| format!("문서 폴더를 찾을 수 없어요 ({e})"))?;
-    Ok(docs.join("gachi").join("녹음"))
+    let docs = app.path().document_dir().map_err(|e| gachi_lang::tr!("app.cant_find_documents", e))?;
+    let base = docs.join("gachi");
+    // the folder is named in the user's language; one already there (an earlier
+    // version's "녹음", or another language's) keeps being used
+    let names = ["녹음", "Recordings", "録音"];
+    let mine = gachi_lang::tr!("rec.folder");
+    let found = std::iter::once(mine.as_str()).chain(names).map(|n| base.join(n)).find(|d| d.is_dir());
+    Ok(found.unwrap_or_else(|| base.join(mine)))
 }
 
 pub fn recording_json(r: Result<gachi_engine::RecordingResult, String>) -> Value {
@@ -554,12 +561,12 @@ pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
         (g.rec_format(), g.rec_mix)
     };
     let mut guard = state.session.lock().await;
-    let s = guard.as_mut().ok_or("방에 들어가야 녹음할 수 있어요")?;
+    let s = guard.as_mut().ok_or_else(|| gachi_lang::tr!("app.join_room_record"))?;
     if on {
         let dir = s.start_recording(base, format, mix)?;
         Ok(json!({ "recording": true, "dir": dir.display().to_string() }))
     } else {
-        let r = s.stop_recording().unwrap_or_else(|| Err("녹음 중이 아니에요".into()));
+        let r = s.stop_recording().unwrap_or_else(|| Err(gachi_lang::tr!("app.not_recording")));
         let v = recording_json(r);
         if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
             return Err(e.to_string());
@@ -633,7 +640,7 @@ pub fn open_release() -> Result<(), String> {
 /// Opens the folder with the log files (to send one along with a problem report).
 #[tauri::command]
 pub fn open_logs() -> Result<(), String> {
-    let dir = crate::log_dir().ok_or("로그 폴더를 찾을 수 없어요")?;
+    let dir = crate::log_dir().ok_or_else(|| gachi_lang::tr!("app.cant_find_log"))?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
@@ -665,8 +672,8 @@ pub async fn nearby_rooms(state: State<'_, AppState>) -> Result<Vec<gachi_proto:
     let (_tx, mut rx) = crate::signal::connect(&url).await?;
     match tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await {
         Ok(Some(FromWorker::Nearby { rooms })) => Ok(rooms),
-        Ok(Some(FromWorker::Error { message, .. })) => Err(message),
-        _ => Err("서버 응답이 없어요".into()),
+        Ok(Some(FromWorker::Error { kind, message })) => Err(crate::refusal::localize(kind, &message)),
+        _ => Err(gachi_lang::tr!("app.no_answer_server")),
     }
 }
 

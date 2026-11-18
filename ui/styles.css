@@ -6,6 +6,8 @@
   font-display: swap;
   src: url("fonts/PretendardVariable.woff2") format("woff2-variations");
 }
+/* Japanese: Pretendard JP (fonts/pretendard-jp.css: pieces loaded only as characters need
+   them). Also behind Pretendard everywhere, for kanji in names in the other languages */
 
 /* ─────────────────────────  gachi · design tokens  ───────────────────────── */
 :root {
@@ -51,10 +53,15 @@
   --shadow: 0 16px 40px -22px rgba(0, 0, 0, .75);
   --shadow-pop: 0 24px 64px -12px rgba(0, 0, 0, .7);
   --brand: linear-gradient(120deg, #9d90ff 0%, #6fd0ff 52%, #4fe3a6 100%);
-  --font: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  --font: "Pretendard Variable", Pretendard, "Pretendard JP Variable", -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
   --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, "SF Mono", Consolas, monospace;
 }
 :root { color-scheme: dark; }
+html[lang|="ja"] {
+  --font: "Pretendard JP Variable", "Yu Gothic UI", "Meiryo UI", Meiryo, "Segoe UI", sans-serif;
+}
+/* Japanese breaks lines between phrases, not inside words */
+html[lang|="ja"] body { line-break: strict; word-break: auto-phrase; }
 
 /* light theme: picked in settings, or following the system when set to "system" */
 :root[data-theme="light"] {
@@ -604,6 +611,9 @@ input[type=range]:hover { --fill: var(--text); }
 .lat-fill i { display: block; height: 100%; transition: flex .4s ease; min-width: 2px; }
 
 .strip-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
+/* (its buttons keep their size: words that do not fit give way to icons instead) */
+.strip-foot > :not(.spacer) { flex: none; }
+.pill span { white-space: nowrap; }
 .ms {
   width: 30px; height: 28px; border-radius: 6px; background: var(--surface-2);
   border: 1px solid transparent; font-weight: 800; font-size: 12px; color: var(--text-3); transition: all .12s;
@@ -1240,9 +1250,11 @@ input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top:
 .stage.many .meter { margin-top: 1px; }
 /* (the input channel is in the settings too) */
 .stage.many .strip.self [data-act=input-ch] { display: none; }
-/* (the two pills and the record button do not fit a small card with their words: icons, the words as tooltips) */
-.stage.many .strip.self .pill { padding: 0 10px; }
-.stage.many .strip.self .pill span { display: none; }
+/* (the two pills and the record button do not fit a medium or small card with their words:
+   icons, the words as tooltips; a big card that is narrow in this language does the same,
+   see i18n.js `fit`) */
+.stage:is(.mid, .many) .strip.self .pill { padding: 0 10px; gap: 0; }
+.stage:is(.mid, .many) .strip.self .pill span { display: none; }
 .stage.many .strip-top { flex-wrap: nowrap; }
 .stage.many .top-tags { flex: none; }
 .stage.many .net-chip { min-width: 0; white-space: nowrap; overflow: hidden; }
@@ -1252,3 +1264,11 @@ input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top:
 .port-row[hidden] { display: none; }
 /* five digits, centred; a plain text box (no spin arrows: the number is typed) */
 .port-input { width: 84px; flex: none; text-align: center; padding: 0 8px; font-weight: 600; letter-spacing: .02em; }
+
+/* a label that must stay on one line and does not fit in this language (i18n.js `fit`):
+   first a little tighter; then a button with an icon shows only the icon, and any other
+   label is cut short (the whole text shows on hover either way) */
+.fit-tight { letter-spacing: -.03em; word-spacing: -.06em; }
+.fit-cut { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fit-icon { gap: 0; }
+.fit-icon > span:not([data-icon]) { display: none; }

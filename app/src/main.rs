@@ -3,6 +3,7 @@
 mod commands;
 mod deeplink;
 mod diagnose;
+mod refusal;
 mod gate;
 mod link;
 mod session;
@@ -117,11 +118,14 @@ const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreen
 
 /// The app's one window. Made here rather than in tauri.conf.json: whether it uses the
 /// graphics card is a saved setting.
-fn main_window(app: &tauri::AppHandle, gpu: bool) -> tauri::Result<()> {
+/// `language`: the saved choice; the page gets every language file with it, before its own
+/// scripts run (no loading at startup, no moment in another language).
+fn main_window(app: &tauri::AppHandle, gpu: bool, language: &str) -> tauri::Result<()> {
     let builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("gachi")
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
+        .initialization_script(gachi_lang::page_script(language))
         // shown once the page has the saved settings in it (`window_ready`): no empty
         // window, no page that changes under one's eyes as name, theme and devices arrive
         .visible(false);
@@ -196,8 +200,11 @@ fn main() {
                 *state.settings.lock().unwrap() = loaded;
                 let _ = state.settings_path.set(path);
             }
-            let gpu = tauri::Manager::state::<AppState>(app).settings.lock().unwrap().gpu;
-            main_window(app.handle(), gpu)?;
+            let (gpu, language) = {
+                let s = tauri::Manager::state::<AppState>(app).settings.lock().unwrap().clone();
+                (s.gpu, s.language)
+            };
+            main_window(app.handle(), gpu, &language)?;
             // installers register gachi:// themselves; dev builds register for this user at runtime
             #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
             if let Err(e) = app.deep_link().register_all() {

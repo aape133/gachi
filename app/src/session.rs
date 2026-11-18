@@ -119,7 +119,22 @@ fn next_peer_id(next: PeerId, taken: &[PeerId]) -> PeerId {
 
 fn clip_room_name(name: &str) -> String {
     let name: String = gachi_proto::peer::clean_text(name).trim().chars().take(ROOM_NAME_MAX).collect();
-    if name.is_empty() { "새 합주실".into() } else { name }
+    if name.is_empty() { new_room_name() } else { name }
+}
+
+/// The host's key from the server did not read.
+fn host_key_bad() -> String {
+    gachi_lang::tr!("room.hosts_key_not")
+}
+
+/// The connection server hung up mid-join.
+fn server_gone() -> String {
+    gachi_lang::tr!("room.lost_connection_server")
+}
+
+/// A room without a name.
+pub fn new_room_name() -> String {
+    gachi_lang::tr!("room.default_name")
 }
 
 /// The room as the host says it is, within what a room can be. The host is a member like
@@ -175,7 +190,9 @@ const COPIES_REPEAT_APART: Duration = Duration::from_secs(5);
 const COPIES_HOLD_REPEATED: Duration = Duration::from_secs(300);
 
 /// Shown when the ASIO driver stops answering.
-pub const DRIVER_HUNG: &str = "오디오 드라이버가 응답하지 않아요. 오디오 장치를 다시 연결하거나 앱을 다시 시작해 주세요.";
+pub fn driver_hung() -> String {
+    gachi_lang::tr!("room.audio_driver_not")
+}
 /// A report under this (percent) counts as clean.
 const COPIES_CLEAN_LOSS: f32 = 0.05;
 /// With copies on, this many reports in a row (2 s each) clearly worse than before them:
@@ -433,7 +450,7 @@ fn clip_profile(p: Profile) -> Profile {
     let clean = |t: &str| -> String { gachi_proto::peer::clean_text(t).trim().chars().take(12).collect() };
     let (name, instrument) = (clean(&p.name), clean(&p.instrument));
     let color = p.color.filter(|c| (*c as usize) < gachi_proto::signal::COLOR_HUES.len());
-    Profile { name: if name.is_empty() { "손님".into() } else { name }, instrument, color }
+    Profile { name: if name.is_empty() { gachi_lang::tr!("room.guest") } else { name }, instrument, color }
 }
 
 /// A track's name in a recording's file names: the name, and the instrument if one is given.
@@ -473,7 +490,8 @@ pub fn device_note(settings: &Settings, info: &gachi_engine::StreamInfo) -> Opti
     }
     let wanted = settings.device.trim();
     (!wanted.is_empty() && info.input_device != wanted && info.output_device != wanted).then(|| {
-        format!("'{wanted}'를 열 수 없어서 '{}'를 대신 쓰고 있어요. 다른 프로그램이 장치를 쓰고 있지 않은지 확인해 보세요.", info.output_device)
+        let used = &info.output_device;
+        gachi_lang::tr!("room.couldnt_open_wanted", wanted, used)
     })
 }
 
@@ -489,12 +507,9 @@ fn start_engine(net: &Net, settings: &Settings) -> Result<Engine, String> {
 /// What to tell the user when the ASIO device (or, in DAW mode, the bridge) does not open.
 pub fn open_error(settings: &Settings, e: &gachi_engine::EngineError) -> String {
     if settings.daw_mode() {
-        return format!("VST 연결을 열 수 없어요 ({e}). gachi가 두 개 실행 중이면 하나를 닫아 주세요.");
+        return gachi_lang::tr!("room.cant_open_vst", e);
     }
-    format!(
-        "ASIO 장치를 열 수 없어요 ({e}). 다른 프로그램(DAW 등)이 이 장치를 쓰고 있다면 닫고 다시 시도해 주세요. \
-         드라이버가 한 프로그램만 허용하는 장치일 수 있어요."
-    )
+    gachi_lang::tr!("room.cant_open_asio", e)
 }
 
 /// A time on our monotonic clock (`gachi_net::now_us`) as wall-clock time.
@@ -604,12 +619,13 @@ impl Session {
         }
         self.is_host = host == self.me;
         if was_host_id != Some(host) {
-            let who = if self.is_host {
-                "내가".to_string()
+            let text = if self.is_host {
+                gachi_lang::tr!("room.youre_host_now")
             } else {
-                self.peers.get(&host).map(|p| format!("{}님이", p.info.profile.name)).unwrap_or_default()
+                let name = self.peers.get(&host).map(|p| p.info.profile.name.clone()).unwrap_or_default();
+                gachi_lang::tr!("room.name_host_now", name)
             };
-            notice(app, format!("이제 {who} 방장이에요."));
+            notice(app, text);
             // keep the code reachable: the new host takes it over with the room's key
             if self.is_host && self.room_state.open && self.gate.is_none() {
                 tauri::async_runtime::spawn(gate::take_over(app.clone()));
@@ -684,9 +700,9 @@ impl Session {
     /// moment later: the message has to reach them first.
     pub fn kick(&mut self, app: &AppHandle, id: PeerId) -> Result<(), String> {
         if !self.is_host {
-            return Err("방장만 내보낼 수 있어요".into());
+            return Err(gachi_lang::tr!("room.only_host_remove"));
         }
-        let Some(p) = self.peers.get(&id) else { return Err("이미 나간 사람이에요".into()) };
+        let Some(p) = self.peers.get(&id) else { return Err(gachi_lang::tr!("room.already_left")) };
         let name = p.info.profile.name.clone();
         let addrs: Vec<std::net::IpAddr> = p.info.candidates.iter().map(|a| a.ip()).chain(p.route.map(|a| a.ip())).collect();
         for key in addrs.into_iter().filter_map(ban_key) {
@@ -712,7 +728,7 @@ impl Session {
         }
         self.broadcast_room_state();
         if first {
-            notice(app, format!("{name}님을 내보냈어요. 이 방에 다시 들어올 수 없어요."));
+            notice(app, gachi_lang::tr!("room.removed_name_cant", name));
         }
         Ok(())
     }
@@ -748,7 +764,7 @@ impl Session {
             .map(|(&id, p)| (id, p.info.profile.name.clone()))
             .collect();
         for (id, name) in &gone {
-            notice(app, format!("{name}님이 오래 응답이 없어서 나간 것으로 처리했어요."));
+            notice(app, gachi_lang::tr!("room.name_didnt_respond", name));
             self.peer_gone(app, *id, true);
         }
         let never: Vec<(PeerId, String)> = self
@@ -759,7 +775,7 @@ impl Session {
             .collect();
         for (id, name) in &never {
             tracing::warn!(id, "never connected: taken off the list");
-            notice(app, format!("{name}님과 끝내 연결되지 않아서 목록에서 뺐어요."));
+            notice(app, gachi_lang::tr!("room.couldnt_connect_name", name));
             self.peer_gone(app, *id, true);
         }
         !gone.is_empty() || !never.is_empty()
@@ -781,7 +797,7 @@ impl Session {
         self.broadcast_room_state();
         let _ = app.emit("room", self.room_view());
         tracing::info!("the code was on for 12 hours: turned off");
-        notice(app, "입장 코드를 켠 지 12시간이 지나서 껐어요. 합주는 그대로 계속돼요. 사람을 더 부르려면 방 설정에서 코드를 다시 켜 주세요.".into());
+        notice(app, gachi_lang::tr!("room.room_code_12"));
         true
     }
 
@@ -972,10 +988,7 @@ impl Session {
             if changed && audio.sample_rate != 0 && audio.sample_rate != self.sample_rate {
                 notice(
                     app,
-                    format!(
-                        "{}님은 {} Hz, 나는 {} Hz라서 변환해서 들려줘요. 같은 값으로 맞추면 음질이 가장 좋아요.",
-                        p.info.profile.name, audio.sample_rate, self.sample_rate
-                    ),
+                    gachi_lang::tr!("room.name_runs_theirs", name = p.info.profile.name, theirs = audio.sample_rate, ours = self.sample_rate),
                 );
             }
             p.info.audio = Some(audio);
@@ -1027,9 +1040,9 @@ impl Session {
                         notice(
                             app,
                             if self.room_state.open {
-                                "방장이 입장 코드를 켰어요. 코드를 아는 사람은 들어올 수 있어요.".into()
+                                gachi_lang::tr!("room.host_turned_room")
                             } else {
-                                "방장이 입장 코드를 껐어요. 이제 새로운 사람은 들어올 수 없어요.".into()
+                                gachi_lang::tr!("room.host_turned_room_code")
                             },
                         );
                     }
@@ -1063,7 +1076,7 @@ impl Session {
                     tracing::info!("put out of the room by the host");
                     let _ = app.emit("kicked", json!({}));
                 } else if let Some(p) = self.peers.get(&id) {
-                    notice(app, format!("방장이 {}님을 내보냈어요.", p.info.profile.name));
+                    notice(app, gachi_lang::tr!("room.host_removed_name", name = p.info.profile.name));
                     self.peer_gone(app, id, true);
                 }
             }
@@ -1224,7 +1237,7 @@ impl Session {
                             p.lost = false;
                             p.lost_since = None;
                             p.lost_offline = false;
-                            notice(app, format!("{}님이 다시 연결됐어요.", p.info.profile.name));
+                            notice(app, gachi_lang::tr!("room.name_connected_again", name = p.info.profile.name));
                         }
                     }
                     // back in the room: a host whose code connection dropped meanwhile reopens it
@@ -1245,7 +1258,7 @@ impl Session {
                             p.lost_since = Some(Instant::now());
                             p.lost_offline = !online;
                             if online {
-                                notice(app, format!("{}님 연결이 끊겼어요. 다시 연결되기를 기다리는 중이에요.", p.info.profile.name));
+                                notice(app, gachi_lang::tr!("room.lost_connection_name", name = p.info.profile.name));
                             }
                         }
                     }
@@ -1254,7 +1267,7 @@ impl Session {
                         self.cut_off = true;
                         tracing::warn!("everyone went silent at once: our own connection dropped");
                         // (the internet itself may be fine: the router may have moved us)
-                        notice(app, "내 연결이 끊겼어요. 다시 연결되기를 기다리는 중이에요.".into());
+                        notice(app, gachi_lang::tr!("room.connection_dropped_waiting"));
                     }
                 }
                 NetEvent::PunchFailed { id } => {
@@ -1314,7 +1327,7 @@ impl Session {
                 DriverCheck::NoAnswer => {
                     if !self.driver_hung {
                         self.driver_hung = true;
-                        notice(app, DRIVER_HUNG.into());
+                        notice(app, driver_hung());
                     }
                     return;
                 }
@@ -1343,12 +1356,18 @@ impl Session {
         match self.restart_engine(&settings, &self_ui) {
             Ok((summary, rec)) => {
                 if rec.is_some() {
-                    notice(app, "오디오 장치가 다시 연결되면서 녹음을 저장하고 멈췄어요.".into());
+                    notice(app, gachi_lang::tr!("room.audio_device_reconnected"));
                 }
-                let why = if changed { "오디오 장치 설정이 바뀌어서" } else { "오디오 장치가 멈춰서" };
-                notice(app, format!("{why} 다시 열었어요: {summary}"));
+                notice(
+                    app,
+                    if changed {
+                        gachi_lang::tr!("room.audio_device_settings", summary)
+                    } else {
+                        gachi_lang::tr!("room.audio_device_stopped", summary)
+                    },
+                );
             }
-            Err(e) => notice(app, format!("오디오 장치가 멈췄어요. 장치 연결을 확인해 주세요 ({e})")),
+            Err(e) => notice(app, gachi_lang::tr!("room.audio_device_stopped_please", e)),
         }
     }
 
@@ -1422,14 +1441,7 @@ impl Session {
         self.sample_rate = engine.info.sample_rate;
         self.buffer_size = engine.info.buffer_size.unwrap_or(settings.buffer_size);
         self.packet_frames = settings.packet_size;
-        let summary = format!(
-            "{} · {} Hz · 버퍼 {} ({:.1} ms){}",
-            engine.info.output_device,
-            self.sample_rate,
-            self.buffer_size,
-            engine.local_latency_ms(),
-            self.fallback_note.as_ref().map(|n| format!(". {n}")).unwrap_or_default()
-        );
+        let summary = gachi_lang::tr!("audio.summary", device = engine.info.output_device, rate = self.sample_rate, buffer = self.buffer_size, ms = format!("{:.1}", engine.local_latency_ms()), note = self.fallback_note.as_ref().map(|n| format!(". {n}")).unwrap_or_default());
         self.engine = Some(engine);
         let engine = self.engine.as_mut().expect("just set");
         for (&id, p) in self.peers.iter_mut() {
@@ -1472,7 +1484,7 @@ impl Session {
     /// Starts per-track recording into Documents/gachi/녹음/<date time room [code]> (see
     /// `recording_names`), of the tracks picked on the cards.
     pub fn start_recording(&mut self, base: PathBuf, format: gachi_engine::RecFormat, mix: bool) -> Result<PathBuf, String> {
-        let engine = self.engine.as_mut().ok_or("오디오 장치가 열려 있지 않아요")?;
+        let engine = self.engine.as_mut().ok_or_else(|| gachi_lang::tr!("room.audio_device_not"))?;
         let (folder, prefix) = recording_names(&self.room_state.name, &self.room_state.code, chrono::Local::now());
         // (a second recording in the same minute)
         let mut dir = base.join(&folder);
@@ -1872,7 +1884,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     let t = Instant::now();
     let endpoint = signal::Endpoint::parse(&settings.server);
     if endpoint.insecure_remote() {
-        notice(&app, "연결 서버와의 연결이 암호화되지 않았어요(ws://). 입장 요청은 따로 봉인되지만, 누가 어떤 방에 들어가는지는 보일 수 있어요.".into());
+        notice(&app, gachi_lang::tr!("room.connection_server_not"));
     }
     let servers = stun_servers();
     // the port the user forwarded on the router (settings), if any
@@ -1895,9 +1907,9 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     let (gathered, my_link, port_taken) = unless_cancelled(gathering, &cancelled)
         .await?
         .map_err(|e| e.to_string())?
-    .map_err(|e| format!("네트워크를 열 수 없어요 ({e})"))?;
+    .map_err(|e| gachi_lang::tr!("room.cant_open_network", e))?;
     if let Some(port) = port_taken {
-        notice(&app, format!("고정 포트 {port}번을 다른 프로그램이 쓰고 있어서 이번에는 자동으로 정한 포트로 들어가요. 계속 그러면 설정에서 다른 번호로 바꿔 주세요."));
+        notice(&app, gachi_lang::tr!("room.another_program_using", port));
     }
     if cancelled() {
         return Err(cancel_err());
@@ -1939,21 +1951,21 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         Intent::Join { code, password } => {
             let gathered = gathered.as_ref().expect("not taken on join");
             let url = endpoint.join_url(code);
-            let (tx, mut rx) = unless_cancelled(signal::connect(&url), &cancelled).await?.map_err(|e| format!("연결 서버에 연결할 수 없어요 ({e})"))?;
-            let refused = |kind, message| match kind {
+            let (tx, mut rx) = unless_cancelled(signal::connect(&url), &cancelled).await?.map_err(|e| gachi_lang::tr!("room.cant_reach_connection", e))?;
+            let refused = |kind: ErrorKind, message: String| match kind {
                 ErrorKind::PasswordRequired => ERR_PASSWORD_REQUIRED.to_string(),
                 ErrorKind::WrongPassword => ERR_WRONG_PASSWORD.to_string(),
-                _ => message,
+                _ => crate::refusal::localize(kind, &message),
             };
             // first the host's join key (and whether the room has a password)
             let (host_key, locked) = match unless_cancelled(tokio::time::timeout(Duration::from_secs(10), rx.recv()), &cancelled).await? {
                 Ok(Some(FromWorker::Host { join_key, locked })) => {
-                    let key = gachi_proto::key_from_hex(&join_key).ok_or("방장의 키가 올바르지 않아요")?;
+                    let key = gachi_proto::key_from_hex(&join_key).ok_or_else(host_key_bad)?;
                     (key, locked)
                 }
                 Ok(Some(FromWorker::Error { kind, message })) => return Err(refused(kind, message)),
-                Ok(_) => return Err("연결 서버와의 연결이 끊겼어요".into()),
-                Err(_) => return Err("연결 서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.".into()),
+                Ok(_) => return Err(server_gone()),
+                Err(_) => return Err(gachi_lang::tr!("room.connection_server_not_answering")),
             };
             let password = match (locked, password) {
                 (true, None) => return Err(ERR_PASSWORD_REQUIRED.into()),
@@ -1980,20 +1992,20 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
             })
             .await
             .map_err(|e| e.to_string())?
-            .ok_or("방장의 키가 올바르지 않아요")?;
+            .ok_or_else(host_key_bad)?;
             let _ = tx.send(ToWorker::Join { join: sealed });
             let welcome = match unless_cancelled(tokio::time::timeout(Duration::from_secs(15), rx.recv()), &cancelled).await? {
                 Ok(Some(FromWorker::Welcome { welcome })) => welcome,
                 Ok(Some(FromWorker::Error { kind, message })) => return Err(refused(kind, message)),
-                Ok(_) => return Err("연결 서버와의 연결이 끊겼어요".into()),
-                Err(_) => return Err("방장이 응답하지 않아요. 잠시 후 다시 시도해 주세요.".into()),
+                Ok(_) => return Err(server_gone()),
+                Err(_) => return Err(gachi_lang::tr!("room.host_not_answering")),
             };
             drop(tx); // done with the connection server
             // only the host (who knows the password, if there is one) could seal this
             let welcome: Welcome = gachi_proto::from_hex(&welcome.sealed)
                 .and_then(|b| answer_key.open(&b))
                 .and_then(|b| serde_json::from_slice(&b).ok())
-                .ok_or("방장의 응답을 확인할 수 없어요 (보안 검증 실패). 다시 시도해 주세요.")?;
+                .ok_or_else(|| gachi_lang::tr!("room.couldnt_verify_hosts"))?;
             let room_state = RoomState {
                 banned: Vec::new(),
                 code: welcome.room.code.clone(),
@@ -2084,9 +2096,10 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     }
     let direct = session.peers.values().filter(|p| p.route.is_some()).count();
     let detail = if session.peers.is_empty() {
-        "대기 중".to_string()
+        gachi_lang::tr!("room.waiting")
     } else {
-        format!("{direct}/{}명 직결", session.peers.len())
+        let n = session.peers.len();
+        gachi_lang::tr!("room.direct_n_direct", direct, n)
     };
     step("punch", "done", detail);
 
@@ -2097,7 +2110,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     }
     let views = session.views();
     let avg = if views.is_empty() { 0.0 } else { views.iter().map(|v| v.total).sum::<f32>() / views.len() as f32 };
-    step("measure", "done", if views.is_empty() { "-".into() } else { format!("평균 {avg:.1} ms") });
+    step("measure", "done", if views.is_empty() { "-".into() } else { gachi_lang::tr!("room.average_avg_ms", avg = format!("{avg:.1}")) });
     if cancelled() {
         return Err(cancel_err());
     }
@@ -2215,8 +2228,8 @@ fn open_media(
         upnp: settings.upnp,
         peer_timeout: NetConfig::DEFAULT_PEER_TIMEOUT,
     };
-    let net = Net::start(gathered, net_cfg).map_err(|e| format!("네트워크를 열 수 없어요 ({e})"))?;
-    step("exchange", "done", format!("주소 {candidates_n}개 · 멤버 {members}명"));
+    let net = Net::start(gathered, net_cfg).map_err(|e| gachi_lang::tr!("room.cant_open_network", e))?;
+    step("exchange", "done", gachi_lang::tr!("room.candidates_n_addresses", candidates_n, members));
     let engine = start_engine(&net, settings)?;
     Ok((net, engine))
 }
@@ -2455,7 +2468,7 @@ mod tests {
         // an ordinary one passes as it is
         let fine = RoomState { code: "ABCDEF".into(), host_key: Some("0f".repeat(16)), password: Some("pw".into()), max_peers: 16, age_ms: Some(3_600_000), ..ours.clone() };
         assert_eq!(clean_room_state(fine.clone(), &ours), fine);
-        assert_eq!(clip_room_name("   "), "새 합주실");
+        assert_eq!(gachi_lang::with("ko-KR", || clip_room_name("   ")), "새 합주실");
     }
 
     fn entry(now: Instant) -> PeerEntry {

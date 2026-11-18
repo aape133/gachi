@@ -72,6 +72,8 @@
         device: '', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
         quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
         metronomeVolume: 60, upnp: true, fixedPort: false, port: 24620, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
+        // (the saved language: the app hands it to the page before it runs)
+        language: window.GACHI_LANG || 'auto',
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this._devices = { devices: [], hasAsio: true };
@@ -192,6 +194,8 @@
         device: 'focusrite', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
         quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
         name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, fixedPort: false, port: 24620, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
+        // ?lang=en / ?lang=ja: the preview in another language
+        language: new URLSearchParams(location.search).get('lang') || 'auto',
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this.master = 0;
@@ -250,9 +254,10 @@
       let code = '';
       for (let i = 0; i < 6; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
       this._openRoom({ code, name: name || '새 합주실', maxPeers, isHost: true, hasPassword: !!password });
-      // ?peers=15: a full room at once (to look at big rooms)
-      const many = +new URLSearchParams(location.search).get('peers') || 0;
-      if (many) {
+      // ?peers=15: a full room at once (to look at big rooms); ?peers=0: alone
+      const asked = new URLSearchParams(location.search).get('peers');
+      if (asked !== null) {
+        const many = Math.min(15, +asked || 0);
         const names = ['지민', '현우', '서연', '도윤', '하은', '준서', '수아', '민재', '예린', '태오', '유나', '시우', '채원', '건우', '다인'];
         const insts = ['보컬', '베이스', '드럼', '기타', '건반', '색소폰', '바이올린', '코러스'];
         for (let i = 0; i < many; i++) {
@@ -346,12 +351,12 @@
     setUiVisible() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.3.0'; }
+    async appVersion() { return '0.4.0'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.3.1' };
+      return { version: '0.4.1' };
     }
     openRelease() {}
     async setPreview() {}

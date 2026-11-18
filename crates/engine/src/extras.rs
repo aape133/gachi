@@ -321,7 +321,7 @@ impl Recorder {
         slots: usize,
         part_frames: u64,
     ) -> Result<(RecTap, Recorder), String> {
-        std::fs::create_dir_all(&dir).map_err(|e| format!("녹음 폴더를 만들 수 없어요 ({e})"))?;
+        std::fs::create_dir_all(&dir).map_err(|e| gachi_lang::tr!("rec.cant_create_recording", e))?;
         let (tx, rx) = rtrb::RingBuffer::new(RING_BLOCKS);
         let dropped = Arc::new(AtomicU64::new(0));
         let error = Arc::new(Mutex::new(None));
@@ -342,7 +342,7 @@ impl Recorder {
 
     /// Waits for the writer to finish (the tap must already be dropped by the audio thread).
     pub fn finish(self) -> Result<RecordingResult, String> {
-        self.thread.join().map_err(|_| "녹음 저장 중 오류가 났어요".to_string())?
+        self.thread.join().map_err(|_| gachi_lang::tr!("rec.something_went_wrong"))?
     }
 }
 
@@ -413,7 +413,7 @@ impl Track {
 
     fn file_name(&self, f: &Files, part: u64) -> String {
         let num = self.n.map(|n| format!("{n:02} ")).unwrap_or_default();
-        let wide = if self.widened { " (스테레오)" } else { "" };
+        let wide = if self.widened { gachi_lang::tr!("rec.stereo_file") } else { String::new() };
         let more = if part > 0 { format!(" - {}", part + 1) } else { String::new() };
         format!("{}{num}{}{wide}{more}.{}", f.prefix, safe_name(&self.name), f.format.ext())
     }
@@ -495,7 +495,7 @@ fn write_loop(
             let t = tracks.entry(b.track).or_insert_with(|| {
                 let (n, name) = match b.track {
                     SELF_TRACK => (Some(0), None),
-                    MIX_TRACK => (None, Some("믹스".to_string())),
+                    MIX_TRACK => (None, Some(gachi_lang::tr!("rec.mix_file"))),
                     _ => (Some(order.iter().filter(|&&t| t != SELF_TRACK && t != MIX_TRACK).count() + 1), None),
                 };
                 let name = name.or_else(|| names.lock().ok().and_then(|n| n.get(&b.track).cloned())).unwrap_or_else(|| format!("peer{}", b.track));
@@ -543,7 +543,7 @@ fn write_loop(
         files.append(&mut t.files);
     }
     if let Some(e) = err {
-        return Err(if files.is_empty() { e } else { format!("{e}. 그때까지 녹음된 부분은 파일로 남아 있어요.") });
+        return Err(if files.is_empty() { e } else { gachi_lang::tr!("rec.e_what_recorded", e) });
     }
     Ok(RecordingResult { dir, files, seconds: end as f32 / sample_rate as f32, dropped_blocks: dropped.load(Relaxed) })
 }
@@ -670,6 +670,9 @@ mod tests {
     /// mono track that turns stereo goes on in a stereo file that lines up with the rest.
     #[test]
     fn mono_tracks_are_mono_files_and_the_mix_has_its_name() {
+        // file names are made on the recorder's thread: the whole process speaks Korean here
+        // (no engine test asks for another language)
+        gachi_lang::choose("ko-KR");
         let dir = std::env::temp_dir().join(format!("gachi-rec-mono-{}", std::process::id()));
         let names = Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, "me".to_string()), (7, "gt".to_string())])));
         let opts = RecOptions { prefix: "r - ".into(), format: RecFormat::Wav { bits: 16 }, mix: true };

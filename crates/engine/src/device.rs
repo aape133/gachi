@@ -141,7 +141,7 @@ pub fn open_asio_control_panel() -> Result<(), String> {
     }
     const ASE_NOT_PRESENT: i32 = -1000;
     if crate::host_thread::stuck() {
-        return Err("ASIO 드라이버가 응답하지 않아요".into());
+        return Err(gachi_lang::tr!("audio.asio_driver_not"));
     }
     PANEL_OPEN.store(true, Relaxed);
     let r = crate::host_thread::run(std::time::Duration::from_secs(2), |_| {
@@ -152,8 +152,8 @@ pub fn open_asio_control_panel() -> Result<(), String> {
     });
     match r {
         Some(0) | Some(0x3f4847a0) => Ok(()),
-        Some(ASE_NOT_PRESENT) => Err("ASIO 장치가 열려 있지 않아요. 장치를 고른 뒤 다시 눌러 주세요.".into()),
-        Some(e) => Err(format!("드라이버가 컨트롤 패널을 열지 못했어요 (오류 {e})")),
+        Some(ASE_NOT_PRESENT) => Err(gachi_lang::tr!("audio.asio_device_not")),
+        Some(e) => Err(gachi_lang::tr!("audio.driver_couldnt_open", e)),
         // still open: this driver keeps its panel modal until it is closed
         None => Ok(()),
     }
@@ -161,7 +161,7 @@ pub fn open_asio_control_panel() -> Result<(), String> {
 
 #[cfg(not(all(windows, feature = "asio")))]
 pub fn open_asio_control_panel() -> Result<(), String> {
-    Err("이 빌드는 ASIO를 지원하지 않아요".into())
+    Err(gachi_lang::tr!("audio.build_does_not"))
 }
 
 /// The loaded ASIO driver's own (input, output) latency in frames: what it adds beyond our

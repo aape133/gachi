@@ -1,0 +1,6 @@
+# the landing page's files: not to be framed by another site, sniffed as another type, or
+# told where a visitor came from beyond the site itself
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin

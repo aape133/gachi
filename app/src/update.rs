@@ -28,18 +28,18 @@ pub struct Update {
 /// The newer version, if there is one. `Ok(None)`: this is the latest (or there is no
 /// release to compare with).
 pub async fn check() -> Result<Option<Update>, String> {
-    let reply = tokio::time::timeout(TIMEOUT, fetch()).await.map_err(|_| "응답이 없어요".to_string())??;
-    let (status, body) = split(&reply).ok_or("알 수 없는 응답이에요")?;
+    let reply = tokio::time::timeout(TIMEOUT, fetch()).await.map_err(|_| gachi_lang::tr!("update.no_answer"))??;
+    let (status, body) = split(&reply).ok_or_else(|| gachi_lang::tr!("update.unexpected_answer"))?;
     match status {
         200 => Ok(newer_in(&body, env!("CARGO_PKG_VERSION"))),
         // no release yet (or the repository is not public)
         404 => Ok(None),
-        s => Err(format!("확인하지 못했어요 ({s})")),
+        s => Err(gachi_lang::tr!("update.couldnt_check_s", s)),
     }
 }
 
 async fn fetch() -> Result<Vec<u8>, String> {
-    let cfg = crate::signal::tls_config().ok_or("인증서를 읽지 못했어요")?;
+    let cfg = crate::signal::tls_config().ok_or_else(|| gachi_lang::tr!("update.couldnt_read_certificates"))?;
     let tcp = tokio::net::TcpStream::connect((HOST, 443)).await.map_err(|e| e.to_string())?;
     let name = rustls::pki_types::ServerName::try_from(HOST).map_err(|e| e.to_string())?;
     let mut tls = tokio_rustls::TlsConnector::from(cfg).connect(name, tcp).await.map_err(|e| e.to_string())?;
@@ -55,7 +55,7 @@ async fn fetch() -> Result<Vec<u8>, String> {
             Ok(n) => {
                 out.extend_from_slice(&buf[..n]);
                 if out.len() > MAX_REPLY {
-                    return Err("응답이 너무 커요".into());
+                    return Err(gachi_lang::tr!("update.answer_too_large"));
                 }
             }
             // (servers that close without a TLS goodbye: what was read is still the reply)

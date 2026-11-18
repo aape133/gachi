@@ -60,34 +60,24 @@ impl Side {
 
 /// What to tell when no direct connection to `name` came about: why, and what helps.
 pub fn no_direct_path(me: &Side, them: &Side, name: &str) -> String {
-    let head = format!("{name}님과 직접 연결이 안 돼요.");
+    let head = gachi_lang::tr!("direct.cant_connect_directly", name);
     let why = if me.nat == Some(NatKind::Blocked) {
-        "내 네트워크가 직접 연결(UDP)을 막고 있는 것 같아요(회사·학교망, 공용 와이파이 등). 집 인터넷이나 다른 네트워크로 바꿔 보세요.".to_string()
+        gachi_lang::tr!("direct.network_seems_block")
     } else if them.nat == Some(NatKind::Blocked) {
-        format!("{name}님 네트워크가 직접 연결(UDP)을 막고 있는 것 같아요(회사·학교망, 공용 와이파이 등). {name}님이 집 인터넷이나 다른 네트워크로 바꿔 보세요.")
+        gachi_lang::tr!("direct.name_s_network", name)
     } else if me.same_router(them) {
-        "같은 공유기에 있는데도 연결이 안 돼요. 어느 한쪽 PC의 방화벽이나 백신이 gachi를 막고 있을 수 있어요. 두 PC 모두 Windows 보안의 방화벽 설정에서 gachi가 허용돼 있는지 확인해 주세요.".to_string()
+        gachi_lang::tr!("direct.youre_same_router")
     } else if me.public.is_some() && me.public == them.public {
-        "두 분이 같은 공인 주소를 쓰고 있어요(같은 통신사의 공유 주소나 같은 건물 인터넷). 이런 망은 안쪽끼리 바로 잇는 걸 막는 경우가 많아요. 한 분이 다른 네트워크로 바꾸거나, 두 분 다 IPv6를 쓸 수 있으면 연결될 수 있어요.".to_string()
+        gachi_lang::tr!("direct.both_share_same")
     } else {
         match (me.nat, them.nat) {
-            (Some(NatKind::Varies), Some(NatKind::Varies)) => {
-                "두 분 모두 직접 연결이 어려운 인터넷(모바일 핫스팟, 회사망 등)이에요. 한 분만이라도 집 인터넷(유선이나 공유기 와이파이)으로 바꾸면 연결될 수 있어요.".to_string()
-            }
-            (Some(NatKind::Varies), _) => {
-                "내 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이에요. 집 인터넷(유선이나 공유기 와이파이)으로 바꾸거나, 공유기의 UPnP를 켜면(없으면 설정의 고정 포트를 포워딩하면) 연결될 수 있어요.".to_string()
-            }
-            (_, Some(NatKind::Varies)) => format!(
-                "{name}님 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이에요. {name}님이 집 인터넷(유선이나 공유기 와이파이)으로 바꾸거나, 내 공유기의 UPnP를 켜면(없으면 설정의 고정 포트를 포워딩하면) 연결될 수 있어요."
-            ),
+            (Some(NatKind::Varies), Some(NatKind::Varies)) => gachi_lang::tr!("direct.youre_both_internet"),
+            (Some(NatKind::Varies), _) => gachi_lang::tr!("direct.internet_makes_direct"),
+            (_, Some(NatKind::Varies)) => gachi_lang::tr!("direct.name_s_internet", name),
             // both ordinary: what is left is a firewall on the way (the PC's, or a strict router)
-            (Some(NatKind::Steady), Some(NatKind::Steady)) => {
-                "두 분 다 보통은 직접 연결이 되는 인터넷이에요. 어느 한쪽 PC의 방화벽이나 백신이 gachi를 막고 있을 수 있어요. 두 PC 모두 Windows 보안의 방화벽 설정에서 gachi가 허용돼 있는지 확인하고, 공유기의 UPnP를 켜 보세요(없으면 설정의 고정 포트를 포워딩).".to_string()
-            }
+            (Some(NatKind::Steady), Some(NatKind::Steady)) => gachi_lang::tr!("direct.both_connections_normally"),
             // (the other side does not say: an older version)
-            _ => format!(
-                "{name}님 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이거나, 어느 한쪽 PC의 방화벽이 gachi를 막고 있을 수 있어요. {name}님이 집 인터넷으로 바꾸거나, 내 공유기의 UPnP를 켜 보세요."
-            ),
+            _ => gachi_lang::tr!("direct.name_s_internet_may", name),
         }
     };
     format!("{head} {why}")
@@ -119,7 +109,7 @@ mod tests {
         let hotspot = side(Some(Varies), &["172.20.10.2:4000", "198.51.100.200:4000"]);
         let blocked = side(Some(Blocked), &["10.1.2.3:4000"]);
         let old = side(None, &["192.168.5.5:4000", "198.51.100.77:4000"]);
-        let say = |me: &Side, them: &Side| no_direct_path(me, them, "지민");
+        let say = |me: &Side, them: &Side| gachi_lang::with("ko-KR", || no_direct_path(me, them, "지민"));
 
         assert!(say(&blocked, &home_b).contains("내 네트워크가 직접 연결(UDP)을 막고"));
         assert!(say(&home_a, &blocked).contains("지민님 네트워크가 직접 연결(UDP)을 막고"));
@@ -143,6 +133,29 @@ mod tests {
         for (me, them) in [(&blocked, &home_b), (&home_a, &hotspot), (&home_a, &home_b), (&home_a, &old)] {
             let m = say(me, them);
             assert!(m.starts_with("지민님과 직접 연결이 안 돼요."), "{m}");
+        }
+    }
+
+    #[test]
+    fn every_reason_is_said_in_english_and_japanese_too() {
+        use gachi_lang::with;
+        use NatKind::*;
+        let sides = [
+            side(Some(Steady), &["192.168.0.7:4000", "203.0.113.7:4000"]),
+            side(Some(Steady), &["192.168.0.9:4000", "203.0.113.7:4000"]),
+            side(Some(Steady), &["10.20.30.40:4000", "203.0.113.7:4000"]),
+            side(Some(Varies), &["172.20.10.2:4000", "198.51.100.200:4000"]),
+            side(Some(Blocked), &["10.1.2.3:4000"]),
+            side(None, &["192.168.5.5:4000", "198.51.100.77:4000"]),
+        ];
+        let hangul = |s: &str| s.chars().any(|c| ('\u{ac00}'..='\u{d7a3}').contains(&c));
+        for me in &sides {
+            for them in &sides {
+                let en = with("en-US", || no_direct_path(me, them, "Sam"));
+                let ja = with("ja-JP", || no_direct_path(me, them, "Sam"));
+                assert!(en.starts_with("Can't connect directly to Sam.") && !hangul(&en), "{en}");
+                assert!(ja.starts_with("Samさんと直接接続できません。") && !hangul(&ja), "{ja}");
+            }
         }
     }
 }

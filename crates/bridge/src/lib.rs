@@ -63,13 +63,13 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NotRunning => write!(f, "gachi 앱이 DAW 연결 모드로 실행 중이 아니에요"),
-            Error::Busy => write!(f, "다른 트랙의 gachi 플러그인이 사용 중이에요"),
+            Error::NotRunning => f.write_str(&gachi_lang::tr!("daw.gachi_app_not")),
+            Error::Busy => f.write_str(&gachi_lang::tr!("daw.gachi_plugin_another")),
             Error::Version { theirs, ours } => {
-                write!(f, "gachi 앱과 플러그인 버전이 맞지 않아요 (상대 {theirs}, 이쪽 {ours}). 둘 다 최신으로 설치해 주세요")
+                f.write_str(&gachi_lang::tr!("daw.gachi_app_plugin", theirs, ours))
             }
-            Error::BadMagic => write!(f, "gachi 연결 영역이 올바르지 않아요"),
-            Error::Os(code) => write!(f, "시스템 오류 ({code})"),
+            Error::BadMagic => f.write_str(&gachi_lang::tr!("daw.gachi_link_area")),
+            Error::Os(code) => f.write_str(&gachi_lang::tr!("daw.system_error_code", code)),
         }
     }
 }

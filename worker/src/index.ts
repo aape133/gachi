@@ -57,9 +57,13 @@ const HOST_CHECK_MS = 3600_000;
 /** a host that has not sent its keepalive ("ping", every 5 s) for this long is gone: its
  *  PC lost power or its network, and the connection was never closed */
 const HOST_STALE_MS = 5 * 60_000;
-const MAX_ROOM = 16;
-/** join/open attempts per IP per minute (codes are short: no guessing sprees) */
-const ATTEMPTS_PER_MIN = 20;
+/** the biggest room the server keeps (the app itself opens up to 16 for now: room to grow
+ *  without a server update) */
+const MAX_ROOM = 32;
+/** join/open attempts per IP per minute (codes are short: no guessing sprees). Room for a
+ *  full room joining from one network at once, with some second tries (password, a dropped
+ *  connection); trying every code from one address would still take ~40 years */
+const ATTEMPTS_PER_MIN = 40;
 /** wrong room passwords one caller may give one room in `WRONG_WINDOW_MS`; past that its
  *  requests to that room are refused here, before they reach the host. (The host also
  *  stops answering everybody after many wrong ones in a minute: that is the guard against
@@ -151,7 +155,7 @@ export default {
     if (url.pathname === "/health") return new Response("ok");
 
     const invite = url.pathname.match(/^\/j\/([^/]+)\/?$/);
-    if (invite) return invitePage(invite[1]);
+    if (invite) return invitePage(invite[1], req.headers.get("Accept-Language"));
 
     const isHost = url.pathname === "/ws/host";
     const join = url.pathname.match(/^\/ws\/join\/([^/]+)$/);
@@ -813,10 +817,56 @@ export class Counts extends DurableObject<Env> {
   }
 }
 
-function invitePage(raw: string): Response {
+/** The invite page's words, in the languages the app speaks (as its language files say them). */
+const INVITE = {
+  ko: {
+    title: "gachi 합주 초대",
+    invited: "합주에 초대받았어요",
+    open: "gachi 앱에서 열기",
+    help: "앱이 열리지 않으면 gachi를 설치한 뒤<br>‘참여하기’에서 위 코드를 입력하세요.",
+    bad: "초대 링크가 올바르지 않아요.",
+  },
+  en: {
+    title: "gachi jam invite",
+    invited: "You're invited to a jam",
+    open: "Open in gachi",
+    help: "If the app doesn't open, install gachi,<br>then enter this code under ‘Join’.",
+    bad: "This invite link isn't valid.",
+  },
+  ja: {
+    title: "gachi セッションへの招待",
+    invited: "セッションに招待されました",
+    open: "gachiアプリで開く",
+    help: "アプリが開かない場合は、gachiをインストールしてから<br>「参加する」で上のコードを入力してください。",
+    bad: "招待リンクが正しくありません。",
+  },
+};
+type InviteLang = keyof typeof INVITE;
+
+/** The first language in the browser's list that the page has ("ko-KR,ko;q=0.9,en;q=0.8"
+ *  → ko), else English. */
+function inviteLang(accept: string | null): InviteLang {
+  const wanted = (accept ?? "")
+    .split(",")
+    .map((part) => {
+      const [tag, ...params] = part.trim().toLowerCase().split(";");
+      const q = Number(params.find((p) => p.trim().startsWith("q="))?.trim().slice(2) ?? 1);
+      return { lang: tag.split("-")[0], q: Number.isFinite(q) ? q : 0 };
+    })
+    .filter((w) => w.q > 0)
+    .sort((a, b) => b.q - a.q);
+  return (wanted.find((w) => w.lang in INVITE)?.lang as InviteLang) ?? "en";
+}
+
+function invitePage(raw: string, accept: string | null): Response {
   const code = normalizeCode(decodePath(raw));
+  const lang = inviteLang(accept);
+  const t = INVITE[lang];
   const headers = {
     "content-type": "text/html; charset=utf-8",
+    "content-language": lang,
+    // (one address, a page in the reader's language: a cache keeps them apart)
+    vary: "Accept-Language",
     // the page runs its own few lines and loads nothing; no other site may frame it (it
     // opens the app) or learn the code from a referrer
     "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
@@ -825,27 +875,31 @@ function invitePage(raw: string): Response {
     "referrer-policy": "no-referrer",
     "cache-control": "no-store",
   };
+  // (the words are ours; the code is only code-alphabet characters)
+  const fill = (page: string) =>
+    page.replaceAll("{LANG}", lang).replace(/\{(TITLE|INVITED|OPEN|HELP|BAD)\}/g, (_, k: string) => t[k.toLowerCase() as keyof typeof t]);
   if (!code) {
-    return new Response(PAGE_NOT_FOUND, { status: 404, headers });
+    return new Response(fill(PAGE_NOT_FOUND), { status: 404, headers });
   }
-  // only code-alphabet characters reach the page
-  return new Response(PAGE.replaceAll("{CODE}", displayCode(code)), { headers });
+  return new Response(fill(PAGE).replaceAll("{CODE}", displayCode(code)), { headers });
 }
 
-const PAGE_NOT_FOUND = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>gachi</title>
-<body style="font-family:system-ui,sans-serif;background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0">
-<p>초대 링크가 올바르지 않아요.</p></body></html>`;
+const FONTS = `system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Yu Gothic UI", Meiryo, sans-serif`;
+
+const PAGE_NOT_FOUND = `<!doctype html><html lang="{LANG}"><meta charset="utf-8"><title>gachi</title>
+<body style="font-family:${FONTS};background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0">
+<p>{BAD}</p></body></html>`;
 
 const PAGE = `<!doctype html>
-<html lang="ko">
+<html lang="{LANG}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>gachi 합주 초대</title>
+<title>{TITLE}</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0c0d10; color: #e8e8ee;
-         font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+         font-family: ${FONTS}; }
   main { text-align: center; padding: 32px 20px; max-width: 360px; }
   h1 { font-size: 18px; font-weight: 600; margin: 0 0 18px; }
   .code { font: 700 40px ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .1em; margin: 6px 0 22px; }
@@ -856,10 +910,10 @@ const PAGE = `<!doctype html>
 </head>
 <body>
 <main>
-  <h1>합주에 초대받았어요</h1>
+  <h1>{INVITED}</h1>
   <div class="code">{CODE}</div>
-  <a class="btn" id="open" href="gachi://join/{CODE}">gachi 앱에서 열기</a>
-  <p>앱이 열리지 않으면 gachi를 설치한 뒤<br>‘참여’에서 위 코드를 입력하세요.</p>
+  <a class="btn" id="open" href="gachi://join/{CODE}">{OPEN}</a>
+  <p>{HELP}</p>
 </main>
 <script>setTimeout(function () { location.href = document.getElementById('open').href; }, 300);</script>
 </body>

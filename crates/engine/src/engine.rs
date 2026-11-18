@@ -364,7 +364,7 @@ impl Engine {
             let opened = crate::host_thread::run(crate::host_thread::SLOW, move |kept| {
                 open_streams(&cfg, sink, cmd_rx, garbage_tx, shared).map(|(i, o, info)| (kept.keep(vec![i, o]), info))
             })
-            .ok_or_else(|| EngineError::Thread("ASIO 드라이버가 응답하지 않아요".into()))??;
+            .ok_or_else(|| EngineError::Thread(gachi_lang::tr!("audio.asio_driver_not")))??;
             (Owner::Asio(opened.0), opened.1)
         } else {
             let (ready_tx, ready_rx) = mpsc::channel();
@@ -486,11 +486,11 @@ impl Engine {
     /// format and names, and whether the mix is recorded too.
     pub fn start_recording(&mut self, dir: PathBuf, opts: RecOptions, names: Arc<Mutex<HashMap<PeerId, String>>>) -> Result<(), String> {
         if self.recorder.is_some() {
-            return Err("이미 녹음 중이에요".into());
+            return Err(gachi_lang::tr!("audio.already_recording"));
         }
         let (tap, rec) = Recorder::start(dir, opts, self.info.sample_rate, names, MAX_PEERS + 2)?;
         self.rec_tap_back = false;
-        self.cmd_tx.push(Cmd::StartRec(Box::new(tap))).map_err(|_| "오디오 엔진이 바빠요. 다시 시도해 주세요.".to_string())?;
+        self.cmd_tx.push(Cmd::StartRec(Box::new(tap))).map_err(|_| gachi_lang::tr!("audio.audio_engine_busy"))?;
         self.recorder = Some(rec);
         Ok(())
     }
@@ -515,7 +515,7 @@ impl Engine {
         if !self.rec_tap_back {
             // audio thread is not running (device lost): the tap goes away with the engine
             self.recorder = Some(rec);
-            return Some(Err("오디오 장치가 멈춰서 녹음을 마무리하지 못했어요. 나갈 때 저장돼요.".into()));
+            return Some(Err(gachi_lang::tr!("audio.audio_device_stopped")));
         }
         Some(rec.finish())
     }
@@ -755,10 +755,7 @@ fn open_streams(
     let (out_cfg, out_fmt) = pick_config(&out_dev, false)?;
     if in_cfg.sample_rate != out_cfg.sample_rate {
         // TODO: resample (rubato) instead of refusing
-        return Err(EngineError::Unsupported(format!(
-            "입력 장치는 {} Hz, 출력 장치는 {} Hz예요. Windows 소리 설정(장치 속성 → 고급)에서 두 장치를 같은 샘플레이트로 맞춰 주세요",
-            in_cfg.sample_rate.0, out_cfg.sample_rate.0
-        )));
+        return Err(EngineError::Unsupported(gachi_lang::tr!("audio.input_device_runs", input = in_cfg.sample_rate.0, output = out_cfg.sample_rate.0)));
     }
 
     let out_buffer = match out_cfg.buffer_size {
@@ -1059,7 +1056,7 @@ fn start_bridge(
     _: rtrb::Producer<Garbage>,
     _: Shared,
 ) -> Result<(Owner, StreamInfo), EngineError> {
-    Err(EngineError::Unsupported("DAW 연결 모드는 Windows에서만 돼요".into()))
+    Err(EngineError::Unsupported(gachi_lang::tr!("audio.daw_mode_works")))
 }
 
 /// DAW mode: opens the bridge and runs the same input/output processing on our own thread,
@@ -1094,7 +1091,7 @@ fn start_bridge(
             .spawn(move || run_bridge(&end, input, output, &stop, &params, hold_rx, sink))
             .map_err(|e| EngineError::Thread(e.to_string()))?
     };
-    let name = "DAW (gachi 플러그인)".to_string();
+    let name = gachi_lang::tr!("audio.daw_gachi_plugin");
     let info = StreamInfo {
         sample_rate,
         buffer_size: Some(block),

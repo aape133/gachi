@@ -50,7 +50,7 @@ impl RecFormat {
 }
 
 fn io(e: std::io::Error) -> String {
-    format!("녹음 파일에 쓸 수 없어요 ({e})")
+    gachi_lang::tr!("rec.cant_write_recording", e)
 }
 
 /// One file being written. Samples come interleaved, `channels` (1 or 2) to a frame.
@@ -61,7 +61,7 @@ pub(crate) enum Sink {
 
 impl Sink {
     pub fn create(path: &Path, format: RecFormat, channels: usize, sample_rate: u32) -> Result<Self, String> {
-        let made = |e: String| format!("파일을 만들 수 없어요 ({e})");
+        let made = |e: String| gachi_lang::tr!("rec.cant_create_file", e);
         Ok(match format {
             RecFormat::Wav { bits } => Self::Wav(Box::new(WavSink::create(path, bits, channels, sample_rate).map_err(made)?)),
             RecFormat::Flac { bits } => Self::Flac(Box::new(FlacSink::create(path, bits, channels, sample_rate).map_err(made)?)),
@@ -89,7 +89,7 @@ impl Sink {
 
     /// Finishes the file (headers get their lengths, what is buffered goes out).
     pub fn finish(self) -> Result<(), String> {
-        let done = |e: String| format!("녹음 파일을 마무리할 수 없어요 ({e})");
+        let done = |e: String| gachi_lang::tr!("rec.cant_finish_recording", e);
         match self {
             Self::Wav(s) => s.finish().map_err(done),
             Self::Flac(s) => s.finish().map_err(done),
@@ -117,7 +117,7 @@ impl WavSink {
     }
 
     fn write(&mut self, samples: &[f32]) -> Result<(), String> {
-        let cannot = |e: hound::Error| format!("녹음 파일에 쓸 수 없어요 ({e})");
+        let cannot = |e: hound::Error| gachi_lang::tr!("rec.cant_write_recording", e);
         match self.bits {
             32 => samples.iter().try_for_each(|&s| self.w.write_sample(s)).map_err(cannot),
             24 => samples.iter().try_for_each(|&s| self.w.write_sample(to_int(s, 24, 0.0))).map_err(cannot),
@@ -240,7 +240,7 @@ impl FlacSink {
 
     /// Encodes `pending[at..at + len]` as one block and writes it.
     fn encode(&mut self, at: usize, len: usize) -> Result<(), String> {
-        let bad = |e: &dyn std::fmt::Display| format!("FLAC으로 바꿀 수 없어요 ({e})");
+        let bad = |e: &dyn std::fmt::Display| gachi_lang::tr!("rec.cant_convert_flac", e);
         (&mut self.buf, &mut self.ctx).fill_interleaved(&self.pending[at..at + len]).map_err(|e| bad(&e))?;
         let frame = flacenc::encode_fixed_size_frame(&self.cfg, &self.buf, self.frame_no, self.stream.stream_info()).map_err(|e| bad(&e))?;
         self.frame_no += 1;

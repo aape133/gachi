@@ -14,6 +14,7 @@ asio = ["gachi-engine/asio"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+gachi-lang.workspace = true
 gachi-proto.workspace = true
 gachi-engine.workspace = true
 gachi-net.workspace = true

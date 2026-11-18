@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/proto", "crates/engine", "crates/net", "crates/bridge", "crates/plugin", "app"]
+members = ["crates/lang", "crates/proto", "crates/engine", "crates/net", "crates/bridge", "crates/plugin", "app"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 # GNU General Public License, version 3 (see LICENSE). The app is built with Steinberg's
 # ASIO SDK under that SDK's GPLv3 option, so the whole work is under the GPLv3.
@@ -15,6 +15,7 @@ gachi-proto = { path = "crates/proto" }
 gachi-engine = { path = "crates/engine" }
 gachi-net = { path = "crates/net" }
 gachi-bridge = { path = "crates/bridge" }
+gachi-lang = { path = "crates/lang" }
 
 anyhow = "1"
 arc-swap = "1"
