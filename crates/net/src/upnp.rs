@@ -34,11 +34,28 @@ fn search_once(from: Option<IpAddr>, to: SocketAddr, timeout: Duration) -> Optio
     while let Some(left) = timeout.checked_sub(start.elapsed()).filter(|d| *d > Duration::from_millis(200)) {
         match igd_next::search_gateway(SearchOptions { bind_addr: bind, broadcast_address: to, timeout: Some(left), single_search_timeout: Some(left) }) {
             Ok(gw) => return Some(gw),
-            Err(e) => tracing::debug!(to = %crate::logaddr::Shown(to), from = %crate::logaddr::opt_ip(from), "UPnP search: {e}"),
+            Err(e) => {
+                tracing::debug!(to = %crate::logaddr::Shown(to), from = %crate::logaddr::opt_ip(from), "UPnP search: {e}");
+                if !worth_asking_again(&e) {
+                    break;
+                }
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     None
+}
+
+/// Whether a failed search may go better if asked again within the wait: a device that
+/// answered in a way the library could not read, or no answer yet. Not an address this PC
+/// cannot send from or to (an adapter without a router, a VPN's): that fails the same way
+/// every time, and asking ten times a second only filled the log.
+fn worth_asking_again(e: &igd_next::SearchError) -> bool {
+    use std::io::ErrorKind::*;
+    match e {
+        igd_next::SearchError::IoError(io) => !matches!(io.kind(), AddrNotAvailable | AddrInUse | InvalidInput | PermissionDenied | Unsupported | NetworkUnreachable | HostUnreachable),
+        _ => true,
+    }
 }
 
 /// Finds the router's UPnP service. Asks three ways at once and takes the first answer:
@@ -162,4 +179,23 @@ fn run_natpmp(port: u16, stop: Arc<AtomicBool>, on_mapped: impl FnOnce(SocketAdd
     }
     let _ = natpmp::map_udp(router, port, 0);
     tracing::info!("NAT-PMP port mapping removed");
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    /// An address that cannot be used is not asked again; an answer that could not be read is.
+    #[test]
+    fn hopeless_searches_are_not_repeated() {
+        use igd_next::SearchError;
+        use std::io::{Error, ErrorKind};
+        assert!(!worth_asking_again(&SearchError::IoError(Error::from(ErrorKind::AddrNotAvailable))));
+        assert!(worth_asking_again(&SearchError::IoError(Error::from(ErrorKind::TimedOut))));
+        assert!(worth_asking_again(&SearchError::InvalidResponse));
+        // the search for an address no PC can send to ends at once
+        let t = Instant::now();
+        assert!(search_once(Some(IpAddr::from([127, 0, 0, 1])), "0.0.0.0:1900".parse().unwrap(), Duration::from_secs(3)).is_none());
+        assert!(t.elapsed() < Duration::from_secs(1), "asked again for {:?}", t.elapsed());
+    }
 }

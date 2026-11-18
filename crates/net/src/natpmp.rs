@@ -14,7 +14,9 @@ pub const LIFETIME_SECS: u32 = 3600;
 
 /// The default gateway's IPv4 address (where a NAT-PMP router listens).
 pub fn gateway() -> Option<Ipv4Addr> {
-    netdev::get_default_gateway().ok()?.ipv4.first().copied()
+    // (a VPN's adapter routes everything "on link": its gateway reads 0.0.0.0, which is no
+    // router to ask, and sending there fails at once)
+    netdev::get_default_gateway().ok()?.ipv4.iter().copied().find(|ip| !ip.is_unspecified() && !ip.is_broadcast() && !ip.is_loopback())
 }
 
 /// One request/response exchange, retried with growing waits (RFC: 250 ms, doubling).

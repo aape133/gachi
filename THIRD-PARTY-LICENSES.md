@@ -13,11 +13,11 @@ Not from crates.io:
 - **Microsoft WebView2 runtime** (draws the window): part of Windows, not distributed by gachi.
 - **Pretendard** (the font), SIL Open Font License 1.1: `ui/fonts/LICENSE.txt`.
 
-## Rust packages (352, for the Windows build)
+## Rust packages (359, for the Windows build)
 
 Generated from `cargo metadata`; regenerate after changing dependencies.
 
-By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0: 18, Unlicense OR MIT: 8, BSD-3-Clause: 6, Apache-2.0: 6, MPL-2.0: 6, MIT/Apache-2.0: 6, ISC: 3, Zlib: 2, MIT OR Zlib OR Apache-2.0: 2, MIT OR Apache-2.0 OR Zlib: 2, Apache-2.0 OR ISC OR MIT: 2, Unlicense/MIT: 2, BSD-2-Clause OR Apache-2.0 OR MIT: 2, 0BSD OR MIT OR Apache-2.0: 1, BSD-3-Clause AND MIT: 1, BSD-3-Clause/MIT: 1, Apache-2.0/MIT: 1, Apache-2.0 AND MIT: 1, CC0-1.0 OR MIT-0 OR Apache-2.0: 1, Apache-2.0 / MIT: 1, CC0-1.0 OR MIT: 1, Apache-2.0 AND ISC: 1, Zlib OR Apache-2.0 OR MIT: 1, (MIT OR Apache-2.0) AND Unicode-3.0: 1
+By license: MIT OR Apache-2.0: 185, MIT: 61, Apache-2.0 OR MIT: 37, Unicode-3.0: 18, Unlicense OR MIT: 8, BSD-3-Clause: 6, Apache-2.0: 6, MPL-2.0: 6, MIT/Apache-2.0: 6, ISC: 3, Zlib: 2, MIT OR Zlib OR Apache-2.0: 2, MIT OR Apache-2.0 OR Zlib: 2, Apache-2.0 OR ISC OR MIT: 2, Unlicense/MIT: 2, BSD-2-Clause OR Apache-2.0 OR MIT: 2, 0BSD OR MIT OR Apache-2.0: 1, BSD-3-Clause AND MIT: 1, BSD-3-Clause/MIT: 1, Apache-2.0/MIT: 1, Apache-2.0 AND MIT: 1, CC0-1.0 OR MIT-0 OR Apache-2.0: 1, Apache-2.0 / MIT: 1, CC0-1.0 OR MIT: 1, Apache-2.0 AND ISC: 1, Zlib OR Apache-2.0 OR MIT: 1, (MIT OR Apache-2.0) AND Unicode-3.0: 1
 
 | Package | Version | License | Source |
 |---|---|---|---|
@@ -40,17 +40,18 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | bit-vec | 0.8.0 | Apache-2.0 OR MIT | https://github.com/contain-rs/bit-vec |
 | bitflags | 2.13.2 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags |
 | block-buffer | 0.10.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
-| brotli | 9.1.1 | BSD-3-Clause AND MIT | https://github.com/dropbox/rust-brotli |
-| brotli-decompressor | 6.3.1 | BSD-3-Clause/MIT | https://github.com/dropbox/rust-brotli-decompressor |
+| block-buffer | 0.12.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
+| brotli | 9.1.3 | BSD-3-Clause AND MIT | https://github.com/dropbox/rust-brotli |
+| brotli-decompressor | 6.3.2 | BSD-3-Clause/MIT | https://github.com/dropbox/rust-brotli-decompressor |
 | bs58 | 0.5.1 | MIT/Apache-2.0 | https://github.com/Nullus157/bs58-rs |
 | built | 0.7.7 | MIT | https://github.com/lukaslueg/built |
 | byteorder | 1.5.0 | Unlicense OR MIT | https://github.com/BurntSushi/byteorder |
-| bytes | 1.12.1 | MIT | https://github.com/tokio-rs/bytes |
+| bytes | 1.12.2 | MIT | https://github.com/tokio-rs/bytes |
 | camino | 1.2.6 | MIT OR Apache-2.0 | https://github.com/camino-rs/camino |
 | cargo-platform | 0.1.9 | MIT OR Apache-2.0 | https://github.com/rust-lang/cargo |
 | cargo_metadata | 0.19.2 | MIT | https://github.com/oli-obk/cargo_metadata |
 | cargo_toml | 1.0.1 | Apache-2.0 OR MIT | https://gitlab.com/lib.rs/cargo_toml |
-| cc | 1.11.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs |
+| cc | 1.11.2 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs |
 | cexpr | 0.6.0 | Apache-2.0/MIT | https://github.com/jethrogb/rust-cexpr |
 | cfb | 0.14.0 | MIT | https://github.com/mdsteele/rust-cfb |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if |
@@ -60,18 +61,21 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | cipher | 0.4.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
 | clang-sys | 1.9.1 | Apache-2.0 | https://github.com/KyleMayes/clang-sys |
 | com-scrape-types | 0.1.1 | MIT OR Apache-2.0 | https://github.com/coupler-rs/vst3-rs |
+| const-oid | 0.10.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats |
 | cookie | 0.18.2 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs |
 | cpal | 0.15.3 | Apache-2.0 | https://github.com/rustaudio/cpal |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
+| cpufeatures | 0.3.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | crc | 3.4.0 | MIT OR Apache-2.0 | https://github.com/mrhooray/crc-rs.git |
 | crc-catalog | 2.5.0 | MIT OR Apache-2.0 | https://github.com/akhilles/crc-catalog.git |
 | crc32fast | 1.5.5 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast |
 | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam |
 | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
+| crypto-common | 0.2.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
 | cssparser | 0.37.0 | MPL-2.0 | https://github.com/servo/rust-cssparser |
 | cssparser-macros | 0.7.1 | MPL-2.0 | https://github.com/servo/rust-cssparser |
-| ctor | 1.0.13 | Apache-2.0 OR MIT | https://github.com/mmastrac/linktime |
+| ctor | 1.0.14 | Apache-2.0 OR MIT | https://github.com/mmastrac/linktime |
 | ctr | 0.9.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-modes |
 | curve25519-dalek | 4.1.3 | BSD-3-Clause | https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek |
 | curve25519-dalek-derive | 0.1.1 | MIT/Apache-2.0 | https://github.com/dalek-cryptography/curve25519-dalek |
@@ -84,6 +88,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | derive_more | 2.1.1 | MIT | https://github.com/JelteF/derive_more |
 | derive_more-impl | 2.1.1 | MIT | https://github.com/JelteF/derive_more |
 | digest | 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
+| digest | 0.11.3 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
 | dirs | 7.0.0 | MIT OR Apache-2.0 | https://codeberg.org/dirs/dirs-rs |
 | dirs-sys | 0.5.0 | MIT OR Apache-2.0 | https://github.com/dirs-dev/dirs-sys-rs |
 | displaydoc | 0.2.7 | MIT OR Apache-2.0 | https://github.com/yaahc/displaydoc |
@@ -129,6 +134,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | html5ever | 0.39.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever |
 | http | 1.5.0 | MIT OR Apache-2.0 | https://github.com/hyperium/http |
 | httparse | 1.10.1 | MIT OR Apache-2.0 | https://github.com/seanmonstar/httparse |
+| hybrid-array | 0.4.15 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hybrid-array |
 | ico | 0.6.0 | MIT | https://github.com/mdsteele/rust-ico |
 | icu_collections | 2.4.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | icu_locale_core | 2.4.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
@@ -148,9 +154,9 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | ipnet | 2.12.2 | MIT OR Apache-2.0 | https://github.com/krisprice/ipnet |
 | itertools | 0.13.0 | MIT OR Apache-2.0 | https://github.com/rust-itertools/itertools |
 | itoa | 1.0.19 | MIT OR Apache-2.0 | https://github.com/dtolnay/itoa |
-| jiff | 0.2.43 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
-| jiff-core | 0.1.5 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
-| jiff-tzdb | 0.1.9 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
+| jiff | 0.2.46 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
+| jiff-core | 0.1.8 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
+| jiff-tzdb | 0.1.10 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
 | jiff-tzdb-platform | 0.1.3 | Unlicense OR MIT | https://github.com/BurntSushi/jiff |
 | jobserver | 0.1.35 | MIT OR Apache-2.0 | https://github.com/rust-lang/jobserver-rs |
 | json-patch | 4.2.0 | MIT/Apache-2.0 | https://github.com/idubrov/json-patch |
@@ -171,7 +177,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | minimal-lexical | 0.2.1 | MIT/Apache-2.0 | https://github.com/Alexhuszagh/minimal-lexical |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide |
 | miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide |
-| mio | 1.2.4 | MIT | https://github.com/tokio-rs/mio |
+| mio | 1.2.5 | MIT | https://github.com/tokio-rs/mio |
 | muda | 0.20.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/muda |
 | netdev | 0.47.0 | MIT | https://github.com/shellrow/netdev |
 | new_debug_unreachable | 1.0.6 | MIT | https://github.com/mbrubeck/rust-debug-unreachable |
@@ -193,7 +199,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | phf_macros | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf |
 | phf_shared | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf |
 | pin-project-lite | 0.2.17 | Apache-2.0 OR MIT | https://github.com/taiki-e/pin-project-lite |
-| plist | 1.10.3 | MIT | https://github.com/ebarnard/rust-plist/ |
+| plist | 1.10.4 | MIT | https://github.com/ebarnard/rust-plist/ |
 | png | 0.18.1 | MIT OR Apache-2.0 | https://github.com/image-rs/image-png |
 | poly1305 | 0.8.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/universal-hashes |
 | polyval | 0.6.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/universal-hashes |
@@ -215,9 +221,9 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib | https://github.com/rust-windowing/raw-window-handle |
 | ref-cast | 1.0.27 | MIT OR Apache-2.0 | https://github.com/dtolnay/ref-cast |
 | ref-cast-impl | 1.0.27 | MIT OR Apache-2.0 | https://github.com/dtolnay/ref-cast |
-| regex | 1.13.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
-| regex-automata | 0.4.18 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
-| regex-syntax | 0.8.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
+| regex | 1.13.2 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
+| regex-automata | 0.4.19 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
+| regex-syntax | 0.8.12 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex |
 | ring | 0.17.14 | Apache-2.0 AND ISC | https://github.com/briansmith/ring |
 | rtrb | 0.3.6 | MIT OR Apache-2.0 | https://github.com/mgeier/rtrb |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash |
@@ -225,7 +231,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls |
 | rustls-native-certs | 0.8.5 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls-native-certs |
 | rustls-pki-types | 1.16.0 | MIT OR Apache-2.0 | https://github.com/rustls/pki-types |
-| rustls-webpki | 0.103.16 | ISC | https://github.com/rustls/webpki |
+| rustls-webpki | 0.103.17 | ISC | https://github.com/rustls/webpki |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 | https://github.com/dtolnay/rustversion |
 | same-file | 1.0.6 | Unlicense/MIT | https://github.com/BurntSushi/same-file |
 | schannel | 0.1.30 | MIT | https://github.com/steffengy/schannel-rs |
@@ -252,6 +258,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 | https://github.com/servo/stylo |
 | sha1 | 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
+| sha2 | 0.11.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | sharded-slab | 0.1.7 | MIT | https://github.com/hawkw/sharded-slab |
 | shlex | 1.3.0 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex |
 | shlex | 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex |
@@ -272,16 +279,16 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | syn | 3.0.10 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn |
 | synstructure | 0.14.0 | MIT | https://github.com/mystor/synstructure |
 | tao | 0.37.2 | Apache-2.0 | https://github.com/tauri-apps/tao |
-| tauri | 2.12.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-build | 2.7.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-codegen | 2.7.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-macros | 2.7.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-plugin | 2.7.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri | 2.12.6 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-build | 2.7.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-codegen | 2.7.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-macros | 2.7.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-plugin | 2.7.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-plugin-deep-link | 2.6.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
 | tauri-plugin-single-instance | 2.5.5 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace |
-| tauri-runtime | 2.12.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-runtime-wry | 2.12.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
-| tauri-utils | 2.10.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-runtime | 2.12.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-runtime-wry | 2.12.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+| tauri-utils | 2.10.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
 | tauri-winres | 0.3.7 | MIT | https://github.com/tauri-apps/winres |
 | tendril | 0.5.1 | MIT OR Apache-2.0 | https://github.com/servo/html5ever |
 | thiserror | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror |
@@ -320,7 +327,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | utf-8 | 0.7.6 | MIT OR Apache-2.0 | https://github.com/SimonSapin/rust-utf8 |
 | utf8_iter | 1.1.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf8_iter |
 | utf_types | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf_types |
-| uuid | 1.29.2 | Apache-2.0 OR MIT | https://github.com/uuid-rs/uuid |
+| uuid | 1.29.3 | Apache-2.0 OR MIT | https://github.com/uuid-rs/uuid |
 | version_check | 0.9.5 | MIT/Apache-2.0 | https://github.com/SergioBenitez/version_check |
 | vst3 | 0.3.0 | MIT OR Apache-2.0 | https://github.com/coupler-rs/vst3-rs |
 | vswhom | 0.1.0 | MIT | https://github.com/nabijaczleweli/vswhom.rs |
@@ -366,7 +373,7 @@ By license: MIT OR Apache-2.0: 179, MIT: 61, Apache-2.0 OR MIT: 36, Unicode-3.0:
 | zerocopy-derive | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT | https://github.com/google/zerocopy |
 | zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerofrom-derive | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
-| zeroize | 1.9.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
+| zeroize | 1.9.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
 | zeroize_derive | 1.5.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
 | zerotrie | 0.2.5 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec | 0.11.9 | Unicode-3.0 | https://github.com/unicode-org/icu4x |

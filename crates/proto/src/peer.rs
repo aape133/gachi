@@ -48,6 +48,10 @@ pub enum PeerMsg {
     /// From the host: this member is put out of the room. Everyone drops it (so it is out
     /// even if its own app ignores this), and it leaves.
     Kick { id: crate::PeerId },
+    /// From the host: this member is gone without having said so (it never got through to
+    /// the host, and has just come back in as a newcomer from the same PC). Everyone drops
+    /// it. Older versions do not know this message and drop it later on their own.
+    Gone { id: crate::PeerId },
 }
 
 /// The room as the host runs it. Shared only inside the (encrypted) room.

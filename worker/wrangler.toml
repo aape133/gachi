@@ -2,10 +2,12 @@
 name = "gachi"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
-# served at https://gachi.<account>.workers.dev (the app connects here)
+# also served at https://gachi.<account>.workers.dev (versions up to 0.2.8 connect there)
 workers_dev = true
 # no per-version preview URLs: only the deployed version should be reachable
 preview_urls = false
+# the app's address (the workers.dev one stays on for older versions and links)
+routes = [{ pattern = "gachi.band", custom_domain = true }]
 
 [[durable_objects.bindings]]
 name = "ROOMS"

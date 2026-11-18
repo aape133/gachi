@@ -31,10 +31,12 @@
    npx wrangler deploy
    ```
 
+   `wrangler.toml`의 `routes` 줄(`gachi.band`)은 공개된 gachi의 도메인이라 지우고 배포해요. 내 도메인을 쓰려면 그 자리에 내 도메인을 적어요(Cloudflare에 등록된 도메인이어야 해요).
+
    끝나면 `https://gachi.<계정이름>.workers.dev` 같은 주소가 나와요.
 
 4. 그 주소를 앱의 기본 서버로 넣고 앱을 다시 빌드해요: `app/src/settings.rs`의 `DEFAULT_SERVER`.
-   공개된 gachi는 `gachi.aape.workers.dev`를 써요.
+   공개된 gachi는 `gachi.band`를 써요.
 
 처음 배포할 때 업로드 직후 "This Worker does not exist on your account [code: 10007]"가 날 수 있어요.
 업로드는 된 상태라서 `npx wrangler deploy`를 한 번 더 하면 끝까지 진행돼요.

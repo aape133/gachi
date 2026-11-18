@@ -126,6 +126,21 @@ fn clip_room_name(name: &str) -> String {
 /// any other (whoever has been in longest): its word decides, but a broken or hostile one
 /// must not hand us a room of 255, a name that fills the screen, or a list without end
 /// (we keep all of it, and run the room by it if we become host).
+/// Two sets of addresses that are the same PC: the same address on a home network and the
+/// same public address (or neither has one). A member that never got through and leaves
+/// cannot say so (nothing reaches us from it): when it comes back in, this is how the host
+/// knows the newcomer is the same PC and the old entry a ghost. Two PCs in different homes
+/// can have the same home-network address, but not also the same public one; two PCs
+/// behind one router have different home-network addresses.
+fn same_pc(a: &[SocketAddr], b: &[SocketAddr]) -> bool {
+    let home = |x: &[SocketAddr]| -> Vec<std::net::Ipv4Addr> {
+        x.iter().filter_map(|a| match a.ip() { std::net::IpAddr::V4(ip) if ip.is_private() => Some(ip), _ => None }).collect()
+    };
+    let public = |x: &[SocketAddr]| -> Option<std::net::IpAddr> { x.iter().map(|a| a.ip()).find(|ip| !gachi_net::behind_router(*ip) && ip.is_ipv4()) };
+    let (ha, hb) = (home(a), home(b));
+    ha.iter().any(|ip| hb.contains(ip)) && public(a) == public(b)
+}
+
 /// The oldest a room can say it is (30 days; anything older is not believed).
 const ROOM_AGE_MAX_MS: u64 = 30 * 24 * 3600 * 1000;
 
@@ -889,6 +904,21 @@ impl Session {
     /// Host: lets an (opened, checked) newcomer in: gives it an id and the member list, and
     /// introduces it to everyone.
     fn admit(&mut self, app: &AppHandle, join: JoinRequest) -> Welcome {
+        // the same PC back again while its old entry never got through to us, or went silent
+        // (it could not tell us it left; or its app came back in after losing the room):
+        // that entry is a ghost. It goes first, for everyone, so that the newcomer is not
+        // told of itself as someone already here, nor shown twice
+        let ghosts: Vec<PeerId> = self
+            .peers
+            .iter()
+            .filter(|(_, p)| (p.route.is_none() || p.lost_since.is_some()) && same_pc(&p.info.candidates, &join.candidates))
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ghosts {
+            tracing::info!(id, "the same PC came back in: its old entry (never connected, or silent) goes");
+            self.broadcast(&PeerMsg::Gone { id });
+            self.peer_gone(app, id, true);
+        }
         let taken: Vec<PeerId> = self.peers.keys().copied().chain([self.me]).collect();
         let id = next_peer_id(self.room_state.next_id, &taken);
         self.room_state.next_id = id.saturating_add(1);
@@ -1017,6 +1047,13 @@ impl Session {
                 }
             }
             PeerMsg::LinkReport { raw_loss } => self.on_link_report(from, raw_loss),
+            PeerMsg::Gone { id } => {
+                // (only the host's word, and only about someone we never got through to
+                // either, or who went silent here too: one we hear from is plainly there)
+                if from == self.host_id() && id != self.me && self.peers.get(&id).is_some_and(|p| p.route.is_none() || p.lost_since.is_some()) {
+                    self.peer_gone(app, id, false);
+                }
+            }
             PeerMsg::Kick { id } => {
                 // only the host puts people out
                 if from != self.host_id() {
@@ -1838,15 +1875,30 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         notice(&app, "연결 서버와의 연결이 암호화되지 않았어요(ws://). 입장 요청은 따로 봉인되지만, 누가 어떤 방에 들어가는지는 보일 수 있어요.".into());
     }
     let servers = stun_servers();
+    // the port the user forwarded on the router (settings), if any
+    let wanted = settings.fixed_port.then_some(settings.port).filter(|p| *p >= 1024);
     let gathering = tauri::async_runtime::spawn_blocking(move || {
-        let g = Gathered::gather(&servers)?;
+        let (g, taken) = match wanted {
+            Some(port) => match Gathered::gather_on(&servers, port) {
+                Ok(g) => (g, None),
+                // taken (another program): any port this time, rather than no room
+                Err(e) => {
+                    tracing::warn!(port, "the fixed port cannot be used: {e}");
+                    (Gathered::gather(&servers)?, Some(port))
+                }
+            },
+            None => (Gathered::gather(&servers)?, None),
+        };
         let link = g.public.map_or(Link::Unknown, link::detect);
-        Ok::<_, std::io::Error>((g, link))
+        Ok::<_, std::io::Error>((g, link, taken))
     });
-    let (gathered, my_link) = unless_cancelled(gathering, &cancelled)
+    let (gathered, my_link, port_taken) = unless_cancelled(gathering, &cancelled)
         .await?
         .map_err(|e| e.to_string())?
     .map_err(|e| format!("네트워크를 열 수 없어요 ({e})"))?;
+    if let Some(port) = port_taken {
+        notice(&app, format!("고정 포트 {port}번을 다른 프로그램이 쓰고 있어서 이번에는 자동으로 정한 포트로 들어가요. 계속 그러면 설정에서 다른 번호로 바꿔 주세요."));
+    }
     if cancelled() {
         return Err(cancel_err());
     }
@@ -2265,6 +2317,25 @@ mod tests {
         let n = PeerMsg::Introduce { peer }.to_bytes().len();
         println!("introduction: {n} bytes");
         assert!(n <= MAX_CONTROL_PAYLOAD, "introduction {n} bytes");
+    }
+
+    /// A PC that comes back in is known by its addresses; another PC is not taken for it.
+    #[test]
+    fn the_same_pc_is_known_by_its_addresses() {
+        use super::same_pc;
+        let a = |list: &[&str]| -> Vec<SocketAddr> { list.iter().map(|s| s.parse().unwrap()).collect() };
+        // behind a VPN: other ports every time, the same addresses
+        let first = a(&["10.8.0.2:62860", "192.168.0.20:62860", "198.51.100.40:31809"]);
+        let again = a(&["10.8.0.2:57453", "192.168.0.20:57453", "198.51.100.40:53060"]);
+        assert!(same_pc(&first, &again));
+        // another PC behind the same router: another home address
+        assert!(!same_pc(&a(&["192.168.0.7:1", "203.0.113.7:1"]), &a(&["192.168.0.8:2", "203.0.113.7:2"])));
+        // the same home address in another home
+        assert!(!same_pc(&a(&["192.168.0.7:1", "203.0.113.7:1"]), &a(&["192.168.0.7:2", "198.51.100.3:2"])));
+        // no home address to tell by: not taken for the same
+        assert!(!same_pc(&a(&["203.0.113.7:1"]), &a(&["203.0.113.7:2"])));
+        // no public address on either side (no STUN answer), the same home address
+        assert!(same_pc(&a(&["192.168.0.7:1"]), &a(&["192.168.0.7:2"])));
     }
 
     #[test]

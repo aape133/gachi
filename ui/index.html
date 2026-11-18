@@ -414,6 +414,17 @@
           </label>
           <p class="note">자동은 상대별로 끊김 없는 최소 크기를 계속 맞춰요. 상대 카드의 지연 숫자를 눌러 개별 조정할 수도 있어요.</p>
         </div>
+        <div class="setting">
+          <label class="row">
+            <span class="label">직접 연결 포트 고정</span>
+            <input type="checkbox" class="switch" id="set-fixed-port">
+          </label>
+          <label class="row port-row" id="port-row" hidden>
+            <span class="label">UDP 포트</span>
+            <input class="input num port-input" id="set-port" type="text" inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false" aria-label="UDP 포트 (1024~65535)">
+          </label>
+          <p class="note">공유기에 UPnP가 없거나 꺼져 있을 때 켜요. 공유기 관리 페이지에서 이 <b>UDP</b> 포트를 이 PC로 포워딩해 주세요. 같은 공유기의 다른 PC와는 다른 번호를 써야 해요. 다음에 방에 들어갈 때부터 적용돼요.</p>
+        </div>
         </details>
         <div class="setting">
           <div class="setting-head"><span class="label">연결 상태</span><button class="link-btn" id="net-recheck">다시 검사</button></div>

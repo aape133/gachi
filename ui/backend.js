@@ -71,7 +71,7 @@
       this.settings = {
         device: '', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
         quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3, name: '나', instrument: '기타',
-        metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
+        metronomeVolume: 60, upnp: true, fixedPort: false, port: 24620, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this._devices = { devices: [], hasAsio: true };
@@ -191,7 +191,7 @@
       this.settings = {
         device: 'focusrite', sampleRate: 48000, bufferSize: 64, inputChannel: '1-2',
         quality: 'pcm16', packetSize: 0, jitterMode: 'auto', jitterStyle: 'balanced', jitterPackets: 3,
-        name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
+        name: '나', instrument: '기타', metronomeVolume: 60, upnp: true, fixedPort: false, port: 24620, theme: 'system', showNearby: true, connection: 'device', recFormat: 'wav', recBits: 16, recMix: true,
       };
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this.master = 0;
@@ -346,12 +346,12 @@
     setUiVisible() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.2.8'; }
+    async appVersion() { return '0.3.0'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
       if (!new URLSearchParams(location.search).has('update')) return null;
-      return { version: '0.2.9' };
+      return { version: '0.3.1' };
     }
     openRelease() {}
     async setPreview() {}

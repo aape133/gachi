@@ -18,11 +18,18 @@ pub struct Sock {
 impl Sock {
     /// Dual-stack `[::]:0`, or IPv4-only `0.0.0.0:0` where IPv6 is unavailable.
     pub fn bind() -> io::Result<Self> {
-        match Self::bind_dual() {
+        Self::bind_on(0)
+    }
+
+    /// As [`bind`](Self::bind), on `port` (0: any the system gives). Fails when the port is
+    /// taken (another program, another gachi): the caller decides what then.
+    pub fn bind_on(port: u16) -> io::Result<Self> {
+        match Self::bind_dual(port) {
             Ok(s) => Ok(s),
+            Err(e) if e.kind() == io::ErrorKind::AddrInUse => Err(e),
             Err(e) => {
                 tracing::info!("no IPv6 socket ({e}), using IPv4 only");
-                let inner = UdpSocket::bind("0.0.0.0:0")?;
+                let inner = UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)))?;
                 let s = Socket::from(inner);
                 tune(&s, false);
                 Ok(Self { inner: s.into(), v6: false })
@@ -30,10 +37,10 @@ impl Sock {
         }
     }
 
-    fn bind_dual() -> io::Result<Self> {
+    fn bind_dual(port: u16) -> io::Result<Self> {
         let s = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
         s.set_only_v6(false)?;
-        s.bind(&SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)).into())?;
+        s.bind(&SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)).into())?;
         tune(&s, true);
         Ok(Self { inner: s.into(), v6: true })
     }
@@ -204,6 +211,16 @@ mod tests {
         assert_eq!(canonical(mapped), "10.0.0.1:5000".parse::<SocketAddr>().unwrap());
         let v6: SocketAddr = "[2001:db8::1]:5000".parse().unwrap();
         assert_eq!(canonical(v6), v6);
+    }
+
+    /// A chosen port is used; a taken one is refused (not quietly swapped for another).
+    #[test]
+    fn a_chosen_port_is_bound_or_refused() {
+        let free = Sock::bind().unwrap().port(); // (free a moment ago)
+        let a = Sock::bind_on(free).expect("the port just freed");
+        assert_eq!(a.port(), free);
+        let again = Sock::bind_on(free);
+        assert!(again.is_err(), "a second socket on the same port");
     }
 
     /// A non-blocking socket waits for a datagram in `wait_readable`: no longer than asked

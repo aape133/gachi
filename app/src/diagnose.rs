@@ -75,14 +75,14 @@ pub fn no_direct_path(me: &Side, them: &Side, name: &str) -> String {
                 "두 분 모두 직접 연결이 어려운 인터넷(모바일 핫스팟, 회사망 등)이에요. 한 분만이라도 집 인터넷(유선이나 공유기 와이파이)으로 바꾸면 연결될 수 있어요.".to_string()
             }
             (Some(NatKind::Varies), _) => {
-                "내 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이에요. 집 인터넷(유선이나 공유기 와이파이)으로 바꾸거나, 공유기의 UPnP를 켜면 연결될 수 있어요.".to_string()
+                "내 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이에요. 집 인터넷(유선이나 공유기 와이파이)으로 바꾸거나, 공유기의 UPnP를 켜면(없으면 설정의 고정 포트를 포워딩하면) 연결될 수 있어요.".to_string()
             }
             (_, Some(NatKind::Varies)) => format!(
-                "{name}님 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이에요. {name}님이 집 인터넷(유선이나 공유기 와이파이)으로 바꾸거나, 내 공유기의 UPnP를 켜면 연결될 수 있어요."
+                "{name}님 인터넷이 직접 연결이 어려운 유형(모바일 핫스팟, 회사망 등)이에요. {name}님이 집 인터넷(유선이나 공유기 와이파이)으로 바꾸거나, 내 공유기의 UPnP를 켜면(없으면 설정의 고정 포트를 포워딩하면) 연결될 수 있어요."
             ),
             // both ordinary: what is left is a firewall on the way (the PC's, or a strict router)
             (Some(NatKind::Steady), Some(NatKind::Steady)) => {
-                "두 분 다 보통은 직접 연결이 되는 인터넷이에요. 어느 한쪽 PC의 방화벽이나 백신이 gachi를 막고 있을 수 있어요. 두 PC 모두 Windows 보안의 방화벽 설정에서 gachi가 허용돼 있는지 확인하고, 공유기의 UPnP를 켜 보세요.".to_string()
+                "두 분 다 보통은 직접 연결이 되는 인터넷이에요. 어느 한쪽 PC의 방화벽이나 백신이 gachi를 막고 있을 수 있어요. 두 PC 모두 Windows 보안의 방화벽 설정에서 gachi가 허용돼 있는지 확인하고, 공유기의 UPnP를 켜 보세요(없으면 설정의 고정 포트를 포워딩).".to_string()
             }
             // (the other side does not say: an older version)
             _ => format!(

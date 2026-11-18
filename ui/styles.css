@@ -1246,3 +1246,9 @@ input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top:
 .stage.many .strip-top { flex-wrap: nowrap; }
 .stage.many .top-tags { flex: none; }
 .stage.many .net-chip { min-width: 0; white-space: nowrap; overflow: hidden; }
+
+/* settings: the fixed port's number */
+.port-row { margin-top: 10px; }
+.port-row[hidden] { display: none; }
+/* five digits, centred; a plain text box (no spin arrows: the number is typed) */
+.port-input { width: 84px; flex: none; text-align: center; padding: 0 8px; font-weight: 600; letter-spacing: .02em; }

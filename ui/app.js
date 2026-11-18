@@ -1577,6 +1577,25 @@
   const jbRange = $('[data-key-range=jitterPackets]');
   jbRange.addEventListener('input', () => { paintRange(jbRange); backend.updateSettings({ jitterPackets: +jbRange.value }); });
   $('#set-nearby').addEventListener('change', (e) => backend.updateSettings({ showNearby: e.target.checked }));
+  // the fixed port: a number from 1024 to 65535, else back to what it was
+  $('#set-fixed-port').addEventListener('change', (e) => {
+    backend.updateSettings({ fixedPort: e.target.checked });
+    $('#port-row').hidden = !e.target.checked;
+  });
+  // digits only, never over 65535 (the last port there is) while typing; below 1024 (the
+  // system's) is refused when the box is left
+  const PORT_MIN = 1024, PORT_MAX = 65535;
+  $('#set-port').addEventListener('input', (e) => {
+    let d = e.target.value.replace(/\D/g, '').slice(0, 5);
+    if (d && +d > PORT_MAX) d = String(PORT_MAX);
+    if (d !== e.target.value) e.target.value = d;
+  });
+  $('#set-port').addEventListener('change', (e) => {
+    const v = +e.target.value;
+    if (e.target.value && v >= PORT_MIN && v <= PORT_MAX) backend.updateSettings({ port: v });
+    else { e.target.value = backend.getSettings().port ?? 24620; toast('포트는 1024부터 65535까지예요'); }
+  });
+  $('#set-port').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
   /* GPU acceleration: read by the window as it starts, so a change waits for a restart */
   const gpuAtStart = backend.getSettings().gpu !== false;
   function syncGpuRestart() {
@@ -1709,6 +1728,9 @@
     $('#jb-style').hidden = s.jitterMode === 'manual';
     jbRange.value = s.jitterPackets; paintRange(jbRange);
     $('#set-nearby').checked = s.showNearby !== false;
+    $('#set-fixed-port').checked = !!s.fixedPort;
+    $('#port-row').hidden = !s.fixedPort;
+    if (document.activeElement !== $('#set-port')) $('#set-port').value = s.port ?? 24620;
     $('#set-gpu').checked = s.gpu !== false;
     $('#set-verbose').checked = s.verboseLog === true;
     $('#set-updates').checked = s.checkUpdates !== false;
@@ -1730,7 +1752,9 @@
     };
     // straight on the modem / wall jack: no port to open
     const port = n.nat === 'none' ? ['필요 없음 (공유기 없음)', '']
-      : n.upnp ? ['자동으로 열 수 있음 (UPnP·NAT-PMP)', ''] : ['공유기가 지원 안 함', 'warn'];
+      : n.upnp ? ['자동으로 열 수 있음 (UPnP·NAT-PMP)', '']
+      : backend.getSettings().fixedPort ? [`고정 포트 ${backend.getSettings().port} (공유기에서 직접 포워딩)`, '']
+      : ['자동으로는 안 됨 (고급 설정의 고정 포트를 포워딩할 수 있어요)', 'warn'];
     const items = [
       ['연결', ...(LINK[n.link] || LINK.unknown)],
       ['IPv6', n.ipv6 ? '사용 가능' : '없음', n.ipv6 ? '' : 'warn'],

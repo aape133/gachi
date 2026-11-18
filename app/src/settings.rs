@@ -4,7 +4,7 @@ use std::path::Path;
 
 /// The deployed connection server (Cloudflare Worker, see `worker/`). For local testing
 /// against `wrangler dev`, run the app with `GACHI_SERVER=127.0.0.1:8787`.
-pub const DEFAULT_SERVER: &str = "gachi.aape.workers.dev";
+pub const DEFAULT_SERVER: &str = "gachi.band";
 
 /// Same shape as the UI's settings object (camelCase).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +34,12 @@ pub struct Settings {
     /// ask the router (UPnP) to forward our UDP port while in a room
     #[serde(default = "yes")]
     pub upnp: bool,
+    /// use the UDP port `port` for direct connections (forwarded on the router by hand,
+    /// where UPnP is missing or off); off: any port the system gives, as before
+    #[serde(default)]
+    pub fixed_port: bool,
+    #[serde(default = "default_port")]
+    pub port: u16,
     /// "system", "light" or "dark"
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -101,6 +107,14 @@ fn yes() -> bool {
     true
 }
 
+/// The fixed port's default: no IANA entry, clear of the games' and Steam's, below the
+/// range Windows hands out for the moment (49152 up), where the automatic one comes from.
+pub const DEFAULT_PORT: u16 = 24620;
+
+fn default_port() -> u16 {
+    DEFAULT_PORT
+}
+
 fn default_metro_volume() -> f32 {
     60.0
 }
@@ -126,6 +140,8 @@ impl Default for Settings {
             server: std::env::var("GACHI_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.into()),
             metronome_volume: default_metro_volume(),
             upnp: true,
+            fixed_port: false,
+            port: DEFAULT_PORT,
             theme: default_theme(),
             show_nearby: true,
             connection: default_connection(),

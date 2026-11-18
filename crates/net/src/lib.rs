@@ -141,7 +141,15 @@ impl Gathered {
     /// Binds the socket and collects candidates. `stun_servers` are tried in order
     /// (`host:port`), see [`stun::DEFAULT_SERVERS`].
     pub fn gather(stun_servers: &[String]) -> io::Result<Self> {
-        let socket = Sock::bind()?;
+        Self::gather_on(stun_servers, 0)
+    }
+
+    /// As [`gather`](Self::gather), on UDP `port` (one the user forwarded on the router; 0:
+    /// any). Fails when the port is taken. With a port of our choosing, the public address
+    /// on that port is a candidate too: a router that gives outgoing traffic another port
+    /// still lets peers in on the one forwarded.
+    pub fn gather_on(stun_servers: &[String], port: u16) -> io::Result<Self> {
+        let socket = Sock::bind_on(port)?;
         let mut public = None;
         let mut asked: Option<SocketAddr> = None;
         let mut second = None;
@@ -190,6 +198,12 @@ impl Gathered {
             tracing::warn!("no STUN server answered; only LAN/IPv6 peers will connect");
         }
         let identity = Arc::new(Identity::generate());
+        if let Some(p) = public.filter(|p| port != 0 && p.port() != port && p.is_ipv4()) {
+            let forwarded = SocketAddr::new(p.ip(), port);
+            if !candidates.contains(&forwarded) {
+                candidates.push(forwarded);
+            }
+        }
         Ok(Self { socket, public_key: identity.public, identity, lan_ip, candidates, public, mapping, stun: asked, token: rand::random() })
     }
 }
