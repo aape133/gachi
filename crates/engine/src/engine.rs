@@ -399,7 +399,7 @@ impl Engine {
         }
         tracing::info!(?info, "audio engine started");
         let driver_latency_now = std::sync::atomic::AtomicU64::new(pack_latency(info.driver_latency));
-        Ok(Self {
+        let engine = Self {
             driver_latency_now,
             cmd_tx,
             garbage_rx,
@@ -420,7 +420,18 @@ impl Engine {
             feedback,
             fb_stop,
             fb_thread,
-        })
+        };
+        engine.sync_metronome_latency();
+        Ok(engine)
+    }
+
+    /// Gives the metronome this machine's real output latency (the driver's report, else
+    /// the real block): each click leaves that much early, so everyone hears it on the beat,
+    /// whatever buffer and driver they have.
+    fn sync_metronome_latency(&self) {
+        let (_, out) = self.device_latency();
+        let us = (out as f64 * 1e6 / self.info.sample_rate.max(1) as f64) as u32;
+        self.metronome.out_latency_us.store(us, Relaxed);
     }
 
     /// Adds a peer to the mixer. Feed its decoded packets into the returned producer.
@@ -590,6 +601,13 @@ impl Engine {
     /// streams (changed in its control panel; drivers rarely restart the streams by
     /// themselves), or does not answer at all. Asks the driver: waits at most a second.
     pub fn driver_check(&self) -> DriverCheck {
+        let check = self.check_driver();
+        // (the latency as it stands now: the callbacks' real size, what the driver says)
+        self.sync_metronome_latency();
+        check
+    }
+
+    fn check_driver(&self) -> DriverCheck {
         // DAW mode: follow the DAW's sample rate (the plugin reports it)
         #[cfg(windows)]
         if let Owner::Bridge { end, .. } = &self.owner {
@@ -758,9 +776,11 @@ fn open_streams(
         return Err(EngineError::Unsupported(gachi_lang::tr!("audio.input_device_runs", input = in_cfg.sample_rate.0, output = out_cfg.sample_rate.0)));
     }
 
+    // (a first guess for the metronome: the engine puts in the real latency once the
+    // callbacks run; see `Engine::sync_metronome_latency`)
     let out_buffer = match out_cfg.buffer_size {
         cpal::BufferSize::Fixed(n) => n,
-        cpal::BufferSize::Default => 512,
+        cpal::BufferSize::Default => cfg.buffer_size,
     };
     let (input, output) = processors(
         cfg,
@@ -826,6 +846,7 @@ fn processors(
     let auto = cfg.packet_frames == 0;
     let packet_frames = if auto { auto_packet_frames(cfg.buffer_size as usize) } else { (cfg.packet_frames as usize).clamp(8, MAX_FRAMES) };
     input_cb.packet.store(packet_frames as u32, Relaxed);
+    metronome.out_latency_us.store((out_buffer as f64 * 1e6 / sample_rate.max(1) as f64) as u32, Relaxed);
     let input = InputProcessor {
         channels: in_channels,
         map: cfg.input,
@@ -858,7 +879,7 @@ fn processors(
         params: self_params,
         meter: master_meter,
         tone: ToneGen::new(sample_rate),
-        metro: Metronome::new(sample_rate, out_buffer as f64 * 1e6 / sample_rate as f64, origin),
+        metro: Metronome::new(sample_rate, origin),
         metro_params: metronome,
         rec: None,
         limiter: crate::limiter::Limiter::new(sample_rate),

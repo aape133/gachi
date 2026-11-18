@@ -63,6 +63,10 @@ pub struct MetronomeParams {
     /// beats counted in from `start_us` before bar 1 (whole bars), in a higher click
     pub count_in: AtomicU32,
     pub gain: AtomicF32,
+    /// this machine's output latency in µs: each click is played this much ahead, so it
+    /// sounds on the beat. The real figure (the driver's report, else the real block),
+    /// kept current by the engine
+    pub out_latency_us: AtomicU32,
 }
 
 impl Default for MetronomeParams {
@@ -74,6 +78,7 @@ impl Default for MetronomeParams {
             beats_per_bar: AtomicU32::new(4),
             count_in: AtomicU32::new(0),
             gain: AtomicF32::new(0.5),
+            out_latency_us: AtomicU32::new(0),
         }
     }
 }
@@ -81,7 +86,6 @@ impl Default for MetronomeParams {
 pub(crate) struct Metronome {
     sr: f64,
     /// µs from writing a sample until it leaves the speaker (output buffer)
-    out_latency_us: f64,
     origin: Instant,
     /// (sample count, µs) where the sample clock was last lined up with the system clock
     anchor: Option<(u64, f64)>,
@@ -94,10 +98,9 @@ pub(crate) struct Metronome {
 }
 
 impl Metronome {
-    pub fn new(sr: u32, out_latency_us: f64, origin: Instant) -> Self {
+    pub fn new(sr: u32, origin: Instant) -> Self {
         Self {
             sr: sr as f64,
-            out_latency_us,
             origin,
             anchor: None,
             samples: 0,
@@ -134,7 +137,7 @@ impl Metronome {
             self.last_beat = None;
         }
         let period = 60e6 / p.bpm.load().clamp(20.0, 400.0) as f64;
-        let t0 = block_us + self.out_latency_us - p.start_us.load() as f64;
+        let t0 = block_us + p.out_latency_us.load(Relaxed) as f64 - p.start_us.load() as f64;
         let per_bar = p.beats_per_bar.load(Relaxed).max(1) as i64;
         let count_in = p.count_in.load(Relaxed) as i64;
         let gain = p.gain.load();
@@ -592,7 +595,7 @@ mod tests {
         p.bpm.store(300.0); // 200 ms beats
         p.start_us.store(10_000); // beat 0 at 10 ms
         p.on.store(true, Relaxed);
-        let mut m = Metronome::new(48_000, 0.0, Instant::now());
+        let mut m = Metronome::new(48_000, Instant::now());
         let mut onsets = Vec::new();
         let mut quiet = u32::MAX; // samples since the last non-silent one
         let mut frame = 0u64;
@@ -618,6 +621,32 @@ mod tests {
             let want = (10_000.0 + i as f64 * 200_000.0) * 0.048;
             assert!((f as f64 - want).abs() < 48.0, "click {i} at frame {f}, want {want} (within 1 ms)");
         }
+    }
+
+    #[test]
+    fn clicks_leave_as_early_as_the_output_is_late() {
+        // the first click's frame in a block stream, for an output latency (µs)
+        let first = |latency_us: u32| {
+            let p = MetronomeParams::default();
+            p.bpm.store(120.0);
+            p.start_us.store(100_000); // beat 0 at 100 ms
+            p.out_latency_us.store(latency_us, Relaxed);
+            p.on.store(true, Relaxed);
+            let mut m = Metronome::new(48_000, Instant::now());
+            for b in 0..200u64 {
+                let mut mix = [0.0f32; 128];
+                m.add_at(&p, &mut mix, (b * 64) as f64 * 1e6 / 48_000.0);
+                if let Some(k) = mix.as_chunks::<2>().0.iter().position(|f| f[0] != 0.0) {
+                    return b * 64 + k as u64;
+                }
+            }
+            panic!("no click");
+        };
+        // (a click starts at phase 0: its first sound is the sample after the beat)
+        let on_beat = first(0);
+        assert!((4800..=4801).contains(&on_beat), "on the beat itself with no output latency: {on_beat}");
+        // 64 frames of buffer and the driver's own: ~3 ms, played 144 frames sooner
+        assert_eq!(on_beat - first(3000), 144);
     }
 
     #[test]
@@ -740,7 +769,7 @@ mod tests {
         p.beats_per_bar.store(2, Relaxed);
         p.count_in.store(2, Relaxed); // one bar of two beats
         p.on.store(true, Relaxed);
-        let mut m = Metronome::new(48_000, 0.0, Instant::now());
+        let mut m = Metronome::new(48_000, Instant::now());
         let mut out = Vec::new();
         for i in 0..(48_000 / 256) {
             let mut mix = [0.0f32; 512];

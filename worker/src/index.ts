@@ -162,6 +162,10 @@ export default {
     const nearby = url.pathname === "/ws/nearby";
     if (!isHost && !join && !nearby) return new Response("not found", { status: 404 });
     if (req.headers.get("Upgrade") !== "websocket") return new Response("expected a WebSocket", { status: 426 });
+    // the app sends no Origin; a browser always does: no web page may use the server (it
+    // would spend its visitors' attempts and the server's calls)
+    const origin = req.headers.get("Origin");
+    if (origin !== null && origin !== "https://gachi.band") return new Response("forbidden", { status: 403 });
 
     // the caller's address, as far as it goes: a shard, a tag, a key (see `whereOf`)
     const at = await whereOf(req.headers.get("CF-Connecting-IP") ?? "local");
@@ -867,9 +871,9 @@ function invitePage(raw: string, accept: string | null): Response {
     "content-language": lang,
     // (one address, a page in the reader's language: a cache keeps them apart)
     vary: "Accept-Language",
-    // the page runs its own few lines and loads nothing; no other site may frame it (it
-    // opens the app) or learn the code from a referrer
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    // the page runs its own few lines and loads nothing but the site's icon; no other site
+    // may frame it (it opens the app) or learn the code from a referrer
+    "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
@@ -886,7 +890,7 @@ function invitePage(raw: string, accept: string | null): Response {
 
 const FONTS = `system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Yu Gothic UI", Meiryo, sans-serif`;
 
-const PAGE_NOT_FOUND = `<!doctype html><html lang="{LANG}"><meta charset="utf-8"><title>gachi</title>
+const PAGE_NOT_FOUND = `<!doctype html><html lang="{LANG}"><meta charset="utf-8"><title>gachi</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <body style="font-family:${FONTS};background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0">
 <p>{BAD}</p></body></html>`;
 
@@ -896,6 +900,7 @@ const PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{TITLE}</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0c0d10; color: #e8e8ee;

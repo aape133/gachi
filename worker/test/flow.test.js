@@ -441,6 +441,8 @@ test("invite page and health", async () => {
   assert.equal((await fetch(`http://${BASE}/j/%3Cscript%3E`)).status, 404);
   assert.equal((await fetch(`http://${BASE}/j/%E0%A4%A`)).status, 404, "a broken escape is not a server error");
   assert.match(ok.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.match(await (await fetch(`http://${BASE}/j/k7m-q2x`)).text(), /<link rel="icon" href="\/favicon.svg"/, "the tab shows gachi's icon");
+  assert.equal((await fetch(`http://${BASE}/favicon.svg`)).status, 200);
   assert.equal(ok.headers.get("referrer-policy"), "no-referrer");
   assert.equal(await (await fetch(`http://${BASE}/health`)).text(), "ok");
 });
@@ -462,6 +464,24 @@ test("the invite page speaks the reader's language: Korean, English, Japanese, e
   assert.equal((await page("ko;q=0,en")).lang, "en", "q=0 means not wanted");
   const bad = await fetch(`http://${BASE}/j/%3Cscript%3E`, { headers: { "Accept-Language": "ja" } });
   assert.match(await bad.text(), /招待リンクが正しくありません/);
+});
+
+test("web pages may not use the server; the app (no Origin) may", async () => {
+  const { request } = await import("node:http");
+  const status = (origin) => new Promise((resolve, reject) => {
+    const headers = { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==" };
+    if (origin) headers.Origin = origin;
+    const [host, port] = BASE.split(":");
+    const r = request({ host, port, path: "/ws/join/ZZZZZZ", headers });
+    r.on("upgrade", (res, socket) => { socket.destroy(); resolve(res.statusCode); });
+    r.on("response", (res) => { res.resume(); resolve(res.statusCode); });
+    r.on("error", reject);
+    r.end();
+  });
+  assert.equal(await status("https://evil.example"), 403);
+  assert.equal(await status("http://localhost:5180"), 403);
+  assert.equal(await status(null), 101, "the app's request goes through");
+  assert.equal(await status("https://gachi.band"), 101);
 });
 
 test("too many attempts from one address are refused", async () => {

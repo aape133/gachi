@@ -12,6 +12,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// One peer the audio thread sends to: as in [`crate::Routes`].
+type Route = (PeerId, SocketAddr, Arc<PeerCrypto>, bool);
+
+/// How long a replaced route list is kept before it is freed (see `old_routes`).
+const OLD_ROUTES_KEEP: Duration = Duration::from_secs(1);
+
 const PUNCH_EVERY: Duration = Duration::from_millis(20);
 const PING_EVERY: Duration = Duration::from_millis(500);
 /// A connected peer silent this long: punch again (its address or ours may have changed).
@@ -140,6 +146,10 @@ pub(crate) struct Receiver {
     my_token: u32,
     identity: Arc<Identity>,
     routes: Routes,
+    /// route lists replaced lately, let go of here a second later: the audio thread may
+    /// still be reading one, and must never be the one that frees it (a free there can
+    /// wait on the allocator's lock; a list also holds a departed peer's cipher state)
+    old_routes: std::collections::VecDeque<(Instant, Arc<Vec<Route>>)>,
     stats: Arc<Mutex<HashMap<PeerId, PeerNetStats>>>,
     ctl_rx: mpsc::Receiver<Ctl>,
     events: mpsc::Sender<NetEvent>,
@@ -214,6 +224,7 @@ impl Receiver {
             stop,
             peers: HashMap::new(),
             retired: HashMap::new(),
+            old_routes: std::collections::VecDeque::new(),
             last_ping: Instant::now(),
             ping_nonce: 0,
             done: false,
@@ -249,6 +260,7 @@ impl Receiver {
             if self.timers_at.is_none_or(|t| now - t >= TIMERS_EVERY) {
                 self.timers_at = Some(now);
                 self.timers(now);
+                self.let_go_of_old_routes(now);
             }
             if idle && !self.socket.wait_readable(IDLE_WAIT) {
                 continue;
@@ -564,11 +576,21 @@ impl Receiver {
         self.publish_routes();
     }
 
-    fn publish_routes(&self) {
+    fn publish_routes(&mut self) {
         // never send to a peer we have no keys for
         let routes: Vec<_> =
             self.peers.iter().filter_map(|(&id, p)| Some((id, p.route?, p.keys.clone()?, p.redundant))).collect();
-        self.routes.store(Arc::new(routes));
+        let old = self.routes.swap(Arc::new(routes));
+        self.old_routes.push_back((Instant::now(), old));
+        self.let_go_of_old_routes(Instant::now());
+    }
+
+    /// The replaced route lists the audio thread is surely done with (it reads one for the
+    /// length of one send, µs), freed here.
+    fn let_go_of_old_routes(&mut self, now: Instant) {
+        while self.old_routes.front().is_some_and(|(t, _)| now - *t >= OLD_ROUTES_KEEP) {
+            self.old_routes.pop_front();
+        }
     }
 
     fn on_datagram(&mut self, data: &[u8], from: SocketAddr, plain: &mut [u8], frame: &mut Frame) {

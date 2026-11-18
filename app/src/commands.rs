@@ -228,7 +228,9 @@ pub async fn restart_app(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn leave_room(app: AppHandle) -> Result<(), String> {
     let old = app.state::<AppState>().session.lock().await.take();
-    drop(old); // stops audio, closes the socket and the signaling connection
+    // stops audio, closes the socket and the signaling connection. Off the async runtime:
+    // letting go of the device waits on its driver (seconds, if the driver hangs)
+    let _ = tauri::async_runtime::spawn_blocking(move || drop(old)).await;
     Ok(())
 }
 

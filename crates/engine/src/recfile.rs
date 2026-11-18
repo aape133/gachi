@@ -103,7 +103,16 @@ pub(crate) struct WavSink {
     w: hound::WavWriter<BufWriter<File>>,
     bits: u8,
     dither: Dither,
+    channels: u32,
+    /// samples since the header last got the length, and how many go between two updates
+    since_header: usize,
+    header_every: usize,
 }
+
+/// Seconds of sound between two updates of a WAV file's length in its header: if the app
+/// or the PC goes down mid-recording, the file reads up to there (else its header says
+/// it is empty, and players open it as such).
+const WAV_HEADER_EVERY_S: usize = 10;
 
 impl WavSink {
     fn create(path: &Path, bits: u8, channels: usize, sample_rate: u32) -> Result<Self, String> {
@@ -113,22 +122,35 @@ impl WavSink {
             bits_per_sample: bits as u16,
             sample_format: if bits == 32 { hound::SampleFormat::Float } else { hound::SampleFormat::Int },
         };
-        Ok(Self { w: hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?, bits, dither: Dither::new() })
+        Ok(Self {
+            w: hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?,
+            bits,
+            dither: Dither::new(),
+            channels: channels as u32,
+            since_header: 0,
+            header_every: sample_rate as usize * channels * WAV_HEADER_EVERY_S,
+        })
     }
 
     fn write(&mut self, samples: &[f32]) -> Result<(), String> {
         let cannot = |e: hound::Error| gachi_lang::tr!("rec.cant_write_recording", e);
         match self.bits {
-            32 => samples.iter().try_for_each(|&s| self.w.write_sample(s)).map_err(cannot),
-            24 => samples.iter().try_for_each(|&s| self.w.write_sample(to_int(s, 24, 0.0))).map_err(cannot),
+            32 => samples.iter().try_for_each(|&s| self.w.write_sample(s)).map_err(cannot)?,
+            24 => samples.iter().try_for_each(|&s| self.w.write_sample(to_int(s, 24, 0.0))).map_err(cannot)?,
             _ => {
                 for &s in samples {
                     let d = self.dither.of(s);
                     self.w.write_sample(to_int(s, 16, d) as i16).map_err(cannot)?;
                 }
-                Ok(())
             }
         }
+        self.since_header += samples.len();
+        // (between whole frames only: a header in the middle of one would be refused)
+        if self.since_header >= self.header_every && self.w.len().is_multiple_of(self.channels) {
+            self.since_header = 0;
+            self.w.flush().map_err(cannot)?;
+        }
+        Ok(())
     }
 
     fn finish(self) -> Result<(), String> {
@@ -327,6 +349,24 @@ mod tests {
             assert!(worst <= tol, "{bits} bit: off by {worst}");
             std::fs::remove_file(path).ok();
         }
+    }
+
+    #[test]
+    fn a_wav_cut_off_mid_recording_still_reads() {
+        // 11 s of stereo at a low rate (quick), then the app "goes down": the writer is
+        // never finished (no header written at the end, nothing more flushed)
+        let path = temp("cut.wav");
+        let rate = 1000;
+        let mut s = Sink::create(&path, RecFormat::Wav { bits: 16 }, 2, rate).unwrap();
+        for _ in 0..11 {
+            s.write(&sine(rate as usize, rate, 50.0, 2)).unwrap();
+        }
+        std::mem::forget(s);
+        let r = hound::WavReader::open(&path).unwrap();
+        let secs = r.duration() / rate;
+        assert!(secs >= WAV_HEADER_EVERY_S as u32, "reads as {secs} s: the header kept up within {WAV_HEADER_EVERY_S} s");
+        drop(r);
+        std::fs::remove_file(path).ok();
     }
 
     /// What a recording does to the sound, measured on a tone read back from each format:
