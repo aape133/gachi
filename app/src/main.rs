@@ -30,6 +30,10 @@ pub struct AppState {
     /// twice at once took the whole program down (leave, then join again 1.6 s later, just
     /// as the home screen's device probe ran).
     pub starting: std::sync::atomic::AtomicU32,
+    /// held while a room's audio device is being reopened with the session let go (see
+    /// `session::reopen`), and by a create/join from before it lets the old room go: one
+    /// reopen at a time, and none still under way when the next room opens the device
+    pub device_gate: tokio::sync::Mutex<()>,
     /// room code from a `gachi://join/…` link the UI has not picked up yet
     pub pending_join: Mutex<Option<String>>,
     /// where the settings are saved (app config dir)

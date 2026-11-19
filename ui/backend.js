@@ -411,7 +411,7 @@
     setUiVisible() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.6.0'; }
+    async appVersion() { return '0.6.1'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));

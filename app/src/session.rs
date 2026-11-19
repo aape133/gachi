@@ -319,6 +319,11 @@ pub struct Session {
     changed_in_row: u8,
     /// when we last tried to reopen a broken device
     reopen_at: Option<Instant>,
+    /// the device is being reopened (see [`reopen`]): no engine meanwhile, and no second
+    /// reopen asked for
+    reopening: bool,
+    /// which session this is (a reopen that comes back to another one drops its engine)
+    id: u64,
     /// host: recent join attempts with a wrong password (limits guessing)
     bad_tries: Vec<Instant>,
     /// host: since when the code has been on (see `CODE_OPEN_FOR`)
@@ -1331,7 +1336,12 @@ impl Session {
     /// What we tell the others about our setup.
     /// The audio device broke (unplugged, driver reset, callbacks stopped): reopen it with
     /// the current settings, at most every 5 s, and say so once it works again.
-    fn check_audio(&mut self, app: &AppHandle) {
+    /// `Some(changed)`: the device is to be reopened now (see [`reopen_after_check`]), and
+    /// whether because the driver's settings changed.
+    fn check_audio(&mut self, app: &AppHandle) -> Option<bool> {
+        if self.reopening {
+            return None;
+        }
         let (broken, changed) = match &self.engine {
             Some(e) => match e.driver_check() {
                 // the driver hangs: reopening would only wait on it too. Say so once and
@@ -1341,7 +1351,7 @@ impl Session {
                         self.driver_hung = true;
                         notice(app, driver_hung());
                     }
-                    return;
+                    return None;
                 }
                 check => {
                     self.driver_hung = false;
@@ -1372,30 +1382,15 @@ impl Session {
             self.reopen_at = None;
         }
         if !broken || self.reopen_at.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
-            return;
+            return None;
         }
         self.reopen_at = Some(Instant::now());
         tracing::warn!("audio device stopped working; reopening");
-        let state = app.state::<AppState>();
-        let settings = state.settings.lock().unwrap().clone();
-        let self_ui = state.self_ui.lock().unwrap().clone();
         self.cb_seen = (0, 0);
-        match self.restart_engine(&settings, &self_ui) {
-            Ok((summary, rec)) => {
-                if rec.is_some() {
-                    notice(app, gachi_lang::tr!("room.audio_device_reconnected"));
-                }
-                notice(
-                    app,
-                    if changed {
-                        gachi_lang::tr!("room.audio_device_settings", summary)
-                    } else {
-                        gachi_lang::tr!("room.audio_device_stopped", summary)
-                    },
-                );
-            }
-            Err(e) => notice(app, gachi_lang::tr!("room.audio_device_stopped_please", e)),
-        }
+        // (said here: the reopening itself starts a moment later, and the next look at the
+        // device must not ask for another one meanwhile)
+        self.reopening = true;
+        Some(changed)
     }
 
     /// New input channels without reopening the device.
@@ -1450,28 +1445,29 @@ impl Session {
         self.update_jitter_targets();
     }
 
-    /// Reopens the audio device with new settings. The network side (routes, punching,
-    /// stats) is untouched; each peer's audio is re-attached to the new mixer.
-    /// A running recording is finished first (its result is returned with the summary).
-    pub fn restart_engine(
-        &mut self,
-        settings: &Settings,
-        self_ui: &SelfUi,
-    ) -> Result<(String, Option<Result<RecordingResult, String>>), String> {
-        let recording = self.engine.as_mut().and_then(|e| e.stop_recording());
-        // close first: ASIO drivers can only be opened once
-        drop(self.engine.take());
+    /// Reopening the audio device with new settings, first half: the engine and a running
+    /// recording are taken out, to be closed and opened anew without the session held (see
+    /// [`reopen`]). The network side (routes, punching, stats) is untouched; until
+    /// [`Session::reopen_finish`] the room goes on without sound of ours.
+    fn reopen_begin(&mut self, settings: &Settings) -> Reopen {
+        self.reopening = true;
+        let rec = self.engine.as_mut().and_then(|e| e.stop_recording_begin());
+        let old = self.engine.take();
         for p in self.peers.values_mut() {
             p.handle = None;
         }
-        let engine = start_engine(&self.net, settings)?;
+        Reopen { old, rec, sender: self.net.sender_with(sample_format(settings)) }
+    }
+
+    /// Second half: the new engine goes in, each peer's audio is attached to its mixer
+    /// (also of those who came in meanwhile). Returns what to tell the user of the device.
+    fn reopen_finish(&mut self, engine: Engine, settings: &Settings, self_ui: &SelfUi) -> String {
         self.fallback_note = device_note(settings, &engine.info);
         self.sample_rate = engine.info.sample_rate;
         self.buffer_size = engine.info.buffer_size.unwrap_or(settings.buffer_size);
         self.packet_frames = settings.packet_size;
         let summary = gachi_lang::tr!("audio.summary", device = engine.info.output_device, rate = self.sample_rate, buffer = self.buffer_size, ms = format!("{:.1}", engine.local_latency_ms()), note = self.fallback_note.as_ref().map(|n| format!(". {n}")).unwrap_or_default());
-        self.engine = Some(engine);
-        let engine = self.engine.as_mut().expect("just set");
+        let engine = self.engine.insert(engine);
         for (&id, p) in self.peers.iter_mut() {
             let (tx, handle) = engine.add_peer(id);
             self.net.set_peer_output(id, tx);
@@ -1486,7 +1482,7 @@ impl Session {
         self.apply_jitter_settings(settings);
         self.apply_metronome();
         self.announce_status();
-        Ok((summary, recording))
+        summary
     }
 
     /// Pushes the room metronome into the engine (after a change, a clock-offset update or
@@ -1909,6 +1905,9 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     state.starting.fetch_add(1, Ordering::SeqCst);
     let _entering = Entering(&state.starting);
 
+    // (a reopen of the old room's device under way: wait it out, so that it is not still
+    // opening the driver when we do)
+    let _device = state.device_gate.lock().await;
     // one session at a time, and the settings screen's preview must release the device
     let old = state.session.lock().await.take();
     drop(old);
@@ -2105,6 +2104,11 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         driver_hung: false,
         changed_in_row: 0,
         reopen_at: None,
+        reopening: false,
+        id: {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        },
         bad_tries: Vec::new(),
         code_since: matches!(intent, Intent::Create { .. }).then(Instant::now),
         kicked: Vec::new(),
@@ -2188,8 +2192,11 @@ async fn ticker(app: AppHandle) {
             s.log_stats();
         }
         if n.is_multiple_of(60) {
-            // (asks the driver, and reopens the device when it must: both wait on it)
-            tokio::task::block_in_place(|| s.check_audio(&app));
+            // (asks the driver, which may wait on it. A reopen is a task of its own: the
+            // session is let go while the driver closes and opens)
+            if let Some(changed) = tokio::task::block_in_place(|| s.check_audio(&app)) {
+                tauri::async_runtime::spawn(reopen_after_check(app.clone(), changed));
+            }
             s.send_link_reports();
             // the device's real buffer is known once its callbacks ran: tell the room
             // (WASAPI usually runs ~10 ms whatever was asked)
@@ -2228,6 +2235,97 @@ async fn ticker(app: AppHandle) {
                 }),
             );
         }
+    }
+}
+
+/// What a reopen takes out of the session (see [`Session::reopen_begin`]).
+struct Reopen {
+    old: Option<Engine>,
+    rec: Option<Result<gachi_engine::RecordingFiles, String>>,
+    sender: gachi_net::UdpSender,
+}
+
+/// Reopens the room's audio device with `settings`, without holding the session while the
+/// driver closes and opens (seconds, with some): until it has, the faders, the chat and
+/// leaving the room used to wait for it. Returns what became of a recording that was
+/// running, and what to tell of the device (or why it did not open: the room then goes on
+/// without sound of ours).
+pub async fn reopen(app: &AppHandle, settings: Settings, self_ui: SelfUi) -> (Option<Result<RecordingResult, String>>, Result<String, String>) {
+    let state = app.state::<AppState>();
+    // one at a time (a driver opened twice at once took the program down), and none under
+    // way when a new room opens the device (see `AppState::device_gate`)
+    let _gate = state.device_gate.lock().await;
+    let (id, taken) = {
+        let mut guard = state.session.lock().await;
+        let Some(s) = guard.as_mut() else { return (None, Err(gachi_lang::tr!("room.audio_device_not"))) };
+        (s.id, s.reopen_begin(&settings))
+    };
+    let opening = settings.clone();
+    let (rec, opened) = tauri::async_runtime::spawn_blocking(move || {
+        let Reopen { old, rec, sender } = taken;
+        let rec = rec.map(|files| files.and_then(|f| f.finish()));
+        // close first: ASIO drivers can only be opened once
+        drop(old);
+        let opened = Engine::start(opening.engine_config(), Box::new(sender)).map_err(|e| {
+            tracing::warn!(device = %opening.device, daw = opening.daw_mode(), "audio device: {e}");
+            open_error(&opening, &e)
+        });
+        (rec, opened)
+    })
+    .await
+    .unwrap_or_else(|e| (None, Err(e.to_string())));
+    let mut guard = state.session.lock().await;
+    match guard.as_mut() {
+        Some(s) if s.id == id => {
+            s.reopening = false;
+            // what was set while there was no engine to set it on (the mute button, a fader,
+            // another input channel) is in what the app keeps: the newest of it goes in
+            let self_ui = state.self_ui.lock().map(|u| u.clone()).unwrap_or(self_ui);
+            let input = state.settings.lock().map(|now| crate::settings::parse_input(&now.input_channel)).ok();
+            let said = opened.map(|engine| s.reopen_finish(engine, &settings, &self_ui));
+            if let (Ok(_), Some(input), false) = (&said, input, settings.daw_mode()) {
+                s.set_input_live(input);
+            }
+            (rec, said)
+        }
+        // the room was left meanwhile (or another one entered): this engine is nobody's
+        _ => {
+            drop(guard);
+            let _ = tauri::async_runtime::spawn_blocking(move || drop(opened)).await;
+            (rec, Err(gachi_lang::tr!("room.audio_device_not")))
+        }
+    }
+}
+
+/// The device broke or its driver's settings changed (see `Session::check_audio`): reopen
+/// it and say what came of it.
+async fn reopen_after_check(app: AppHandle, changed: bool) {
+    let (settings, self_ui) = {
+        let state = app.state::<AppState>();
+        let settings = state.settings.lock().unwrap().clone();
+        let self_ui = state.self_ui.lock().unwrap().clone();
+        (settings, self_ui)
+    };
+    let (rec, opened) = reopen(&app, settings, self_ui).await;
+    let recorded = rec.is_some();
+    if let Some(rec) = rec {
+        let _ = app.emit("recording", crate::commands::recording_json(rec));
+    }
+    match opened {
+        Ok(summary) => {
+            if recorded {
+                notice(&app, gachi_lang::tr!("room.audio_device_reconnected"));
+            }
+            notice(
+                &app,
+                if changed {
+                    gachi_lang::tr!("room.audio_device_settings", summary)
+                } else {
+                    gachi_lang::tr!("room.audio_device_stopped", summary)
+                },
+            );
+        }
+        Err(e) => notice(&app, gachi_lang::tr!("room.audio_device_stopped_please", e)),
     }
 }
 

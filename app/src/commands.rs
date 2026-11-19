@@ -79,24 +79,28 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
                 sess.announce_profile(s.profile());
                 sess.sync_lobby(); // the nearby list shows the host's name
             }
+            if !restart && jitter {
+                sess.apply_jitter_settings(&s);
+            }
+            drop(guard);
             if restart {
-                // (waits on the driver: see `session::start`)
-                match tokio::task::block_in_place(|| sess.restart_engine(&s, &self_ui)) {
-                    Ok((summary, rec)) => {
-                        if let Some(rec) = rec {
-                            let _ = app.emit("recording", recording_json(rec));
-                        }
-                        session::notice(&app, gachi_lang::tr!("app.audio_settings_applied", summary));
-                    }
+                // (with the session let go: the room can be used while the driver closes
+                // and opens; see `session::reopen`)
+                let (rec, opened) = session::reopen(&app, s.clone(), self_ui).await;
+                if let Some(rec) = rec {
+                    let _ = app.emit("recording", recording_json(rec));
+                }
+                match opened {
+                    Ok(summary) => session::notice(&app, gachi_lang::tr!("app.audio_settings_applied", summary)),
                     Err(e) => {
                         session::notice(&app, gachi_lang::tr!("app.e_please_choose", e));
                         return Err(e);
                     }
                 }
-            } else if jitter {
-                sess.apply_jitter_settings(&s);
             }
-            let _ = app.emit("stats", json!({ "peers": sess.views() }));
+            if let Some(sess) = state.session.lock().await.as_ref() {
+                let _ = app.emit("stats", json!({ "peers": sess.views() }));
+            }
         }
     }
     Ok(s)
