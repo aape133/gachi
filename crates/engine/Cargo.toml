@@ -25,6 +25,8 @@ asio-sys = { version = "0.2.6", optional = true }
 [target.'cfg(windows)'.dependencies]
 # DAW mode: the plugin's blocks drive the engine instead of an audio device
 gachi-bridge.workspace = true
+# (a driver's channel names, read in the system's code page)
+windows-sys = { version = "0.61", features = ["Win32_Globalization"] }
 
 [dev-dependencies]
 # reads our FLAC files back in the tests

@@ -9,8 +9,6 @@ use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
 
 const RESEND_AFTER: Duration = Duration::from_millis(250);
-/// give up after ~10 s of no acknowledgement (the peer is gone or unreachable)
-const MAX_TRIES: u32 = 40;
 const OUTBOX_MAX: usize = 256;
 /// how far ahead of the next expected message we buffer
 const EARLY_WINDOW: u32 = 256;
@@ -19,7 +17,6 @@ struct Out {
     seq: u32,
     data: Vec<u8>,
     last_sent: Option<Instant>,
-    tries: u32,
 }
 
 #[derive(Default)]
@@ -38,7 +35,7 @@ impl ControlChannel {
         }
         let seq = self.next_out;
         self.next_out = self.next_out.wrapping_add(1);
-        self.outbox.push_back(Out { seq, data, last_sent: None, tries: 0 });
+        self.outbox.push_back(Out { seq, data, last_sent: None });
         true
     }
 
@@ -48,19 +45,18 @@ impl ControlChannel {
     }
 
     /// Calls `send(seq, data)` for every message due now (new or waiting too long for an ack).
-    /// Returns how many messages were given up on.
-    pub fn send_due(&mut self, now: Instant, mut send: impl FnMut(u32, &[u8])) -> usize {
-        let before = self.outbox.len();
-        self.outbox.retain(|o| o.tries < MAX_TRIES);
-        let dropped = before - self.outbox.len();
+    /// None is ever given up on: the receiver hands messages over strictly in order, so one
+    /// that never came would hold back every later one for good (it used to be dropped after
+    /// 10 s: a peer silent for longer and then back got no chat, metronome or room state
+    /// from us again). The caller does not call this while the peer is silent; a peer that
+    /// is gone takes its channel with it.
+    pub fn send_due(&mut self, now: Instant, mut send: impl FnMut(u32, &[u8])) {
         for o in self.outbox.iter_mut() {
             if o.last_sent.is_none_or(|t| now - t >= RESEND_AFTER) {
                 o.last_sent = Some(now);
-                o.tries += 1;
                 send(o.seq, &o.data);
             }
         }
-        dropped
     }
 
     pub fn on_ack(&mut self, seq: u32) {
@@ -104,8 +100,8 @@ mod tests {
     }
 
     #[test]
-    fn resends_until_acked_then_gives_up() {
-        let mut tx = ControlChannel::default();
+    fn resends_until_acked_and_never_leaves_a_gap() {
+        let (mut tx, mut rx) = (ControlChannel::default(), ControlChannel::default());
         tx.queue(b"x".to_vec());
         tx.queue(b"y".to_vec());
         let t0 = Instant::now();
@@ -118,12 +114,18 @@ mod tests {
         tx.on_ack(0);
         tx.send_due(t0 + Duration::from_millis(300), |s, _| sent.push(s));
         assert_eq!(sent, vec![1], "only the unacked one");
+        // a minute with no acknowledgement (the peer was silent): still there, and once it
+        // gets through, what was queued after it is delivered too
         let mut t = t0;
-        let mut dropped = 0;
-        for _ in 0..60 {
+        for _ in 0..240 {
             t += RESEND_AFTER;
-            dropped += tx.send_due(t, |_, _| {});
+            tx.send_due(t, |_, _| {});
         }
-        assert_eq!((dropped, tx.pending()), (1, 0));
+        assert_eq!(tx.pending(), 1);
+        assert!(rx.on_data(0, b"x").len() == 1);
+        tx.queue(b"z".to_vec());
+        let mut got = Vec::new();
+        tx.send_due(t + RESEND_AFTER, |s, d| got.extend(rx.on_data(s, d)));
+        assert_eq!(got, vec![b"y".to_vec(), b"z".to_vec()]);
     }
 }

@@ -11,6 +11,8 @@ if (!window.__TAURI__) {
   // my name and the room's, in the preview's language
   const WORDS = { ko: ['민준', '금요일 합주'], en: ['Alex', 'Friday jam'], ja: ['たくみ', '金曜セッション'] }[String(q.get('lang') || 'ko').slice(0, 2)] || ['Alex', 'Friday jam'];
   if (shot) {
+    // (a picture: everything as it stands, nothing caught half-way through a fade or a move)
+    document.head.insertAdjacentHTML('beforeend', '<style>*, *::before, *::after { animation: none !important; transition: none !important; }</style>');
     addEventListener('load', () => setTimeout(() => {
       const $ = (s) => document.querySelector(s);
       if ($('#home-name')) { $('#home-name').value = WORDS[0]; $('#home-name').dispatchEvent(new Event('input', { bubbles: true })); }

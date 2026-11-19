@@ -208,16 +208,14 @@
   </div>
 
   <footer class="bottombar">
+    <!-- left, what I send: the input of the device (the mic and my level are on my card; M
+         still mutes; DAW mode: the DAW's track decides, nothing to pick). Right, what I hear:
+         the master, and the way out. (Each one's latency is on their own card.) -->
     <div class="self-quick">
-      <button class="mic-btn" id="mic-btn" title="Mic on/off (M)" data-icon="mic" data-i18n-title="room.mic_off_m"></button>
-      <div class="meter mini" id="mini-meter"><i></i><i></i></div>
-    </div>
-
-    <div class="latency-summary">
-      <span class="label" data-i18n="room.average_latency">Average latency</span>
-      <span class="big num" id="avg-latency">--</span>
-      <span class="unit">ms</span>
-      <span class="sub" id="avg-sub" data-i18n="room.one_way_ear">One way · ear to ear</span>
+      <label class="input-pick" id="room-input-pick" title="Input channel" data-i18n-title="settings.input_channel">
+        <span data-icon="mic"></span>
+        <select class="select" id="room-input" aria-label="Input channel" data-i18n-aria="settings.input_channel"></select>
+      </label>
     </div>
 
     <div class="master">
@@ -439,7 +437,7 @@
           <div class="setting-head"><span class="label" data-i18n="settings.language">Language</span></div>
           <div class="row">
             <select class="select grow" id="set-language" aria-label="Language" data-i18n-aria="settings.language">
-              <option value="auto" data-i18n="settings.auto_windows_language">Auto (Windows language)</option>
+              <option value="auto" data-i18n="settings.auto_windows_language">Auto</option>
             </select>
           </div>
         </div>

@@ -80,7 +80,8 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
                 sess.sync_lobby(); // the nearby list shows the host's name
             }
             if restart {
-                match sess.restart_engine(&s, &self_ui) {
+                // (waits on the driver: see `session::start`)
+                match tokio::task::block_in_place(|| sess.restart_engine(&s, &self_ui)) {
                     Ok((summary, rec)) => {
                         if let Some(rec) = rec {
                             let _ = app.emit("recording", recording_json(rec));
@@ -101,8 +102,14 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
     Ok(s)
 }
 
+/// (async, on a thread that may wait: a plain command runs on the main thread, and this
+/// loads every ASIO driver there is: a slow or hanging one froze the window for up to 16 s)
 #[tauri::command]
-pub fn list_devices() -> Value {
+pub async fn list_devices() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(list_devices_now).await.map_err(|e| e.to_string())
+}
+
+fn list_devices_now() -> Value {
     // `inputs` = input channel count, so the UI can offer every channel / pair / mic+loopback mix
     let map = |host| {
         let default_inputs = gachi_engine::device::default_input_channels(host);
@@ -568,7 +575,14 @@ pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
         let dir = s.start_recording(base, format, mix)?;
         Ok(json!({ "recording": true, "dir": dir.display().to_string() }))
     } else {
-        let r = s.stop_recording().unwrap_or_else(|| Err(gachi_lang::tr!("app.not_recording")));
+        // the files are written out with the session let go: until they were (seconds, for a
+        // long recording), the meters stood still and nothing in the room could be done
+        let stopped = s.stop_recording_begin().unwrap_or_else(|| Err(gachi_lang::tr!("app.not_recording")));
+        drop(guard);
+        let r = match stopped {
+            Ok(files) => tauri::async_runtime::spawn_blocking(move || files.finish()).await.unwrap_or_else(|e| Err(e.to_string())),
+            Err(e) => Err(e),
+        };
         let v = recording_json(r);
         if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
             return Err(e.to_string());

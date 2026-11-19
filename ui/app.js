@@ -100,7 +100,9 @@
     const was = el._v || 0;
     const v = Math.max(meterPos(peak), was - 0.03);
     if (v !== was) { el._v = v; el.style.setProperty('--v', v.toFixed(3)); }
-    const clip = peak >= 0.99;
+    // (at full scale: shown for a second, a single block of it is over before it is seen)
+    if (peak >= 0.99) el._clipAt = performance.now();
+    const clip = !!el._clipAt && performance.now() - el._clipAt < 1000;
     if (clip !== !!el._clip) { el._clip = clip; el.classList.toggle('clip', clip); }
   }
   /** the avatar's glow with the sound (same rule: only when it changes) */
@@ -299,7 +301,7 @@
   backend.on('room-lost', async ({ code, password }) => {
     if (!room || rejoining) return;
     rejoining = true;
-    leaveRoom();
+    leaveRoom({ keepRecent: true });
     toast(tr('app.connection_dropped_left'));
     try {
       for (let i = 0; i < 8; i++) {
@@ -366,10 +368,13 @@
     fitStage();
   }
 
-  function leaveRoom() {
+  /** `keepRecent`: offer the room on the home screen, to go back in with one click: when
+   *  the room goes on without us (our connection dropped, or we left with others still in
+   *  it), not when we were the last one out or were put out */
+  function leaveRoom({ keepRecent = false } = {}) {
     backend.leaveRoom();
-    // to go back in with one click (a room with its code turned off cannot be joined)
-    recent = room && room.open !== false ? { code: room.code, name: room.name, pw: room.pw || '', at: Date.now() } : null;
+    // (a room with its code turned off cannot be joined)
+    recent = keepRecent && room && room.open !== false ? { code: room.code, name: room.name, pw: room.pw || '', at: Date.now() } : null;
     renderRecent();
     room = null;
     clearInterval(clockTimer);
@@ -405,7 +410,6 @@
         </div>
         <div class="meter" data-f="meter"><i></i><i></i></div>
         <label class="ctrl"><span>${tr('card.input')}</span><input type="range" min="-24" max="24" step="0.5" value="${backend.self.gain}" data-act="gain"><span class="val" data-f="gain"></span></label>
-        <select class="select" data-act="input-ch" aria-label="${esc(tr('settings.input_channel'))}"></select>
         <label class="ctrl" data-f="own" hidden title="${esc(tr('card.how_loud_hear'))}"><span>${tr('card.self')}</span><input type="range" min="-40" max="6" step="0.5" value="${backend.self.monitorDb ?? 0}" data-act="monitor-db"><span class="val" data-f="monitor-db"></span></label>
         <div class="strip-foot">
           <button class="pill" data-act="mute"></button>
@@ -430,12 +434,12 @@
     $('[data-f=local]', el).textContent = f1(backend.localMs());
     const g = $('[data-act=gain]', el); g.value = self.gain; paintRange(g);
     $('[data-f=gain]', el).textContent = dbText(self.gain) + ' dB';
-    fillInputSelect($('[data-act=input-ch]', el), s);
+    fillInputSelect($('#room-input'), s);
     // DAW mode: the DAW track decides what is sent, and the plugin plays your own sound
     // (no delay) at the level set here. The monitor button switches that on and off there
     // (in device mode it is the app's own software monitor)
     const daw = s.connection === 'daw';
-    $('[data-act=input-ch]', el).hidden = daw;
+    $('#room-input-pick').hidden = daw;
     $('[data-act=monitor]', el).title = daw ? tr('card.hear_yourself_daw') : tr('card.hear_yourself_directly');
     $('[data-f=own]', el).hidden = !daw;
     const own = $('[data-act=monitor-db]', el); own.value = self.monitorDb ?? 0; paintRange(own);
@@ -451,9 +455,6 @@
     $('[data-act=rec]', el).classList.toggle('on', self.rec !== false);
     // (off: the level has nothing to act on)
     $('[data-f=own]', el).classList.toggle('off', daw && self.own === false);
-    const mic = $('#mic-btn');
-    mic.classList.toggle('muted', self.muted);
-    mic.innerHTML = icon(self.muted ? 'mic-off' : 'mic');
     // ("Muted" is longer than "Mic": the card's labels may need to give way now)
     i18n.fit(el);
   }
@@ -521,9 +522,9 @@
     const chip = $('[data-act=lat]', el);
     putAttr(chip, 'class', 'net-chip q-' + qc + (chip.classList.contains('active') ? ' active' : ''));
     put($('[data-f=total]', el), connecting || p.measured === false ? ql : `${f1(p.total)} ms`);
-    const issues = [p.conn.link === 'wifi' && 'Wi-Fi', p.loss >= 1 && tr('card.loss_n', { n: f1(p.loss) }), p.outageMs > 0 && tr('card.brief_dropout'), p.conn.type === 'relay' && tr('card.relay')].filter(Boolean);
+    const issues = [p.conn.link === 'wifi' && 'Wi-Fi', p.loss >= 1 && tr('card.loss_n', { n: f1(p.loss) }), p.outageMs > 0 && tr('card.brief_dropout')].filter(Boolean);
     $('[data-f=warn]', el).hidden = !issues.length;
-    putAttr(chip, 'title', `${p.conn.type === 'relay' ? tr('card.relay') : 'P2P' + (p.conn.ipv6 ? ' · IPv6' : '')} · ${tr('card.latency')} ${f1(p.total)} ms (${ql})`
+    putAttr(chip, 'title', `P2P${p.conn.ipv6 ? ' · IPv6' : ''} · ${tr('card.latency')} ${f1(p.total)} ms (${ql})`
       + (issues.length ? ' · ' + issues.join(' · ') : '') + ' · ' + tr('card.click_details'));
     put($('[data-f=vol]', el), dbText(p.volume) + ' dB');
     put($('[data-f=pan]', el), panText(p.pan));
@@ -581,21 +582,7 @@
       }
     } else slot?.remove();
     fitStage();
-    updateSummary();
     updateDim();
-  }
-
-  function updateSummary() {
-    const all = [...peers.values()].filter((p) => p.connected !== false);
-    const list = all.filter((p) => p.measured !== false);
-    const big = $('#avg-latency'), sub = $('#avg-sub');
-    if (!all.length) { put(big, '--'); putAttr(big, 'class', 'big num'); put(sub, tr('card.no_one_here')); return; }
-    if (!list.length) { put(big, '--'); putAttr(big, 'class', 'big num'); put(sub, tr('card.measuring_latency')); return; }
-    const avg = list.reduce((a, p) => a + p.total, 0) / list.length;
-    const max = Math.max(...list.map((p) => p.total));
-    put(big, f1(avg));
-    putAttr(big, 'class', 'big num q-' + quality(avg)[0]);
-    put(sub, tr('card.max_max_ms', { max: f1(max) }));
   }
 
   /* ── stage interactions (delegated) ── */
@@ -612,9 +599,7 @@
     if (act === 'vol') backend.setPeer(id, { volume: +t.value });
     if (act === 'pan') backend.setPeer(id, { pan: +t.value });
   });
-  stage.addEventListener('change', (e) => {
-    if (e.target.dataset.act === 'input-ch') { backend.updateSettings({ inputChannel: e.target.value }); }
-  });
+  $('#room-input').addEventListener('change', (e) => backend.updateSettings({ inputChannel: e.target.value }));
   stage.addEventListener('dblclick', (e) => {
     const t = e.target; if (t.type !== 'range') return;
     t.value = ['gain', 'vol', 'pan', 'monitor-db'].includes(t.dataset.act) ? 0 : t.value;
@@ -659,9 +644,7 @@
   // the host put us out
   backend.on('kicked', () => {
     if (!room) return;
-    leaveRoom();
-    // (put out: it would not let us back in)
-    recent = null; renderRecent();
+    leaveRoom(); // (put out: it would not let us back in, so not offered again)
     toast(tr('card.host_removed_room'));
   });
   backend.on('stats', ({ peers: list }) => {
@@ -675,17 +658,16 @@
     const self = strips.get('self');
     if (self) put($('[data-f=local]', self.el), f1(backend.localMs()));
     list.forEach(updatePeer);
-    updateSummary(); updateDim();
+    updateDim();
     if (popFor) updatePop();
   });
-  const miniMeter = $('#mini-meter'), setMeterEl = $('#set-meter'), settingsModal = $('#modal-settings');
+  const setMeterEl = $('#set-meter'), settingsModal = $('#modal-settings');
   backend.on('levels', (lv) => {
     // nobody is looking (minimized): nothing to draw
     if (document.hidden) return;
     if (room) {
       const self = strips.get('self');
       setMeter(self?.meter, lv.self);
-      setMeter(miniMeter, lv.self);
       avatarLevel(self?.avatar, lv.self[0]);
       for (const id in lv.peers) {
         const st = strips.get(id); if (!st) continue;
@@ -701,7 +683,7 @@
     }
   });
   backend.on('chat', (m) => addMsg(m));
-  // system messages from the engine/network (relay fallback, settings applied, host changed …)
+  // system messages from the engine/network (settings applied, host changed …)
   // the app's own messages (host changed, someone dropped, code turned off…): always in the
   // chat log, and as a toast when the chat panel is closed so they are not missed
   backend.on('notice', ({ text }) => {
@@ -809,8 +791,9 @@
     const q = $('[data-f=q]', pop); q.textContent = ql; q.className = 'lat-q q-' + qc;
     paintBar($('[data-f=bar]', pop), b, p.total);
     $('[data-f=legend]', pop).innerHTML = SEG.filter(([k]) => b[k] > 0)
-      .map(([k, l, c]) => `<div class="legend-row"><i style="background:${c}"></i><span>${tr(l)}</span><span class="v">${f1(b[k])} ms</span></div>`).join('');
-    $('[data-f=path]', pop).textContent = p.conn.type === 'relay' ? tr('latency.through_relay_server') : tr('latency.p2p_direct') + (p.conn.ipv6 ? ' · IPv6' : ' · ' + tr('latency.hole_punching'));
+      // (a peer in DAW mode: its input is the DAW's block, without the DAW's own device)
+      .map(([k, l, c]) => `<div class="legend-row"><i style="background:${c}"></i><span>${tr(k === 'inBuf' && p.stream?.daw ? 'latency.input_daw' : l)}</span><span class="v">${f1(b[k])} ms</span></div>`).join('');
+    $('[data-f=path]', pop).textContent = tr('latency.p2p_direct') + (p.conn.ipv6 ? ' · IPv6' : ' · ' + tr('latency.hole_punching'));
     $('[data-f=link]', pop).innerHTML = { wifi: '<span class="q-warn">Wi-Fi</span>', wired: tr('latency.wired') }[p.conn.link] || tr('latency.unknown');
     $('[data-f=stream]', pop).textContent = streamText(p.stream) || tr('latency.checking');
     $('[data-f=sec]', pop).innerHTML = p.conn.encrypted
@@ -819,9 +802,7 @@
     $('[data-f=rtt]', pop).textContent = p.rtt > 0 ? f1(p.rtt) + ' ms' : tr('card.measuring');
     $('[data-f=loss]', pop).textContent = f1(p.loss) + ' %';
     const tip = $('[data-f=tip]', pop);
-    const tipText = p.conn.type === 'relay'
-      ? tr('latency.direct_connection_failed')
-      : p.outageMs > 0
+    const tipText = p.outageMs > 0
         // the stream stopped for a moment (not loss: more buffer would not have helped)
         ? tr('latency.connection_dropped_moment', { dur: p.outageMs >= 1000 ? tr('latency.n_s', { n: f1(p.outageMs / 1000) }) : Math.round(p.outageMs) + 'ms', name: p.name })
       : p.conn.link === 'wifi' && b.jitter - (p.jitterIfWired ?? b.jitter) >= 0.5
@@ -859,7 +840,6 @@
   stage.addEventListener('scroll', closePop);
 
   /* ── mic / master / leave ── */
-  $('#mic-btn').addEventListener('click', toggleMute);
   const master = $('#master-vol');
   paintRange(master);
   master.addEventListener('input', () => {
@@ -880,7 +860,9 @@
       return;
     }
     reset();
-    leaveRoom();
+    // (offered again on the home screen while others are still in it; the last one out
+    // leaves nothing to go back to)
+    leaveRoom({ keepRecent: peers.size > 0 });
   });
 
   /* ── the two top-bar menus (metronome, recording) ── */
@@ -1732,7 +1714,7 @@
     syncPluginStatus();
     const devs = backend.getDevices();
     const sel = $('#set-device');
-    sel.innerHTML = devs.map((d) => `<option value="${d.id}">${esc(d.label)}</option>`).join('');
+    sel.innerHTML = devs.map((d) => `<option value="${esc(d.id)}">${esc(d.label)}</option>`).join('');
     sel.value = s.device;
     const dev = devs.find((d) => d.id === s.device);
     $('#device-warn').hidden = !dev?.warn;
@@ -1895,7 +1877,182 @@
     renderHomeStatus();
   }
 
+  /* ═══════════════════════ DROP-DOWN LISTS ═══════════════════════ */
+  // drawn by the app, not the browser's own: WebView2 shuts its own list at a turn of the
+  // mouse wheel anywhere (or one just before it opens). The <select> stays, hidden, as the
+  // options and the value: code fills, sets and reads it as before, and a pick fires its
+  // 'change'
+  const SEL_VALUE = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  const SEL_INDEX = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+  let openList = null; // { sel, btn, list, active, timer }
+
+  function enhanceSelect(sel) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = sel.className + ' cselect';
+    btn.setAttribute('aria-haspopup', 'listbox');
+    btn.setAttribute('aria-expanded', 'false');
+    const text = document.createElement('span');
+    text.className = 'cselect-text';
+    btn.append(text);
+    // (before the select: a <label> around them both then clicks the button)
+    sel.before(btn);
+    sel.hidden = true;
+    sel.tabIndex = -1;
+    const refresh = () => {
+      const o = sel.options[sel.selectedIndex];
+      put(text, o ? o.text : '');
+      putAttr(btn, 'title', o ? o.text : '');
+      const aria = sel.getAttribute('aria-label');
+      if (aria) putAttr(btn, 'aria-label', aria);
+      btn.disabled = sel.disabled;
+      if (openList?.sel === sel) { openList.active = sel.selectedIndex; markList(); }
+    };
+    sel.refreshList = refresh;
+    for (const [prop, base] of [['value', SEL_VALUE], ['selectedIndex', SEL_INDEX]]) {
+      Object.defineProperty(sel, prop, {
+        configurable: true,
+        get() { return base.get.call(sel); },
+        set(v) { base.set.call(sel, v); refresh(); },
+      });
+    }
+    // options filled anew (another device, the language): the open list too
+    new MutationObserver(() => { refresh(); if (openList?.sel === sel) drawList(); })
+      .observe(sel, { childList: true, subtree: true, characterData: true, attributes: true });
+    sel.addEventListener('change', refresh);
+    btn.addEventListener('click', () => (openList?.sel === sel ? closeList() : openSelectList(sel, btn)));
+    btn.addEventListener('keydown', (e) => {
+      const open = openList?.sel === sel;
+      if (!open) {
+        if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) { e.preventDefault(); openSelectList(sel, btn); }
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); moveActive(e.key === 'ArrowDown' ? 1 : -1); }
+      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); openList.active = e.key === 'Home' ? -1 : sel.options.length; moveActive(e.key === 'Home' ? 1 : -1); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickOption(openList.active); }
+      else if (e.key === 'Tab') closeList();
+    });
+    refresh();
+  }
+
+  function openSelectList(sel, btn) {
+    closeList();
+    if (sel.disabled || !sel.options.length) return;
+    const list = document.createElement('div');
+    list.className = 'cselect-list';
+    list.setAttribute('role', 'listbox');
+    // (the button keeps the focus: arrows and Enter still reach it)
+    list.addEventListener('pointerdown', (e) => e.preventDefault());
+    list.addEventListener('click', (e) => {
+      const o = e.target.closest('.cselect-opt');
+      if (o && !o.classList.contains('off')) pickOption(+o.dataset.i);
+    });
+    list.addEventListener('pointermove', (e) => {
+      const o = e.target.closest('.cselect-opt');
+      if (o && !o.classList.contains('off') && openList && openList.active !== +o.dataset.i) { openList.active = +o.dataset.i; markList(false); }
+    });
+    document.body.append(list);
+    openList = { sel, btn, list, active: sel.selectedIndex };
+    btn.setAttribute('aria-expanded', 'true');
+    btn.classList.add('open');
+    drawList();
+    // the button gone (the room left, the window shut) or moved: the list goes with it
+    let at = btn.getBoundingClientRect();
+    openList.timer = setInterval(() => {
+      if (!btn.isConnected || !btn.offsetParent) return closeList();
+      const r = btn.getBoundingClientRect();
+      if (r.left !== at.left || r.top !== at.top || r.width !== at.width) { at = r; placeList(); }
+    }, 200);
+  }
+
+  function drawList() {
+    const { sel, list } = openList;
+    const opt = (o) => `<div class="cselect-opt${o.disabled ? ' off' : ''}" role="option" data-i="${o.index}">${esc(o.text)}</div>`;
+    list.innerHTML = [...sel.children].map((c) => (c.tagName === 'OPTGROUP'
+      ? `<div class="cselect-group">${esc(c.label)}</div>${[...c.children].map(opt).join('')}`
+      : opt(c))).join('');
+    placeList();
+    markList();
+  }
+
+  /** the picked one and the one the arrows are on; `reveal`: scrolled into sight */
+  function markList(reveal = true) {
+    const { sel, list, active } = openList;
+    for (const el of list.children) {
+      if (!el.dataset.i) continue;
+      const i = +el.dataset.i;
+      el.classList.toggle('on', i === sel.selectedIndex);
+      el.classList.toggle('active', i === active);
+      el.setAttribute('aria-selected', String(i === sel.selectedIndex));
+      if (reveal && i === active) el.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function moveActive(step) {
+    const { sel } = openList;
+    let i = openList.active;
+    for (let n = 0; n < sel.options.length; n++) {
+      i += step;
+      if (i < 0 || i >= sel.options.length) return;
+      if (!sel.options[i].disabled) break;
+    }
+    openList.active = i;
+    markList();
+  }
+
+  /** below the button, or above it where there is more room (the bottom bar's list) */
+  function placeList() {
+    const { btn, list } = openList;
+    const r = btn.getBoundingClientRect();
+    const gap = 6, edge = 8;
+    list.style.minWidth = r.width + 'px';
+    list.style.maxWidth = Math.max(r.width, innerWidth - edge * 2) + 'px';
+    list.style.maxHeight = 'none';
+    const want = list.scrollHeight;
+    const below = innerHeight - r.bottom - gap - edge, above = r.top - gap - edge;
+    const down = below >= Math.min(want, 240) || below >= above;
+    list.style.maxHeight = Math.min(360, down ? below : above) + 'px';
+    list.style.top = down ? r.bottom + gap + 'px' : '';
+    list.style.bottom = down ? '' : innerHeight - r.top + gap + 'px';
+    list.style.left = Math.max(edge, Math.min(r.left, innerWidth - edge - list.offsetWidth)) + 'px';
+    list.classList.toggle('up', !down);
+  }
+
+  function pickOption(i) {
+    if (!openList) return;
+    const { sel, btn } = openList;
+    closeList();
+    btn.focus();
+    if (i < 0 || i >= sel.options.length || i === sel.selectedIndex) return;
+    SEL_INDEX.set.call(sel, i);
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function closeList() {
+    if (!openList) return;
+    clearInterval(openList.timer);
+    openList.list.remove();
+    openList.btn.setAttribute('aria-expanded', 'false');
+    openList.btn.classList.remove('open');
+    openList = null;
+  }
+  // a click anywhere else shuts it; the wheel does not (it scrolls the list when on it),
+  // only the page it sits on scrolling away under it
+  document.addEventListener('pointerdown', (e) => {
+    if (openList && !openList.list.contains(e.target) && !openList.btn.contains(e.target)) closeList();
+  }, true);
+  document.addEventListener('scroll', (e) => {
+    if (openList && e.target !== openList.list && e.target.contains?.(openList.btn)) closeList();
+  }, true);
+  addEventListener('resize', () => closeList());
+  addEventListener('blur', () => closeList());
+  // (Escape shuts the list alone, before the window or menu it sits in)
+  document.addEventListener('keydown', (e) => {
+    if (openList && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); const { btn } = openList; closeList(); btn.focus(); }
+  }, true);
+
   /* ═══════════════════════ INIT ═══════════════════════ */
+  $$('select.select').forEach(enhanceSelect);
   // the language list: every language file there is, by its own name
   for (const [code, name] of i18n.languages()) $('#set-language').append(new Option(name, code));
   i18n.apply();

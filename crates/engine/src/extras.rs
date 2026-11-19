@@ -235,13 +235,16 @@ impl RecTap {
     /// `stereo` is interleaved stereo whatever the track is; `channels` says what it is (a
     /// mono track has the same sound in both, and is written as one channel).
     pub fn write(&mut self, slot: usize, track: PeerId, stereo: &[f32], channels: u8) {
-        let Some(mut a) = self.acc.get(slot).copied() else { return };
+        // (filled where it lies: taking the 2 KB block out and putting it back, for every
+        // track on every callback, was two copies of it for a few dozen frames)
         let mut pos = self.pos;
+        let Self { tx, acc, dropped, .. } = self;
+        let Some(a) = acc.get_mut(slot) else { return };
         let mut rest = stereo;
         // a different track took this slot, there was a gap, or the track turned stereo (or
         // mono): flush what we had
         if a.frames > 0 && (a.track != track || a.pos + a.frames as u64 != pos || a.channels != channels) {
-            self.flush(&mut a);
+            Self::flush(tx, dropped, a);
         }
         while !rest.is_empty() {
             if a.frames == 0 {
@@ -257,27 +260,23 @@ impl RecTap {
             pos += n as u64;
             rest = &rest[n * 2..];
             if a.frames as usize == BLOCK {
-                self.flush(&mut a);
+                Self::flush(tx, dropped, a);
             }
         }
-        self.acc[slot] = a;
     }
 
-    fn flush(&mut self, a: &mut RecBlock) {
-        if self.tx.push(*a).is_err() {
-            self.dropped.fetch_add(1, Relaxed);
+    fn flush(tx: &mut rtrb::Producer<RecBlock>, dropped: &AtomicU64, a: &mut RecBlock) {
+        if tx.push(*a).is_err() {
+            dropped.fetch_add(1, Relaxed);
         }
         a.frames = 0;
     }
 
     /// Pushes partial blocks (called once when recording stops).
     pub fn flush_all(&mut self) {
-        for i in 0..self.acc.len() {
-            let mut a = self.acc[i];
-            if a.frames > 0 {
-                self.flush(&mut a);
-                self.acc[i] = a;
-            }
+        let Self { tx, acc, dropped, .. } = self;
+        for a in acc.iter_mut().filter(|a| a.frames > 0) {
+            Self::flush(tx, dropped, a);
         }
     }
 }

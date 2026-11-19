@@ -315,6 +315,8 @@ pub struct Session {
     cb_seen: (u32, u32),
     /// the ASIO driver stopped answering (told the user once)
     driver_hung: bool,
+    /// driver checks in a row that said "changed" (each followed by a reopen)
+    changed_in_row: u8,
     /// when we last tried to reopen a broken device
     reopen_at: Option<Instant>,
     /// host: recent join attempts with a wrong password (limits guessing)
@@ -509,6 +511,11 @@ pub fn open_error(settings: &Settings, e: &gachi_engine::EngineError) -> String 
     if settings.daw_mode() {
         return gachi_lang::tr!("room.cant_open_vst", e);
     }
+    // the driver hands out samples in a format we cannot read (3-byte 24 bit, 64 bit float:
+    // some older drivers): closing other programs would not help, so that is not the advice
+    if matches!(e, gachi_engine::EngineError::Config(gachi_engine::ConfigError::StreamTypeNotSupported)) {
+        return gachi_lang::tr!("room.asio_format_not");
+    }
     gachi_lang::tr!("room.cant_open_asio", e)
 }
 
@@ -601,6 +608,11 @@ impl Session {
             },
         );
         self.apply_peer_rate(id);
+        // (until it tells its rate: taken to run at ours, the device's real one, not the
+        // one in the settings the network side was started with)
+        if self.peers.get(&id).is_some_and(|p| p.info.audio.is_none()) {
+            self.net.set_peer_rate(id, self.sample_rate);
+        }
         // introduce ourselves (queued until the link is up)
         self.send_to(id, &PeerMsg::Status { audio: self.my_audio() });
     }
@@ -1333,7 +1345,22 @@ impl Session {
                 }
                 check => {
                     self.driver_hung = false;
-                    let changed = check == DriverCheck::Changed;
+                    // a driver whose own figures never match what it runs (a wrapper that
+                    // hands out blocks of another size than it names) says "changed" after
+                    // every reopen: followed twice in a row, then left alone, instead of
+                    // reopening the device every 2 s for as long as the room lasts
+                    let mut changed = check == DriverCheck::Changed;
+                    if !changed {
+                        self.changed_in_row = 0;
+                    } else if self.changed_in_row >= 2 {
+                        if self.changed_in_row == 2 {
+                            self.changed_in_row = 3;
+                            tracing::warn!("the driver keeps reporting other settings than it runs: no longer reopening for it");
+                        }
+                        changed = false;
+                    } else {
+                        self.changed_in_row += 1;
+                    }
                     (changed || e.is_broken(&mut self.cb_seen), changed)
                 }
             },
@@ -1401,6 +1428,7 @@ impl Session {
             input_ms: self.device_latency().0 as f32 / self.sample_rate as f32 * 1000.0,
             sample_rate: self.sample_rate,
             link: self.link,
+            daw: self.engine.as_ref().is_some_and(|e| e.is_daw()),
         }
     }
 
@@ -1499,6 +1527,12 @@ impl Session {
 
     pub fn stop_recording(&mut self) -> Option<Result<RecordingResult, String>> {
         self.engine.as_mut()?.stop_recording()
+    }
+
+    /// Stops the recording; its files are finished by the caller, without the session held
+    /// (see `gachi_engine::RecordingFiles`).
+    pub fn stop_recording_begin(&mut self) -> Option<Result<gachi_engine::RecordingFiles, String>> {
+        self.engine.as_mut()?.stop_recording_begin()
     }
 
     /// The recording cannot be written (a full disk, a drive pulled out): stop it now and
@@ -1773,6 +1807,7 @@ impl Session {
                 channels: st.channels,
                 sample_rate: p.info.audio.map_or(0, |a| a.sample_rate),
                 packet_frames: st.packet_frames,
+                daw: p.info.audio.is_some_and(|a| a.daw),
             },
             loss: st.loss_pct,
             outage_ms: st.last_outage.filter(|(at, _)| at.elapsed() < Duration::from_secs(30)).map_or(0.0, |(_, ms)| ms),
@@ -1927,7 +1962,9 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
                 let locked = password.is_some();
                 tauri::async_runtime::spawn(async move { gate::open(&app, &server, None, None, max, 1, locked).await })
             };
-            let media = open_media(&step, gathered.take().expect("gathered once"), 1, &settings, candidates_n, 0);
+            // (waits on the driver, for seconds with some: the runtime is told, so that its
+            // other tasks are not held up on this thread meanwhile)
+            let media = tokio::task::block_in_place(|| open_media(&step, gathered.take().expect("gathered once"), 1, &settings, candidates_n, 0));
             let o = match unless_cancelled(code_task, &cancelled).await {
                 Ok(done) => done.map_err(|e| e.to_string())?.map_err(|(_, e)| e)?,
                 // the code may still open after this; nobody holds it, it is never listed
@@ -2028,7 +2065,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     // 2. UDP and audio (a new room opened them already, while waiting for its code)
     let (net, engine) = match media {
         Some(m) => m,
-        None => open_media(&step, gathered.take().expect("gathered once"), me, &settings, candidates_n, peers.len())?,
+        None => tokio::task::block_in_place(|| open_media(&step, gathered.take().expect("gathered once"), me, &settings, candidates_n, peers.len()))?,
     };
     if let Some(n) = device_note(&settings, &engine.info) {
         notice(&app, n);
@@ -2066,6 +2103,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         announced_in_ms: 0.0,
         cb_seen: (0, 0),
         driver_hung: false,
+        changed_in_row: 0,
         reopen_at: None,
         bad_tries: Vec::new(),
         code_since: matches!(intent, Intent::Create { .. }).then(Instant::now),
@@ -2150,7 +2188,8 @@ async fn ticker(app: AppHandle) {
             s.log_stats();
         }
         if n.is_multiple_of(60) {
-            s.check_audio(&app);
+            // (asks the driver, and reopens the device when it must: both wait on it)
+            tokio::task::block_in_place(|| s.check_audio(&app));
             s.send_link_reports();
             // the device's real buffer is known once its callbacks ran: tell the room
             // (WASAPI usually runs ~10 ms whatever was asked)
@@ -2161,7 +2200,7 @@ async fn ticker(app: AppHandle) {
             }
         }
         if n.is_multiple_of(15) {
-            if let Some(r) = s.recording_failed() {
+            if let Some(r) = tokio::task::block_in_place(|| s.recording_failed()) {
                 let _ = app.emit("recording", crate::commands::recording_json(r));
             }
         }
@@ -2322,7 +2361,7 @@ mod tests {
             token: u32::MAX,
             key: Some([255; 32]),
             aes: true,
-            audio: Some(AudioInfo { input_ms: 123.456_79, sample_rate: 384_000, link: Link::Wifi }),
+            audio: Some(AudioInfo { input_ms: 123.456_79, sample_rate: 384_000, link: Link::Wifi, daw: true }),
             seats: 16,
             // (the longest kind of network to name)
             nat: Some(gachi_proto::signal::NatKind::Unknown),

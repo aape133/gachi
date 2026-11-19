@@ -319,8 +319,10 @@ impl Engine {
     /// platform, so they live on an owner thread until the engine is dropped: the shared
     /// ASIO thread for ASIO (drivers are bound to one thread), else a thread of our own.
     pub fn start(cfg: EngineConfig, sink: Box<dyn PacketSink>) -> Result<Self, EngineError> {
-        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(32);
-        let (garbage_tx, garbage_rx) = rtrb::RingBuffer::new(32);
+        // (room to spare: a whole room joining or leaving at once is 15 commands, and what
+        // does not fit the way back would be freed on the audio thread)
+        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(128);
+        let (garbage_tx, garbage_rx) = rtrb::RingBuffer::new(128);
         let self_params = Arc::new(SelfParams::default());
         self_params.input_map.store(cfg.input.encode(), Relaxed);
         let self_meter = Arc::new(Meter::default());
@@ -491,7 +493,7 @@ impl Engine {
         self.recorder.is_some()
     }
 
-    /// Starts writing one WAV per track (you + each peer, as heard here) into `dir`.
+    /// Starts writing one file per track (you + each peer, as heard here) into `dir`.
     /// `names` maps track ids ([`SELF_TRACK`] for you) to file names; peers that join later
     /// get a track that starts with silence, so every file lines up. `opts`: the files'
     /// format and names, and whether the mix is recorded too.
@@ -514,6 +516,12 @@ impl Engine {
 
     /// Stops recording and waits for the files to be finished.
     pub fn stop_recording(&mut self) -> Option<Result<RecordingResult, String>> {
+        Some(self.stop_recording_begin()?.and_then(|files| files.finish()))
+    }
+
+    /// Stops recording; the files are finished by [`RecordingFiles::finish`], which the
+    /// caller may do elsewhere (it waits for the disk: seconds for a long FLAC recording).
+    pub fn stop_recording_begin(&mut self) -> Option<Result<RecordingFiles, String>> {
         let rec = self.recorder.take()?;
         if self.cmd_tx.push(Cmd::StopRec).is_ok() {
             // the audio thread flushes and hands the tap back; dropping it ends the writer
@@ -528,7 +536,7 @@ impl Engine {
             self.recorder = Some(rec);
             return Some(Err(gachi_lang::tr!("audio.audio_device_stopped")));
         }
-        Some(rec.finish())
+        Some(Ok(RecordingFiles(rec)))
     }
 
     /// Input + output buffer latency in ms (what this machine adds on its own).
@@ -672,6 +680,16 @@ impl Engine {
         let asked = self.info.buffer_size.unwrap_or(480);
         let real = |c: &CallbackStats| c.range().map_or(asked, |(_, max)| max);
         (real(&self.input_cb), real(&self.output_cb))
+    }
+}
+
+/// A recording that was stopped, its files still being written out.
+pub struct RecordingFiles(Recorder);
+
+impl RecordingFiles {
+    /// Waits for the files to be finished.
+    pub fn finish(self) -> Result<RecordingResult, String> {
+        self.0.finish()
     }
 }
 
@@ -860,6 +878,7 @@ fn processors(
         block: (0, 0),
         acc: Frame::EMPTY,
         acc_pos: 0,
+        acc_ch: if cfg.input.is_mono() { 1 } else { 2 },
         seq: 0,
         sink,
         monitor_tx,
@@ -1215,6 +1234,8 @@ struct InputProcessor {
     block: (usize, u32),
     acc: Frame,
     acc_pos: usize,
+    /// channels the packet under way is being filled as (1 or 2)
+    acc_ch: usize,
     seq: u32,
     sink: Box<dyn PacketSink>,
     monitor_tx: rtrb::Producer<f32>,
@@ -1234,19 +1255,25 @@ impl InputProcessor {
     /// At the start of a block: go on with the packet size wanted. What is left of the
     /// last packet goes out short, once, so that from here on packets end where blocks end
     /// (carried over, that rest would ride along for good: every packet that much late).
+    ///
+    /// The same when the input turns mono or stereo with a packet under way: what is in it
+    /// was laid out the other way (going on in it sent one packet of scrambled sound).
     #[inline]
     fn follow(&mut self, out_ch: usize) {
-        if self.packet_frames == self.want {
+        let widened = self.acc_pos > 0 && self.acc_ch != out_ch;
+        if self.packet_frames == self.want && !widened {
+            self.acc_ch = out_ch;
             return;
         }
         if self.acc_pos > 0 {
             self.acc.seq = self.seq;
             self.acc.frames = self.acc_pos as u16;
-            self.acc.channels = out_ch as u8;
+            self.acc.channels = self.acc_ch as u8;
             self.sink.send(&self.acc);
             self.seq = self.seq.wrapping_add(1);
             self.acc_pos = 0;
         }
+        self.acc_ch = out_ch;
         self.packet_frames = self.want;
         self.cb.packet.store(self.want as u32, Relaxed);
     }

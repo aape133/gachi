@@ -103,7 +103,7 @@ fn asio_input_names(n: u16) -> Vec<String> {
             return Vec::new();
         }
         let bytes: Vec<u8> = info.name.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
-        names.push(String::from_utf8_lossy(&bytes).trim().to_string());
+        names.push(driver_text(&bytes, CP_SYSTEM).trim().to_string());
     }
     names
 }
@@ -235,4 +235,50 @@ pub(crate) fn find_device(host: &cpal::Host, name: Option<&str>, input: bool) ->
         tracing::warn!("device {name:?} not found for {}, using default", if input { "input" } else { "output" });
     }
     if input { host.default_input_device() } else { host.default_output_device() }
+}
+
+/// The system's own code page (`CP_ACP`): what a driver writes its names in.
+#[allow(dead_code)]
+const CP_SYSTEM: u32 = 0;
+
+/// A name as an ASIO driver gives it: bytes in Windows' code page for programs that do not
+/// speak Unicode (949 on a Korean system, 932 on a Japanese one), not UTF-8. Read as UTF-8,
+/// a Korean or Japanese channel name came out as question marks. Plain ASCII (nearly every
+/// driver) and names that are UTF-8 after all stay as they are.
+#[cfg(windows)]
+#[allow(dead_code)]
+fn driver_text(bytes: &[u8], code_page: u32) -> String {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.to_string();
+    }
+    let mut wide = vec![0u16; bytes.len()];
+    // SAFETY: both buffers are ours, with the lengths given; a character never takes more
+    // UTF-16 units than it took bytes
+    let n = unsafe { MultiByteToWideChar(code_page, 0, bytes.as_ptr(), bytes.len() as i32, wide.as_mut_ptr(), wide.len() as i32) };
+    if n <= 0 {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+    String::from_utf16_lossy(&wide[..n as usize])
+}
+
+#[cfg(not(windows))]
+#[allow(dead_code)]
+fn driver_text(bytes: &[u8], _code_page: u32) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+#[cfg(all(test, windows))]
+mod name_tests {
+    use super::driver_text;
+
+    #[test]
+    fn a_drivers_names_are_read_in_its_code_page() {
+        assert_eq!(driver_text(b"Analogue 1", 0), "Analogue 1");
+        // "마이크 1" in code page 949 (Korean), "マイク 1" in 932 (Japanese)
+        assert_eq!(driver_text(&[0xB8, 0xB6, 0xC0, 0xCC, 0xC5, 0xA9, b' ', b'1'], 949), "마이크 1");
+        assert_eq!(driver_text(&[0x83, 0x7D, 0x83, 0x43, 0x83, 0x4E, b' ', b'1'], 932), "マイク 1");
+        // a driver that writes UTF-8 after all
+        assert_eq!(driver_text("마이크".as_bytes(), 949), "마이크");
+    }
 }

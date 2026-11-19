@@ -57,6 +57,8 @@ const HOST_CHECK_MS = 3600_000;
 /** a host that has not sent its keepalive ("ping", every 5 s) for this long is gone: its
  *  PC lost power or its network, and the connection was never closed */
 const HOST_STALE_MS = 5 * 60_000;
+/** …and when someone asks to join: a host silent this long (12 pings missed) is gone */
+const JOIN_STALE_MS = 60_000;
 /** the biggest room the server keeps (the app itself opens up to 16 for now: room to grow
  *  without a server update) */
 const MAX_ROOM = 32;
@@ -160,7 +162,7 @@ export default {
     const isHost = url.pathname === "/ws/host";
     const join = url.pathname.match(/^\/ws\/join\/([^/]+)$/);
     const nearby = url.pathname === "/ws/nearby";
-    if (!isHost && !join && !nearby) return new Response("not found", { status: 404 });
+    if (!isHost && !join && !nearby) return notFound(req.headers.get("Accept-Language"));
     if (req.headers.get("Upgrade") !== "websocket") return new Response("expected a WebSocket", { status: 426 });
     // the app sends no Origin; a browser always does: no web page may use the server (it
     // would spend its visitors' attempts and the server's calls)
@@ -357,6 +359,13 @@ export class Jam extends DurableObject<Env> {
     const role = req.headers.get("x-gachi-role") === "host" ? "host" : "join";
     const net = req.headers.get("x-gachi-net") ?? "local";
     const who = req.headers.get("x-gachi-who") ?? undefined;
+    // a host that stopped answering (power cut, network gone) and whose connection never
+    // closed: found out now, when someone wants in, not at the hourly look (until then
+    // every newcomer waited a minute for an answer that could not come). The app says
+    // "ping" every 5 s, answered without waking this object.
+    if (role === "join" && this.dropStale(JOIN_STALE_MS) && this.hosts().length === 0) {
+      await this.hostLeft(null);
+    }
     // a code no host is connected to: refused here, without touching the object's storage
     // (most of these are mistyped or old codes, and each would leave an object behind)
     if (role === "join" && this.hosts().length === 0) return refuse(NO_HOST[0], NO_HOST[1]);
@@ -538,7 +547,8 @@ export class Jam extends DurableObject<Env> {
         // (the same listing again, from the same network: nothing to write)
         const was = room.lobby;
         if ((!was && !entry) || (was && entry && was.net === (att.net ?? "local") && JSON.stringify(was.entry) === JSON.stringify(entry))) return;
-        if (room.lobby && (!entry || room.lobby.net !== att.net)) await this.unlist(room);
+        // (listed under its router's value: one that changed is another listing)
+        if (room.lobby && (!entry || room.lobby.net !== att.net || room.lobby.entry.gw !== entry.gw)) await this.unlist(room);
         room.lobby = entry ? { net: att.net ?? "local", entry } : undefined;
         await this.ctx.storage.put("room", room);
         await this.list(room);
@@ -621,7 +631,27 @@ export class Jam extends DurableObject<Env> {
   }
 
   /** The host's connection `ws` is over, and no other holds the code: see `webSocketClose`. */
-  private async hostLeft(ws: WebSocket) {
+  /** Closes hosts not heard from for `stale` ms; whether any was. */
+  private dropStale(stale: number): boolean {
+    const now = Date.now();
+    let dropped = false;
+    for (const ws of this.hosts()) {
+      const att = ws.deserializeAttachment() as Attachment;
+      const seen = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? att.at ?? 0;
+      if (now - seen > stale) {
+        dropped = true;
+        ws.serializeAttachment({ ...att, open: false } satisfies Attachment);
+        try {
+          ws.close(1001, "stale");
+        } catch {
+          /* already closed */
+        }
+      }
+    }
+    return dropped;
+  }
+
+  private async hostLeft(ws: WebSocket | null) {
     if (this.hosts().filter((h) => h !== ws).length > 0) return;
     await this.ctx.storage.setAlarm(Date.now() + GRACE_MS);
     const room = await this.ctx.storage.get<Stored>("room");
@@ -636,19 +666,7 @@ export class Jam extends DurableObject<Env> {
     // a host whose connection never closed but who stopped answering (power cut, network
     // gone): without this its room, and its code, would stay here for good
     const now = Date.now();
-    const stale = Number(this.env.HOST_STALE_MS) || HOST_STALE_MS;
-    for (const ws of this.hosts()) {
-      const att = ws.deserializeAttachment() as Attachment;
-      const seen = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? att.at ?? 0;
-      if (now - seen > stale) {
-        ws.serializeAttachment({ ...att, open: false } satisfies Attachment);
-        try {
-          ws.close(1001, "stale");
-        } catch {
-          /* already closed */
-        }
-      }
-    }
+    this.dropStale(Number(this.env.HOST_STALE_MS) || HOST_STALE_MS);
     if (this.hosts().length > 0) {
       await this.ctx.storage.setAlarm(now + (Number(this.env.HOST_CHECK_MS) || HOST_CHECK_MS));
       return;
@@ -672,7 +690,7 @@ export class Jam extends DurableObject<Env> {
 
   private async unlist(room: Stored) {
     const at = parseNet(room.lobby?.net);
-    if (at) await this.env.LOBBY.get(this.env.LOBBY.idFromName(`nearby-${at.shard}`)).drop(room.code);
+    if (at) await this.env.LOBBY.get(this.env.LOBBY.idFromName(`nearby-${at.shard}`)).drop(room.code, at.tag, room.lobby?.entry.gw ?? null);
   }
 }
 
@@ -708,15 +726,23 @@ export class Local extends DurableObject<Env> {
   /** lookups per caller this minute (in memory: losing it on eviction is fine) */
   private hits = new Map<string, { start: number; count: number }>();
 
+  /** Where a room is kept: by network tag and router value first, so that a lookup reads
+   *  only the rooms behind the caller's router, not every room of the shard. */
+  private static at(tag: string, gw: string | null, code: string): string {
+    return `${tag}.${gw ?? "-"}.${code}`;
+  }
+
   async put(room: Listed) {
-    await this.ctx.storage.put(room.code, { ...room, at: Date.now() });
+    await this.ctx.storage.put(Local.at(room.tag, room.gw, room.code), { ...room, at: Date.now() });
+    // (as listed before rooms were kept by router: under the code alone)
+    await this.ctx.storage.delete(room.code);
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);
   }
 
-  async drop(code: string) {
+  async drop(code: string, tag: string | null = null, gw: string | null = null) {
     // (only a shard that lists something is touched at all)
     if ((await this.ctx.storage.getAlarm()) === null) return;
-    await this.ctx.storage.delete(code);
+    await this.ctx.storage.delete(tag ? [Local.at(tag, gw, code), code] : [code]);
     if ((await this.ctx.storage.list({ limit: 1 })).size === 0) await this.empty();
   }
 
@@ -730,8 +756,8 @@ export class Local extends DurableObject<Env> {
     const now = Date.now();
     const all = await this.ctx.storage.list<Listed>();
     let left = 0;
-    for (const [code, r] of all) {
-      if (now - (r.at ?? 0) > LOBBY_TTL_MS) await this.ctx.storage.delete(code);
+    for (const [key, r] of all) {
+      if (now - (r.at ?? 0) > LOBBY_TTL_MS) await this.ctx.storage.delete(key);
       else left++;
     }
     if (left > 0) await this.ctx.storage.setAlarm(now + SWEEP_MS);
@@ -751,17 +777,19 @@ export class Local extends DurableObject<Env> {
     } else if (++h.count > NEARBY_PER_MIN) {
       return null;
     }
-    // (a shard with nothing listed has no alarm: answered without reading its storage)
-    if ((await this.ctx.storage.getAlarm()) === null) return [];
-    const all = await this.ctx.storage.list<Listed>();
+    // (no router value: nothing is listed for it. A shard with nothing listed has no
+    // alarm: answered without reading its storage)
+    if (!gw || (await this.ctx.storage.getAlarm()) === null) return [];
+    // the tag narrows it to about a thousand addresses; the router value makes it exact:
+    // only those rooms are read
+    const all = await this.ctx.storage.list<Listed>({ prefix: Local.at(tag, gw, "") });
     const out: Listed[] = [];
-    for (const [code, r] of all) {
+    for (const [key, r] of all) {
       if (now - (r.at ?? 0) > LOBBY_TTL_MS) {
-        await this.ctx.storage.delete(code);
+        await this.ctx.storage.delete(key);
         continue;
       }
-      // the tag narrows it to about a thousand addresses; the router value makes it exact
-      if (r.tag !== tag || !gw || r.gw !== gw) continue;
+      if (r.tag !== tag || r.gw !== gw) continue;
       if (lan && r.lan && lan !== r.lan) continue;
       out.push(r);
     }
@@ -889,6 +917,32 @@ function invitePage(raw: string, accept: string | null): Response {
 }
 
 const FONTS = `system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Yu Gothic UI", Meiryo, sans-serif`;
+
+const NOT_FOUND = {
+  ko: ["페이지를 찾을 수 없어요", "gachi 첫 화면으로"],
+  en: ["This page doesn't exist", "To gachi's front page"],
+  ja: ["ページが見つかりません", "gachiのトップへ"],
+};
+
+/** An address that is nothing here: a page that says so and leads home. */
+function notFound(accept: string | null): Response {
+  const lang = inviteLang(accept);
+  const [text, home] = NOT_FOUND[lang];
+  const page = `<!doctype html><html lang="${lang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>gachi</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<body style="font-family:${FONTS};background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0;text-align:center">
+<main><p style="font-size:18px;font-weight:600;margin:0 0 16px">${text}</p><a href="${lang === "ko" ? "/" : `/${lang}/`}" style="color:#b0a6ff">${home}</a></main></body></html>`;
+  return new Response(page, {
+    status: 404,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "content-language": lang,
+      vary: "Accept-Language",
+      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+    },
+  });
+}
 
 const PAGE_NOT_FOUND = `<!doctype html><html lang="{LANG}"><meta charset="utf-8"><title>gachi</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <body style="font-family:${FONTS};background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0">

@@ -312,7 +312,7 @@ impl Receiver {
                             last_upgrade: Instant::now(),
                         },
                     );
-                    self.stats.lock().unwrap().insert(id, PeerNetStats::default());
+                    self.stats.lock().unwrap_or_else(|e| e.into_inner()).insert(id, PeerNetStats::default());
                 }
                 Ctl::SetRate { id, sample_rate } => {
                     if let Some(p) = self.peers.get_mut(&id) {
@@ -386,7 +386,7 @@ impl Receiver {
                             retire(&mut self.retired, id, key, keys, p.replay);
                         }
                     }
-                    self.stats.lock().unwrap().remove(&id);
+                    self.stats.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
                     self.publish_routes();
                 }
                 Ctl::Goodbye => {
@@ -429,16 +429,16 @@ impl Receiver {
         let online = self.stun_server.is_none() || now - self.internet_at < OFFLINE_AFTER;
 
         for (&id, p) in self.peers.iter_mut() {
-            // room messages: (re)send what is due
-            if let (Some(route), Some(keys), false) = (p.route, p.keys.as_ref(), p.control.idle()) {
+            // room messages: (re)send what is due. Not to a peer gone silent: they wait
+            // (none is given up on, see `ControlChannel::send_due`) and go once it is heard
+            // again, in order
+            let heard = p.last_heard.is_some_and(|h| now - h < REPUNCH_AFTER);
+            if let (Some(route), Some(keys), false, true) = (p.route, p.keys.as_ref(), p.control.idle(), heard) {
                 let mut buf = [0u8; MAX_INNER];
-                let dropped = p.control.send_due(now, |seq, data| {
+                p.control.send_due(now, |seq, data| {
                     let n = audio::encode_control(&mut buf, me, seq, data);
                     send_sealed(&self.socket, &self.cfg, keys, route, &buf[..n]);
                 });
-                if dropped > 0 {
-                    tracing::warn!(id, dropped, "room messages never acknowledged");
-                }
             }
 
             // silent for too long: gone without saying bye (crash, network loss)

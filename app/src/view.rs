@@ -39,6 +39,8 @@ pub struct StreamView {
     pub channels: u8,
     pub sample_rate: u32,
     pub packet_frames: u16,
+    /// the peer plays through the DAW plugin (its input figure is the DAW's block alone)
+    pub daw: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]

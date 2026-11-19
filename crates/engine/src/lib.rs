@@ -27,7 +27,7 @@ pub mod meter;
 pub mod params;
 
 pub use device::{list_devices, open_asio_control_panel, DeviceInfo, HostChoice, ASIO_AVAILABLE};
-pub use engine::{auto_packet_frames, DriverCheck, Engine, EngineConfig, EngineError, InputChannels, PacketSink, PeerHandle, StreamInfo};
+pub use engine::{auto_packet_frames, DriverCheck, Engine, RecordingFiles, EngineConfig, EngineError, InputChannels, PacketSink, PeerHandle, StreamInfo};
 pub use extras::{safe_name, MetronomeParams, RecOptions, RecordingResult, MIX_TRACK, SELF_TRACK};
 pub use frame::Frame;
 pub use jitter::{JitterBuffer, JitterStats};
@@ -89,3 +89,4 @@ pub(crate) mod alloc_guard {
 #[cfg(test)]
 #[global_allocator]
 static ALLOC: alloc_guard::Counting = alloc_guard::Counting;
+pub use cpal::DefaultStreamConfigError as ConfigError;

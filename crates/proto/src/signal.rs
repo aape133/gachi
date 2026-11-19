@@ -106,6 +106,10 @@ pub struct AudioInfo {
     pub input_ms: f32,
     pub sample_rate: u32,
     pub link: Link,
+    /// it plays through the DAW plugin: `input_ms` is the DAW's block alone (what the DAW's
+    /// own audio device adds is not known to its app). Older versions do not say.
+    #[serde(default)]
+    pub daw: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

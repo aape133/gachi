@@ -221,6 +221,9 @@ pub(crate) struct FlacSink {
     bits: u32,
     frame_no: usize,
     dither: Dither,
+    /// blocks since the header last got the length, and how many go between two updates
+    since_header: usize,
+    header_every: usize,
 }
 
 impl FlacSink {
@@ -242,6 +245,8 @@ impl FlacSink {
             bits: bits as u32,
             frame_no: 0,
             dither: Dither::new(),
+            since_header: 0,
+            header_every: (sample_rate as usize * WAV_HEADER_EVERY_S).div_ceil(FLAC_BLOCK).max(1),
         })
     }
 
@@ -255,9 +260,30 @@ impl FlacSink {
         while self.pending.len() - at >= block {
             self.encode(at, block)?;
             at += block;
+            self.since_header += 1;
         }
         self.pending.drain(..at);
+        if self.since_header >= self.header_every {
+            self.since_header = 0;
+            self.header_now()?;
+        }
         Ok(())
+    }
+
+    /// The header again with the length so far, as a WAV file gets it (see
+    /// `WAV_HEADER_EVERY_S`): if the app or the PC goes down mid-recording, the file says how
+    /// long it is up to here. (The checksum comes only with the end: until then the header
+    /// says "none", which players take.)
+    fn header_now(&mut self) -> Result<(), String> {
+        let info = self.stream.stream_info_mut();
+        info.set_block_sizes(FLAC_BLOCK, FLAC_BLOCK).map_err(|e| e.to_string())?;
+        info.set_total_samples(self.ctx.total_samples());
+        let header = header_bytes(&self.stream)?;
+        let end = self.out.stream_position().map_err(io)?;
+        self.out.seek(SeekFrom::Start(0)).map_err(io)?;
+        self.out.write_all(&header).map_err(io)?;
+        self.out.seek(SeekFrom::Start(end)).map_err(io)?;
+        self.out.flush().map_err(io)
     }
 
     /// Encodes `pending[at..at + len]` as one block and writes it.
@@ -326,6 +352,26 @@ mod tests {
         // 3.84 GB of stereo: 32 bit float as before, more frames with fewer bits
         assert_eq!(RecFormat::Wav { bits: 32 }.part_frames(), 480_000_000);
         assert_eq!(RecFormat::Wav { bits: 16 }.part_frames(), 960_000_000);
+    }
+
+    /// A recording cut off (the app went down): the FLAC file says how long it is up to
+    /// the last time its header was written, and reads back that far.
+    #[test]
+    fn a_flac_file_left_unfinished_tells_its_length() {
+        let path = temp("cut.flac");
+        let rate = 48_000u32;
+        let sound = sine(rate as usize * 25, rate, 440.0, 2);
+        let mut s = Sink::create(&path, RecFormat::Flac { bits: 16 }, 2, rate).unwrap();
+        for part in sound.chunks(4800) {
+            s.write(part).unwrap();
+        }
+        drop(s); // never finished
+        let mut r = claxon::FlacReader::open(&path).unwrap();
+        let told = r.streaminfo().samples.unwrap_or(0);
+        assert!(told >= rate as u64 * 20 && told <= rate as u64 * 25, "the header tells {told} frames");
+        let read = r.samples().take_while(|s| s.is_ok()).count() as u64 / 2;
+        assert!(read >= told, "{read} frames read of {told} told");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

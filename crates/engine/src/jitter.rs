@@ -32,7 +32,7 @@
 //!   ±1000 ppm ≈ ±1.7 cents), so the buffer stays at its target without skips or dropouts.
 //! - **Sample-rate conversion**: a peer running at another rate (e.g. 44.1 kHz into our
 //!   48 kHz) is read at `base_ratio` = their rate / ours, on top of the drift correction.
-//!   Reads between samples use 4-point Catmull-Rom interpolation (much cleaner than linear).
+//!   Reads between samples weigh the 24 frames around the position (a windowed sinc: see `TAPS`).
 
 use crate::frame::Frame;
 
