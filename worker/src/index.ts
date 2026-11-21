@@ -970,7 +970,7 @@ const PAGE = `<!doctype html>
          font-family: ${FONTS}; }
   main { text-align: center; padding: 32px 20px; max-width: 360px; }
   h1 { font-size: 18px; font-weight: 600; margin: 0 0 18px; }
-  .code { font: 700 40px "Cascadia Mono", ui-monospace, Consolas, monospace; letter-spacing: .1em; margin: 6px 0 22px; }
+  .code { font: 700 40px ${FONTS}; font-variant-numeric: tabular-nums; letter-spacing: .1em; margin: 6px 0 22px; }
   a.btn { display: inline-block; padding: 12px 22px; border-radius: 6px; background: #e8e9ec; color: #0b0c0e;
           font-weight: 700; text-decoration: none; }
   p { color: #8b8f99; font-size: 14px; line-height: 1.6; margin-top: 22px; }
