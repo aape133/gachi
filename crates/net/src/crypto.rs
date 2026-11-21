@@ -37,7 +37,8 @@ pub fn aes_in_hardware() -> bool {
     static FAST: OnceLock<bool> = OnceLock::new();
     *FAST.get_or_init(|| {
         #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-        let fast = std::is_x86_feature_detected!("aes") && std::is_x86_feature_detected!("pclmulqdq");
+        let fast =
+            std::is_x86_feature_detected!("aes") && std::is_x86_feature_detected!("pclmulqdq");
         #[cfg(target_arch = "aarch64")]
         let fast = std::arch::is_aarch64_feature_detected!("aes");
         #[cfg(not(any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64")))]
@@ -64,7 +65,11 @@ impl Cipher {
     /// AES when both sides have it in hardware, else ChaCha20. Both sides compute this from
     /// the same two facts, so they agree.
     pub fn pick(mine: bool, theirs: bool) -> Self {
-        if mine && theirs { Self::Aes256Gcm } else { Self::ChaCha20Poly1305 }
+        if mine && theirs {
+            Self::Aes256Gcm
+        } else {
+            Self::ChaCha20Poly1305
+        }
     }
 
     pub fn label(self) -> &'static str {
@@ -128,28 +133,54 @@ impl Identity {
 
     /// Keys for talking to one peer, with the cipher both sides pick. `None` if their key is
     /// invalid (low-order point).
-    pub fn session_with(&self, my_id: PeerId, their_id: PeerId, their: &PeerKey) -> Option<PeerCrypto> {
+    pub fn session_with(
+        &self,
+        my_id: PeerId,
+        their_id: PeerId,
+        their: &PeerKey,
+    ) -> Option<PeerCrypto> {
         let cipher = Cipher::pick(aes_in_hardware(), their.aes);
         self.session_using(cipher, my_id, their_id, &their.public)
     }
 
     /// [`Identity::session_with`] with a given cipher.
-    pub fn session_using(&self, cipher: Cipher, my_id: PeerId, their_id: PeerId, their_public: &[u8; 32]) -> Option<PeerCrypto> {
+    pub fn session_using(
+        &self,
+        cipher: Cipher,
+        my_id: PeerId,
+        their_id: PeerId,
+        their_public: &[u8; 32],
+    ) -> Option<PeerCrypto> {
         let shared = self.secret.diffie_hellman(&PublicKey::from(*their_public));
         if !shared.was_contributory() {
             return None;
         }
         // both sides must derive the same bytes: order everything by peer id
-        let (lo, hi) = if my_id < their_id { (&self.public, their_public) } else { (their_public, &self.public) };
+        let (lo, hi) = if my_id < their_id {
+            (&self.public, their_public)
+        } else {
+            (their_public, &self.public)
+        };
         let mut info = Vec::with_capacity(64 + 32);
         info.extend_from_slice(cipher.label_for_keys());
         info.extend_from_slice(lo);
         info.extend_from_slice(hi);
         let mut okm = [0u8; 64];
-        Hkdf::<Sha256>::new(None, shared.as_bytes()).expand(&info, &mut okm).ok()?;
+        Hkdf::<Sha256>::new(None, shared.as_bytes())
+            .expand(&info, &mut okm)
+            .ok()?;
         let (lo_to_hi, hi_to_lo) = okm.split_at(32);
-        let (send, recv) = if my_id < their_id { (lo_to_hi, hi_to_lo) } else { (hi_to_lo, lo_to_hi) };
-        Some(PeerCrypto { send: Aead::new(cipher, send), recv: Aead::new(cipher, recv), cipher, counter: AtomicU64::new(0) })
+        let (send, recv) = if my_id < their_id {
+            (lo_to_hi, hi_to_lo)
+        } else {
+            (hi_to_lo, lo_to_hi)
+        };
+        Some(PeerCrypto {
+            send: Aead::new(cipher, send),
+            recv: Aead::new(cipher, recv),
+            cipher,
+            counter: AtomicU64::new(0),
+        })
     }
 }
 
@@ -171,7 +202,12 @@ pub fn room_safety_code(members: &[(PeerId, [u8; 32])]) -> String {
     }
     let h = h.finalize();
     let n = u64::from_le_bytes(h[..8].try_into().expect("8 bytes")) % 1_000_000_000_000;
-    format!("{:04} {:04} {:04}", n / 100_000_000, n / 10_000 % 10_000, n % 10_000)
+    format!(
+        "{:04} {:04} {:04}",
+        n / 100_000_000,
+        n / 10_000 % 10_000,
+        n % 10_000
+    )
 }
 
 fn nonce(counter: u64) -> Nonce {
@@ -241,7 +277,11 @@ impl ReplayWindow {
         }
         if counter >= self.top {
             let shift = counter + 1 - self.top;
-            self.bits = if shift >= Self::SIZE { 0 } else { self.bits << shift };
+            self.bits = if shift >= Self::SIZE {
+                0
+            } else {
+                self.bits << shift
+            };
             self.bits |= 1;
             self.top = counter + 1;
             return true;
@@ -275,7 +315,10 @@ mod tests {
 
     fn pair_using(ca: Cipher, cb: Cipher) -> (PeerCrypto, PeerCrypto) {
         let (a, b) = (Identity::generate(), Identity::generate());
-        (a.session_using(ca, 1, 2, &b.public).unwrap(), b.session_using(cb, 2, 1, &a.public).unwrap())
+        (
+            a.session_using(ca, 1, 2, &b.public).unwrap(),
+            b.session_using(cb, 2, 1, &a.public).unwrap(),
+        )
     }
 
     const BOTH: [Cipher; 2] = [Cipher::Aes256Gcm, Cipher::ChaCha20Poly1305];
@@ -289,7 +332,12 @@ mod tests {
     }
 
     fn open(c: &PeerCrypto, wire: &[u8]) -> Option<usize> {
-        let Ok(Packet::Sealed { counter, aad, body, .. }) = audio::decode(wire) else { return None };
+        let Ok(Packet::Sealed {
+            counter, aad, body, ..
+        }) = audio::decode(wire)
+        else {
+            return None;
+        };
         let mut out = [0u8; MAX_SEALED];
         c.open(counter, aad, body, &mut out)
     }
@@ -301,7 +349,10 @@ mod tests {
             let (wire, len) = sealed_audio(&a);
             let n = open(&b, &wire[..len]).expect("b opens a's packet");
             assert_eq!(n, len - audio::SEALED_OVERHEAD);
-            assert!(open(&a, &wire[..len]).is_none(), "directions use different keys");
+            assert!(
+                open(&a, &wire[..len]).is_none(),
+                "directions use different keys"
+            );
             let (wire, len) = sealed_audio(&b);
             assert!(open(&a, &wire[..len]).is_some());
         }
@@ -322,9 +373,18 @@ mod tests {
         assert!(open(&sb, &wire[..len]).is_some());
         // two machines that both have it (like this one, most likely) get AES
         let (a, b) = (Identity::generate(), Identity::generate());
-        let me = |i: &Identity| PeerKey { public: i.public, aes: aes_in_hardware() };
-        let (sa, sb) = (a.session_with(1, 2, &me(&b)).unwrap(), b.session_with(2, 1, &me(&a)).unwrap());
-        assert_eq!(sa.cipher(), Cipher::pick(aes_in_hardware(), aes_in_hardware()));
+        let me = |i: &Identity| PeerKey {
+            public: i.public,
+            aes: aes_in_hardware(),
+        };
+        let (sa, sb) = (
+            a.session_with(1, 2, &me(&b)).unwrap(),
+            b.session_with(2, 1, &me(&a)).unwrap(),
+        );
+        assert_eq!(
+            sa.cipher(),
+            Cipher::pick(aes_in_hardware(), aes_in_hardware())
+        );
         let (wire, len) = sealed_audio(&sa);
         assert!(open(&sb, &wire[..len]).is_some());
     }
@@ -349,13 +409,19 @@ mod tests {
         info.extend_from_slice(lo);
         info.extend_from_slice(hi);
         let mut okm = [0u8; 64];
-        Hkdf::<Sha256>::new(None, shared.as_bytes()).expand(&info, &mut okm).unwrap();
+        Hkdf::<Sha256>::new(None, shared.as_bytes())
+            .expand(&info, &mut okm)
+            .unwrap();
         let old = ChaCha20Poly1305::new(Key::from_slice(&okm[..32]));
         let mut plain = *b"older build says hi";
-        let tag = old.encrypt_in_place_detached(&nonce(0), b"hdr", &mut plain).unwrap();
+        let tag = old
+            .encrypt_in_place_detached(&nonce(0), b"hdr", &mut plain)
+            .unwrap();
         let mut body = plain.to_vec();
         body.extend_from_slice(&tag);
-        let sb = b.session_using(Cipher::ChaCha20Poly1305, 2, 1, &a.public).unwrap();
+        let sb = b
+            .session_using(Cipher::ChaCha20Poly1305, 2, 1, &a.public)
+            .unwrap();
         let mut out = [0u8; 64];
         assert_eq!(sb.open(0, b"hdr", &body, &mut out), Some(19));
         assert_eq!(&out[..19], b"older build says hi");
@@ -367,8 +433,16 @@ mod tests {
         let code = room_safety_code(&[(1, k1), (2, k2), (3, k3)]);
         assert_eq!(code, room_safety_code(&[(3, k3), (1, k1), (2, k2)]));
         assert_eq!(code.chars().filter(|c| c.is_ascii_digit()).count(), 12);
-        assert_ne!(code, room_safety_code(&[(1, k1), (2, [9u8; 32]), (3, k3)]), "swapped key");
-        assert_ne!(code, room_safety_code(&[(1, k1), (2, k2)]), "someone missing");
+        assert_ne!(
+            code,
+            room_safety_code(&[(1, k1), (2, [9u8; 32]), (3, k3)]),
+            "swapped key"
+        );
+        assert_ne!(
+            code,
+            room_safety_code(&[(1, k1), (2, k2)]),
+            "someone missing"
+        );
     }
 
     #[test]
@@ -405,13 +479,25 @@ mod tests {
             }
             let per = t.elapsed() / 10_000;
             println!("{} seal {n} bytes: {per:?}", c.label());
-            assert!(per < std::time::Duration::from_micros(10), "{per:?} per packet");
+            assert!(
+                per < std::time::Duration::from_micros(10),
+                "{per:?} per packet"
+            );
         }
     }
 
     #[test]
     fn rejects_low_order_keys() {
-        assert!(Identity::generate().session_with(1, 2, &PeerKey { public: [0u8; 32], aes: true }).is_none());
+        assert!(Identity::generate()
+            .session_with(
+                1,
+                2,
+                &PeerKey {
+                    public: [0u8; 32],
+                    aes: true
+                }
+            )
+            .is_none());
     }
 
     #[test]

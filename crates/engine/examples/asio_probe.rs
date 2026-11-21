@@ -12,9 +12,15 @@ fn main() {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::{Arc, Mutex};
 
-    let secs: f32 = std::env::args().skip(1).find_map(|s| s.parse().ok()).unwrap_or(4.0);
+    let secs: f32 = std::env::args()
+        .skip(1)
+        .find_map(|s| s.parse().ok())
+        .unwrap_or(4.0);
     let host = cpal::host_from_id(cpal::HostId::Asio).expect("ASIO host");
-    let dev = host.default_input_device().or_else(|| host.input_devices().ok()?.next()).expect("an ASIO device");
+    let dev = host
+        .default_input_device()
+        .or_else(|| host.input_devices().ok()?.next())
+        .expect("an ASIO device");
     println!("device: {}", dev.name().unwrap_or_default());
     match dev.default_input_config() {
         Ok(c) => println!("default input : {c:?}"),
@@ -84,7 +90,9 @@ fn main() {
     let stream = {
         let acc = acc.clone();
         match fmt {
-            cpal::SampleFormat::F32 => dev.build_input_stream(&cfg, move |d: &[f32], _: &_| feed(&acc, ch, d), err, None),
+            cpal::SampleFormat::F32 => {
+                dev.build_input_stream(&cfg, move |d: &[f32], _: &_| feed(&acc, ch, d), err, None)
+            }
             cpal::SampleFormat::I32 => {
                 let mut buf = Vec::new();
                 dev.build_input_stream(
@@ -122,7 +130,12 @@ fn main() {
         ocfg.buffer_size = cfg.buffer_size;
         println!("also opening output: {ocfg:?} {:?}", oc.sample_format());
         let s = dev
-            .build_output_stream(&ocfg, |d: &mut [i32], _: &_| d.fill(0), |e| eprintln!("out error: {e}"), None)
+            .build_output_stream(
+                &ocfg,
+                |d: &mut [i32], _: &_| d.fill(0),
+                |e| eprintln!("out error: {e}"),
+                None,
+            )
             .expect("build output stream");
         s.play().expect("play out");
         s
@@ -134,7 +147,13 @@ fn main() {
     drop(out);
 
     let a = acc.lock().unwrap();
-    let db = |x: f64| if x > 1e-12 { 20.0 * x.log10() } else { f64::NEG_INFINITY };
+    let db = |x: f64| {
+        if x > 1e-12 {
+            20.0 * x.log10()
+        } else {
+            f64::NEG_INFINITY
+        }
+    };
     println!(
         "\ncallbacks {} · frames {} ({:.2} s at {} Hz) · frames per callback {}..{}",
         a.calls,

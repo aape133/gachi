@@ -39,7 +39,11 @@ pub fn best_match(sent: &[f32], played: &[f32]) -> Option<(f32, usize)> {
     // second differences, not levels: sustained tones (two players holding the same note,
     // a few cents apart) all but vanish, attacks and noise (which only a copy shares sample
     // for sample) stay
-    let diff = |x: &[f32]| x.windows(3).map(|w| w[2] - 2.0 * w[1] + w[0]).collect::<Vec<f32>>();
+    let diff = |x: &[f32]| {
+        x.windows(3)
+            .map(|w| w[2] - 2.0 * w[1] + w[0])
+            .collect::<Vec<f32>>()
+    };
     let sent = diff(&sent[sent.len() - WINDOW - 2..]);
     let played = diff(&played[played.len() - HISTORY..]);
     let (sent, played) = (&sent[..], &played[..]);
@@ -48,7 +52,9 @@ pub fn best_match(sent: &[f32], played: &[f32]) -> Option<(f32, usize)> {
     if (e_sent / WINDOW as f32).sqrt() < QUIET {
         // we send silence (stopped playing, muted, the loop unplugged): if the others are
         // playing, their sound plainly does not come back
-        let heard = played.chunks(WINDOW).any(|w| (energy(w) / w.len() as f32).sqrt() >= QUIET);
+        let heard = played
+            .chunks(WINDOW)
+            .any(|w| (energy(w) / w.len() as f32).sqrt() >= QUIET);
         return heard.then_some((0.0, 0));
     }
     // played[lag..lag + WINDOW] lines up with sent when the loop takes `MAX_LAG - lag` samples
@@ -128,7 +134,11 @@ pub struct Decimator {
 
 impl Decimator {
     pub fn new(rate: u32) -> Self {
-        Self { step: rate as f64 / RATE as f64, acc: 0.0, n: 0.0 }
+        Self {
+            step: rate as f64 / RATE as f64,
+            acc: 0.0,
+            n: 0.0,
+        }
     }
 
     /// Feeds one stereo frame; returns a 12 kHz sample when one is complete.
@@ -175,7 +185,9 @@ mod tests {
         let played = music(1, HISTORY + 600, 0.0);
         // the loop: 37 samples (3 ms) later, at half level, over the player's own sound
         let own = music(99, HISTORY + 600, 4.0);
-        let sent: Vec<f32> = (0..played.len()).map(|i| own[i] * 0.7 + if i >= 37 { played[i - 37] * 0.5 } else { 0.0 }).collect();
+        let sent: Vec<f32> = (0..played.len())
+            .map(|i| own[i] * 0.7 + if i >= 37 { played[i - 37] * 0.5 } else { 0.0 })
+            .collect();
         let (c, lag) = best_match(&sent, &played).unwrap();
         println!("feedback copy: correlation {c:.2} at {lag} samples");
         assert!(c > ON, "correlation {c}");
@@ -195,7 +207,10 @@ mod tests {
     #[test]
     fn silence_tells_nothing() {
         let played = music(1, HISTORY, 0.0);
-        assert!(best_match(&played, &vec![0.0; HISTORY]).is_none(), "the others silent");
+        assert!(
+            best_match(&played, &vec![0.0; HISTORY]).is_none(),
+            "the others silent"
+        );
         assert!(best_match(&vec![0.0; HISTORY], &vec![0.0; HISTORY]).is_none());
     }
 
@@ -213,7 +228,11 @@ mod tests {
         v.update(Some((0.8, 40)));
         assert!(v.update(Some((0.8, 40))));
         for k in 0..4 {
-            assert!(v.update(Some((0.2, 40))), "still on after {} weak checks", k + 1);
+            assert!(
+                v.update(Some((0.2, 40))),
+                "still on after {} weak checks",
+                k + 1
+            );
         }
         assert!(!v.update(Some((0.2, 40))), "five under ON clear it");
     }

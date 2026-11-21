@@ -116,7 +116,7 @@
         // (the saved language: the app hands it to the page before it runs)
         language: window.GACHI_LANG || 'auto',
       };
-      this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
+      this.self = { gain: 0, level: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this._devices = { devices: [], hasAsio: true };
       this.devicesLoaded = false;
       ['stats', 'peer-joined', 'peer-left', 'chat', 'settings', 'notice', 'room', 'room-lost', 'kicked', 'metronome', 'recording'].forEach((ev) =>
@@ -260,7 +260,7 @@
         // ?lang=en / ?lang=ja: the preview in another language
         language: new URLSearchParams(location.search).get('lang') || 'auto',
       };
-      this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
+      this.self = { gain: 0, level: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this.master = 0;
       this.room = null;
       this.peers = new Map();
@@ -432,7 +432,7 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.7.4'; }
+    async appVersion() { return '0.8.0'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));
@@ -485,11 +485,17 @@
         this._levels[key] = lv;
         return lv;
       };
-      const gain = Math.min(1.6, Math.pow(10, this.self.gain / 20));
+      const lvl = this.self.level ?? 0;
+      const gain = lvl <= -60 ? 0 : Math.min(1.6, Math.pow(10, (this.self.gain + lvl) / 20));
       const self = gen('self', !this.self.muted, 2.3, Math.min(0.98, 0.6 * gain), 0);
       const peers = {};
       let i = 1;
-      for (const p of this.peers.values()) peers[p.id] = gen(p.id, true, p.speed, p.base, i++ * 1.7);
+      // (as the app shows them: after the volume, mute and solo set here)
+      const anySolo = [...this.peers.values()].some((p) => p.solo);
+      for (const p of this.peers.values()) {
+        const heard = !p.mute && (!anySolo || p.solo) && p.volume > -60;
+        peers[p.id] = gen(p.id, heard, p.speed, Math.min(0.99, p.base * Math.pow(10, p.volume / 20)), i++ * 1.7);
+      }
       const all = [self, ...Object.values(peers)];
       const m = Math.pow(10, this.master / 20);
       const master = [0, 1].map((c) => Math.min(1, Math.max(...all.map((l) => l[c])) * m));

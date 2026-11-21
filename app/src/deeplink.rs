@@ -40,7 +40,8 @@ pub fn qr_svg(text: String) -> Result<String, String> {
     if text.len() > 512 {
         return Err("too long".into());
     }
-    let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M).map_err(|e| e.to_string())?;
+    let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M)
+        .map_err(|e| e.to_string())?;
     Ok(code
         .render::<qrcode::render::svg::Color<'_>>()
         .min_dimensions(128, 128)
@@ -79,9 +80,18 @@ mod tests {
 
     #[test]
     fn parses_links() {
-        assert_eq!(code_from_url("gachi://join/K7M-Q2X").as_deref(), Some("K7MQ2X"));
-        assert_eq!(code_from_url("gachi://join/k7mq2x/").as_deref(), Some("K7MQ2X"));
-        assert_eq!(code_from_url("https://jam.example.com:7700/j/K7M-Q2X").as_deref(), Some("K7MQ2X"));
+        assert_eq!(
+            code_from_url("gachi://join/K7M-Q2X").as_deref(),
+            Some("K7MQ2X")
+        );
+        assert_eq!(
+            code_from_url("gachi://join/k7mq2x/").as_deref(),
+            Some("K7MQ2X")
+        );
+        assert_eq!(
+            code_from_url("https://jam.example.com:7700/j/K7M-Q2X").as_deref(),
+            Some("K7MQ2X")
+        );
         assert_eq!(code_from_url("gachi://join/").as_deref(), None);
         assert_eq!(code_from_url("gachi://settings").as_deref(), None);
         assert_eq!(code_from_url("gachi://join/!!!!").as_deref(), None);
@@ -95,7 +105,13 @@ mod tests {
 
     #[test]
     fn invite_urls() {
-        assert_eq!(invite_url("jam.example.com:7700", "K7MQ2X"), "https://jam.example.com:7700/j/K7M-Q2X");
-        assert_eq!(invite_url("127.0.0.1:7700", "K7MQ2X"), "http://127.0.0.1:7700/j/K7M-Q2X");
+        assert_eq!(
+            invite_url("jam.example.com:7700", "K7MQ2X"),
+            "https://jam.example.com:7700/j/K7M-Q2X"
+        );
+        assert_eq!(
+            invite_url("127.0.0.1:7700", "K7MQ2X"),
+            "http://127.0.0.1:7700/j/K7M-Q2X"
+        );
     }
 }

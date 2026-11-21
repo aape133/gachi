@@ -65,8 +65,14 @@ mod tests {
     fn known_refusals_are_said_in_the_users_language() {
         let m = "방이 가득 찼어요.";
         assert_eq!(with("ko-KR", || localize(ErrorKind::Full, m)), m);
-        assert_eq!(with("en-US", || localize(ErrorKind::Full, m)), "The room is full.");
-        assert_eq!(with("ja-JP", || localize(ErrorKind::Full, m)), "ルームが満員です。");
+        assert_eq!(
+            with("en-US", || localize(ErrorKind::Full, m)),
+            "The room is full."
+        );
+        assert_eq!(
+            with("ja-JP", || localize(ErrorKind::Full, m)),
+            "ルームが満員です。"
+        );
     }
 
     #[test]

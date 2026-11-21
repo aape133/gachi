@@ -15,7 +15,9 @@ pub struct Shown(pub SocketAddr);
 impl fmt::Display for Shown {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0.ip() {
-            IpAddr::V6(ip) if ip.to_ipv4_mapped().is_none() => write!(f, "[{}]:{}", ShownIp(self.0.ip()), self.0.port()),
+            IpAddr::V6(ip) if ip.to_ipv4_mapped().is_none() => {
+                write!(f, "[{}]:{}", ShownIp(self.0.ip()), self.0.port())
+            }
             ip => write!(f, "{}:{}", ShownIp(ip), self.0.port()),
         }
     }
@@ -28,12 +30,23 @@ pub struct ShownIp(pub IpAddr);
 impl fmt::Display for ShownIp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            IpAddr::V4(ip) if ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() => write!(f, "{ip}"),
+            IpAddr::V4(ip)
+                if ip.is_private()
+                    || ip.is_loopback()
+                    || ip.is_link_local()
+                    || ip.is_unspecified() =>
+            {
+                write!(f, "{ip}")
+            }
             IpAddr::V4(ip) => {
                 let [a, b, ..] = ip.octets();
                 write!(f, "{a}.{b}.x.x")
             }
-            IpAddr::V6(ip) if ip.is_loopback() || ip.is_unicast_link_local() || ip.is_unspecified() => write!(f, "{ip}"),
+            IpAddr::V6(ip)
+                if ip.is_loopback() || ip.is_unicast_link_local() || ip.is_unspecified() =>
+            {
+                write!(f, "{ip}")
+            }
             IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
                 Some(v4) => ShownIp(v4.into()).fmt(f),
                 None => write!(f, "{:x}:…", ip.segments()[0]),
@@ -79,6 +92,12 @@ mod tests {
         assert_eq!(opt_ip(Some("192.168.0.7".parse().unwrap())), "192.168.0.7");
         assert_eq!(opt_ip(Some("2001:db8::1".parse().unwrap())), "2001:…");
         assert_eq!(opt_ip(None), "-");
-        assert_eq!(list(&["1.2.3.4:5".parse().unwrap(), "192.168.1.2:5".parse().unwrap()]), "[1.2.x.x:5, 192.168.1.2:5]");
+        assert_eq!(
+            list(&[
+                "1.2.3.4:5".parse().unwrap(),
+                "192.168.1.2:5".parse().unwrap()
+            ]),
+            "[1.2.x.x:5, 192.168.1.2:5]"
+        );
     }
 }

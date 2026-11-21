@@ -13,7 +13,12 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub const EMPTY: Frame = Frame { seq: 0, channels: 2, frames: 0, data: [0.0; MAX_FRAME_SAMPLES] };
+    pub const EMPTY: Frame = Frame {
+        seq: 0,
+        channels: 2,
+        frames: 0,
+        data: [0.0; MAX_FRAME_SAMPLES],
+    };
 
     pub fn samples(&self) -> &[f32] {
         &self.data[..self.frames as usize * self.channels as usize]

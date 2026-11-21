@@ -170,7 +170,8 @@ impl Tracker {
     }
 
     fn spread_p(&self) -> f64 {
-        self.everyday.unwrap_or(self.spread_now.max(self.spread_prev))
+        self.everyday
+            .unwrap_or(self.spread_now.max(self.spread_prev))
     }
 }
 
@@ -195,7 +196,15 @@ fn everyday(seconds: &[f64], rare: usize) -> Option<f64> {
     let mut levels = seconds.to_vec();
     levels.sort_by(|a, b| a.total_cmp(b));
     let level = levels.into_iter().find(|&l| moments(l) <= allowed)?;
-    let lately = if seconds.len() >= 4 { seconds.iter().rev().take(4).fold(f64::MAX, |m, &s| m.min(s)) } else { 0.0 };
+    let lately = if seconds.len() >= 4 {
+        seconds
+            .iter()
+            .rev()
+            .take(4)
+            .fold(f64::MAX, |m, &s| m.min(s))
+    } else {
+        0.0
+    };
     Some(level.max(lately))
 }
 
@@ -226,15 +235,29 @@ fn worth_covering(seconds: &[f64], worth: f64) -> Option<f64> {
     levels.push(seconds.iter().fold(f64::MAX, |m, &s| m.min(s)).min(CAP));
     levels.sort_by(|a, b| a.total_cmp(b));
     let cost = |l: f64| l + worth * moments(l) as f64 * scale;
-    let level = levels.into_iter().min_by(|a, b| cost(*a).total_cmp(&cost(*b)))?;
-    let lately = if seconds.len() >= 4 { seconds.iter().rev().take(4).fold(f64::MAX, |m, &s| m.min(s)).min(CAP) } else { 0.0 };
+    let level = levels
+        .into_iter()
+        .min_by(|a, b| cost(*a).total_cmp(&cost(*b)))?;
+    let lately = if seconds.len() >= 4 {
+        seconds
+            .iter()
+            .rev()
+            .take(4)
+            .fold(f64::MAX, |m, &s| m.min(s))
+            .min(CAP)
+    } else {
+        0.0
+    };
     Some(level.max(lately))
 }
 
 /// Mirror of app/src/session.rs `auto_target_ms`.
 fn auto_target_ms(spread: f64, jitter: f64, pm: f64, out_ms: f64) -> f64 {
     let by_spread = spread + 1.6 * pm + 0.25 * out_ms + 0.15;
-    by_spread.max(jitter * 2.5).max(out_ms + pm).clamp(pm, 40f64.max(out_ms + 4.0 * pm))
+    by_spread
+        .max(jitter * 2.5)
+        .max(out_ms + pm)
+        .clamp(pm, 40f64.max(out_ms + 4.0 * pm))
 }
 
 fn to_packets(ms: f64, pm: f64) -> f64 {
@@ -327,7 +350,8 @@ fn run(link: &Link, p: Policy, seed: u64, secs: f64) -> Outcome {
         everyday: None,
     };
     // mirror of `hold_auto` + the settle step in `update_jitter_targets`
-    let (mut auto_ms, mut raised_at, mut lowered_at, mut settled) = (10.7f64, 0.0f64, 0.0f64, false);
+    let (mut auto_ms, mut raised_at, mut lowered_at, mut settled) =
+        (10.7f64, 0.0f64, 0.0f64, false);
     jb.set_target_f(to_packets(auto_ms, pm));
     let mut out = vec![0f32; br * 2];
     let mut delays: Vec<f32> = Vec::new();
@@ -365,7 +389,12 @@ fn run(link: &Link, p: Policy, seed: u64, secs: f64) -> Outcome {
                 overflowed += 1;
                 continue;
             }
-            let mut f = Frame { seq: s, channels: 1, frames: pf as u16, ..Frame::EMPTY };
+            let mut f = Frame {
+                seq: s,
+                channels: 1,
+                frames: pf as u16,
+                ..Frame::EMPTY
+            };
             for i in 0..pf {
                 f.data[i] = ((s as usize * pf + i) as f64 % WRAP) as f32;
             }
@@ -425,7 +454,8 @@ fn run(link: &Link, p: Policy, seed: u64, secs: f64) -> Outcome {
                 let real = v > top - 0.5 && v > 0.0;
                 if real {
                     top = top.max(v);
-                    delays.push((now + j as f64 / FS * 1000.0 + tr - v / FS * 1000.0 / drift) as f32);
+                    delays
+                        .push((now + j as f64 / FS * 1000.0 + tr - v / FS * 1000.0 / drift) as f32);
                     if gap >= GAP_SAMPLES {
                         broken += gap;
                         breaks += 1;
@@ -454,7 +484,10 @@ fn run(link: &Link, p: Policy, seed: u64, secs: f64) -> Outcome {
     let minutes = (secs - 10.0) / 60.0;
     Outcome {
         median: delays.get(delays.len() / 2).copied().unwrap_or(f32::NAN) as f64,
-        p95: delays.get(delays.len() * 95 / 100).copied().unwrap_or(f32::NAN) as f64,
+        p95: delays
+            .get(delays.len() * 95 / 100)
+            .copied()
+            .unwrap_or(f32::NAN) as f64,
         broken_ms: broken as f64 / FS * 1000.0 / minutes,
         breaks: breaks as f64 / minutes,
         overflowed,
@@ -466,13 +499,49 @@ fn run(link: &Link, p: Policy, seed: u64, secs: f64) -> Outcome {
 
 fn main() {
     let links = [
-        Link { name: "wired, clean", jitter: 0.03, every_s: 0.0, lengths: &[], patches: None },
-        Link { name: "wired, a 15 ms hiccup a minute", jitter: 0.03, every_s: 60.0, lengths: &[(1.0, 12.0, 18.0)], patches: None },
+        Link {
+            name: "wired, clean",
+            jitter: 0.03,
+            every_s: 0.0,
+            lengths: &[],
+            patches: None,
+        },
+        Link {
+            name: "wired, a 15 ms hiccup a minute",
+            jitter: 0.03,
+            every_s: 60.0,
+            lengths: &[(1.0, 12.0, 18.0)],
+            patches: None,
+        },
         // a receiver seen in testing: all packets held for 5-40 ms every few seconds
-        Link { name: "bursty receiver (stalls every ~3 s)", jitter: 0.03, every_s: 3.0, lengths: &[(0.70, 5.0, 12.0), (0.25, 12.0, 22.0), (0.05, 22.0, 40.0)], patches: None },
-        Link { name: "Wi-Fi (40-120 ms stalls every ~20 s)", jitter: 1.0, every_s: 20.0, lengths: &[(0.7, 30.0, 60.0), (0.3, 60.0, 120.0)], patches: None },
-        Link { name: "busy link (5-9 ms stalls every ~0.7 s)", jitter: 0.3, every_s: 0.7, lengths: &[(1.0, 5.0, 9.0)], patches: None },
-        Link { name: "mostly fine (8-14 ms stall every ~12 s)", jitter: 0.03, every_s: 12.0, lengths: &[(1.0, 8.0, 14.0)], patches: None },
+        Link {
+            name: "bursty receiver (stalls every ~3 s)",
+            jitter: 0.03,
+            every_s: 3.0,
+            lengths: &[(0.70, 5.0, 12.0), (0.25, 12.0, 22.0), (0.05, 22.0, 40.0)],
+            patches: None,
+        },
+        Link {
+            name: "Wi-Fi (40-120 ms stalls every ~20 s)",
+            jitter: 1.0,
+            every_s: 20.0,
+            lengths: &[(0.7, 30.0, 60.0), (0.3, 60.0, 120.0)],
+            patches: None,
+        },
+        Link {
+            name: "busy link (5-9 ms stalls every ~0.7 s)",
+            jitter: 0.3,
+            every_s: 0.7,
+            lengths: &[(1.0, 5.0, 9.0)],
+            patches: None,
+        },
+        Link {
+            name: "mostly fine (8-14 ms stall every ~12 s)",
+            jitter: 0.03,
+            every_s: 12.0,
+            lengths: &[(1.0, 8.0, 14.0)],
+            patches: None,
+        },
     ];
     let window = std::env::args().any(|a| a == "window");
     // a busy PC (seen in a log during a release build): every ~25 s a rough patch of
@@ -482,7 +551,12 @@ fn main() {
         jitter: 0.03,
         every_s: 0.0,
         lengths: &[],
-        patches: Some(Patches { every_s: 25.0, len_s: (2.0, 12.0), stall_every_ms: 400.0, lengths: &[(0.6, 5.0, 12.0), (0.3, 12.0, 25.0), (0.1, 25.0, 50.0)] }),
+        patches: Some(Patches {
+            every_s: 25.0,
+            len_s: (2.0, 12.0),
+            stall_every_ms: 400.0,
+            lengths: &[(0.6, 5.0, 12.0), (0.3, 12.0, 25.0), (0.1, 25.0, 50.0)],
+        }),
     };
     // lighter: a game or a page loading now and then
     let light = Link {
@@ -490,57 +564,245 @@ fn main() {
         jitter: 0.03,
         every_s: 0.0,
         lengths: &[],
-        patches: Some(Patches { every_s: 60.0, len_s: (1.0, 3.0), stall_every_ms: 600.0, lengths: &[(0.8, 4.0, 10.0), (0.2, 10.0, 18.0)] }),
+        patches: Some(Patches {
+            every_s: 60.0,
+            len_s: (1.0, 3.0),
+            stall_every_ms: 600.0,
+            lengths: &[(0.8, 4.0, 10.0), (0.2, 10.0, 18.0)],
+        }),
     };
-    let links: Vec<Link> = if window { links.into_iter().chain([light, build]).collect() } else { links.into_iter().collect() };
+    let links: Vec<Link> = if window {
+        links.into_iter().chain([light, build]).collect()
+    } else {
+        links.into_iter().collect()
+    };
     let secs = if window { 400.0 } else { SECS };
-    let now = Policy { name: "now", ring: 64, hold_ms: 5000.0, step_ms: 1000.0, rare: 3, fixed_ms: None, worth_ms: None, scale: false, slots: 30 };
+    let now = Policy {
+        name: "now",
+        ring: 64,
+        hold_ms: 5000.0,
+        step_ms: 1000.0,
+        rare: 3,
+        fixed_ms: None,
+        worth_ms: None,
+        scale: false,
+        slots: 30,
+    };
     // the app as it is: ring 256, time-scaling, the cost rule at the chosen leaning
-    let app = Policy { name: "app", ring: 256, worth_ms: Some(4.0), scale: true, ..now };
+    let app = Policy {
+        name: "app",
+        ring: 256,
+        worth_ms: Some(4.0),
+        scale: true,
+        ..now
+    };
     let windows = [
-        Policy { name: "balanced, 30 s (now)", ..app },
-        Policy { name: "balanced, 60 s", slots: 60, ..app },
-        Policy { name: "balanced, 90 s", slots: 90, ..app },
-        Policy { name: "balanced, hold 20 s", hold_ms: 20_000.0, ..app },
-        Policy { name: "balanced, hold 60 s", hold_ms: 60_000.0, ..app },
-        Policy { name: "steady, 30 s (now)", worth_ms: Some(8.0), ..app },
-        Policy { name: "steady, 60 s", worth_ms: Some(8.0), slots: 60, ..app },
-        Policy { name: "steady, 90 s", worth_ms: Some(8.0), slots: 90, ..app },
-        Policy { name: "fast, 30 s (now)", worth_ms: Some(2.0), ..app },
+        Policy {
+            name: "balanced, 30 s (now)",
+            ..app
+        },
+        Policy {
+            name: "balanced, 60 s",
+            slots: 60,
+            ..app
+        },
+        Policy {
+            name: "balanced, 90 s",
+            slots: 90,
+            ..app
+        },
+        Policy {
+            name: "balanced, hold 20 s",
+            hold_ms: 20_000.0,
+            ..app
+        },
+        Policy {
+            name: "balanced, hold 60 s",
+            hold_ms: 60_000.0,
+            ..app
+        },
+        Policy {
+            name: "steady, 30 s (now)",
+            worth_ms: Some(8.0),
+            ..app
+        },
+        Policy {
+            name: "steady, 60 s",
+            worth_ms: Some(8.0),
+            slots: 60,
+            ..app
+        },
+        Policy {
+            name: "steady, 90 s",
+            worth_ms: Some(8.0),
+            slots: 90,
+            ..app
+        },
+        Policy {
+            name: "fast, 30 s (now)",
+            worth_ms: Some(2.0),
+            ..app
+        },
     ];
     let policies = [
-        Policy { name: "before (count rule, ring 64)", ..now },
-        Policy { name: "drop: balanced", ring: 256, worth_ms: Some(4.0), ..now },
-        Policy { name: "SCALE: balanced", ring: 256, worth_ms: Some(4.0), scale: true, ..now },
-        Policy { name: "drop: fast", ring: 256, worth_ms: Some(2.0), ..now },
-        Policy { name: "SCALE: fast", ring: 256, worth_ms: Some(2.0), scale: true, ..now },
-        Policy { name: "drop: steady", ring: 256, worth_ms: Some(8.0), ..now },
-        Policy { name: "SCALE: steady", ring: 256, worth_ms: Some(8.0), scale: true, ..now },
-        Policy { name: "ring 512", ring: 512, ..now },
-        Policy { name: "ring 512, hold 20 s", ring: 512, hold_ms: 20_000.0, ..now },
-        Policy { name: "ring 512, hold 30 s, step 3 s", ring: 512, hold_ms: 30_000.0, step_ms: 3000.0, ..now },
-        Policy { name: "ring 512, rare 6", ring: 512, rare: 6, ..now },
-        Policy { name: "ring 512, rare 10", ring: 512, rare: 10, ..now },
-        Policy { name: "ring 512, rare 0 (cover all)", ring: 512, rare: 0, hold_ms: 30_000.0, ..now },
-        Policy { name: "worth 0.5 ms", ring: 512, worth_ms: Some(0.5), ..now },
-        Policy { name: "worth 1 ms", ring: 512, worth_ms: Some(1.0), ..now },
-        Policy { name: "worth 2 ms", ring: 512, worth_ms: Some(2.0), ..now },
-        Policy { name: "worth 4 ms", ring: 512, worth_ms: Some(4.0), ..now },
-        Policy { name: "worth 8 ms", ring: 512, worth_ms: Some(8.0), ..now },
-        Policy { name: "fixed 4 ms", ring: 512, fixed_ms: Some(4.0), ..now },
-        Policy { name: "fixed 8 ms", ring: 512, fixed_ms: Some(8.0), ..now },
-        Policy { name: "fixed 14 ms", ring: 512, fixed_ms: Some(14.0), ..now },
-        Policy { name: "fixed 24 ms", ring: 512, fixed_ms: Some(24.0), ..now },
+        Policy {
+            name: "before (count rule, ring 64)",
+            ..now
+        },
+        Policy {
+            name: "drop: balanced",
+            ring: 256,
+            worth_ms: Some(4.0),
+            ..now
+        },
+        Policy {
+            name: "SCALE: balanced",
+            ring: 256,
+            worth_ms: Some(4.0),
+            scale: true,
+            ..now
+        },
+        Policy {
+            name: "drop: fast",
+            ring: 256,
+            worth_ms: Some(2.0),
+            ..now
+        },
+        Policy {
+            name: "SCALE: fast",
+            ring: 256,
+            worth_ms: Some(2.0),
+            scale: true,
+            ..now
+        },
+        Policy {
+            name: "drop: steady",
+            ring: 256,
+            worth_ms: Some(8.0),
+            ..now
+        },
+        Policy {
+            name: "SCALE: steady",
+            ring: 256,
+            worth_ms: Some(8.0),
+            scale: true,
+            ..now
+        },
+        Policy {
+            name: "ring 512",
+            ring: 512,
+            ..now
+        },
+        Policy {
+            name: "ring 512, hold 20 s",
+            ring: 512,
+            hold_ms: 20_000.0,
+            ..now
+        },
+        Policy {
+            name: "ring 512, hold 30 s, step 3 s",
+            ring: 512,
+            hold_ms: 30_000.0,
+            step_ms: 3000.0,
+            ..now
+        },
+        Policy {
+            name: "ring 512, rare 6",
+            ring: 512,
+            rare: 6,
+            ..now
+        },
+        Policy {
+            name: "ring 512, rare 10",
+            ring: 512,
+            rare: 10,
+            ..now
+        },
+        Policy {
+            name: "ring 512, rare 0 (cover all)",
+            ring: 512,
+            rare: 0,
+            hold_ms: 30_000.0,
+            ..now
+        },
+        Policy {
+            name: "worth 0.5 ms",
+            ring: 512,
+            worth_ms: Some(0.5),
+            ..now
+        },
+        Policy {
+            name: "worth 1 ms",
+            ring: 512,
+            worth_ms: Some(1.0),
+            ..now
+        },
+        Policy {
+            name: "worth 2 ms",
+            ring: 512,
+            worth_ms: Some(2.0),
+            ..now
+        },
+        Policy {
+            name: "worth 4 ms",
+            ring: 512,
+            worth_ms: Some(4.0),
+            ..now
+        },
+        Policy {
+            name: "worth 8 ms",
+            ring: 512,
+            worth_ms: Some(8.0),
+            ..now
+        },
+        Policy {
+            name: "fixed 4 ms",
+            ring: 512,
+            fixed_ms: Some(4.0),
+            ..now
+        },
+        Policy {
+            name: "fixed 8 ms",
+            ring: 512,
+            fixed_ms: Some(8.0),
+            ..now
+        },
+        Policy {
+            name: "fixed 14 ms",
+            ring: 512,
+            fixed_ms: Some(14.0),
+            ..now
+        },
+        Policy {
+            name: "fixed 24 ms",
+            ring: 512,
+            fixed_ms: Some(24.0),
+            ..now
+        },
     ];
     let policies: &[Policy] = if window { &windows } else { &policies };
     for link in &links {
         println!("\n{}", link.name);
-        println!("  {:<30} {:>7} {:>7} {:>9} {:>11} {:>9} {:>8} {:>9} {:>9}", "policy", "median", "p95", "target", "not real", "breaks", "ring", "ran dry", "skipped");
-        println!("  {:<30} {:>7} {:>7} {:>9} {:>11} {:>9} {:>8} {:>9} {:>9}", "", "ms", "ms", "ms", "ms/min", "/min", "lost", "/min", "pk/min");
+        println!(
+            "  {:<30} {:>7} {:>7} {:>9} {:>11} {:>9} {:>8} {:>9} {:>9}",
+            "policy", "median", "p95", "target", "not real", "breaks", "ring", "ran dry", "skipped"
+        );
+        println!(
+            "  {:<30} {:>7} {:>7} {:>9} {:>11} {:>9} {:>8} {:>9} {:>9}",
+            "", "ms", "ms", "ms", "ms/min", "/min", "lost", "/min", "pk/min"
+        );
         for &p in policies {
-            let seeds = [0x9E37_79B9_7F4A_7C15u64, 0xD1B5_4A32_D192_ED03, 0x8CB9_2BA7_2F3D_8DD7, 0x2545_F491_4F6C_DD1D, 0x1234_5678_9ABC_DEF1, 0xC0FF_EE00_DEAD_BEEF];
+            let seeds = [
+                0x9E37_79B9_7F4A_7C15u64,
+                0xD1B5_4A32_D192_ED03,
+                0x8CB9_2BA7_2F3D_8DD7,
+                0x2545_F491_4F6C_DD1D,
+                0x1234_5678_9ABC_DEF1,
+                0xC0FF_EE00_DEAD_BEEF,
+            ];
             let runs: Vec<Outcome> = seeds.iter().map(|&s| run(link, p, s, secs)).collect();
-            let avg = |f: &dyn Fn(&Outcome) -> f64| runs.iter().map(f).sum::<f64>() / runs.len() as f64;
+            let avg =
+                |f: &dyn Fn(&Outcome) -> f64| runs.iter().map(f).sum::<f64>() / runs.len() as f64;
             println!(
                 "  {:<30} {:>7.1} {:>7.1} {:>9.1} {:>11.0} {:>9.1} {:>8} {:>9.1} {:>9.0}",
                 p.name,

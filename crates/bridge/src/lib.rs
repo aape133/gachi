@@ -43,7 +43,10 @@ pub const DEFAULT_NAME: &str = "gachi-bridge-v1";
 /// The bridge name both sides use: `DEFAULT_NAME`, or `GACHI_BRIDGE_NAME` when set (tests
 /// and examples run beside a real gachi without touching its bridge).
 pub fn name() -> String {
-    std::env::var("GACHI_BRIDGE_NAME").ok().filter(|n| !n.is_empty()).unwrap_or_else(|| DEFAULT_NAME.to_string())
+    std::env::var("GACHI_BRIDGE_NAME")
+        .ok()
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| DEFAULT_NAME.to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,7 +111,11 @@ pub(crate) mod ring {
         fn counters_that_make_no_sense_are_refused() {
             assert_eq!(readable(10, 4), Some(6));
             assert_eq!(readable(4, 10), None, "reader ahead of writer");
-            assert_eq!(readable(RING_FRAMES as u64 + 1, 0), None, "more than the ring holds");
+            assert_eq!(
+                readable(RING_FRAMES as u64 + 1, 0),
+                None,
+                "more than the ring holds"
+            );
             assert_eq!(writable(0, 0), Some(RING_FRAMES));
             assert_eq!(writable(RING_FRAMES as u64, 0), Some(0));
         }

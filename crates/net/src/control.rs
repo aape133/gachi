@@ -35,7 +35,11 @@ impl ControlChannel {
         }
         let seq = self.next_out;
         self.next_out = self.next_out.wrapping_add(1);
-        self.outbox.push_back(Out { seq, data, last_sent: None });
+        self.outbox.push_back(Out {
+            seq,
+            data,
+            last_sent: None,
+        });
         true
     }
 
@@ -94,7 +98,10 @@ mod tests {
         let mut rx = ControlChannel::default();
         assert!(rx.on_data(1, b"b").is_empty(), "waits for 0");
         assert!(rx.on_data(2, b"c").is_empty());
-        assert_eq!(rx.on_data(0, b"a"), vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()]);
+        assert_eq!(
+            rx.on_data(0, b"a"),
+            vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()]
+        );
         assert!(rx.on_data(1, b"b").is_empty(), "duplicate");
         assert_eq!(rx.on_data(3, b"d"), vec![b"d".to_vec()]);
     }

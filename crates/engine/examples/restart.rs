@@ -29,7 +29,11 @@ impl PacketSink for Sink {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let host = if args.first().map(String::as_str) == Some("default") { HostChoice::Default } else { HostChoice::Asio };
+    let host = if args.first().map(String::as_str) == Some("default") {
+        HostChoice::Default
+    } else {
+        HostChoice::Asio
+    };
     let rounds: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(4);
     for round in 1..=rounds {
         let c = Arc::new(Count::default());
@@ -52,7 +56,11 @@ fn main() {
         };
         let open_ms = t.elapsed().as_millis();
         std::thread::sleep(Duration::from_millis(1500));
-        let (p, s, nz) = (c.packets.load(Ordering::Relaxed), c.samples.load(Ordering::Relaxed), c.nonzero.load(Ordering::Relaxed));
+        let (p, s, nz) = (
+            c.packets.load(Ordering::Relaxed),
+            c.samples.load(Ordering::Relaxed),
+            c.nonzero.load(Ordering::Relaxed),
+        );
         println!(
             "round {round}: open {open_ms} ms · {} {} Hz · packets {p} · non-zero samples {:.1}% · driver: {:?}",
             engine.info.input_device,

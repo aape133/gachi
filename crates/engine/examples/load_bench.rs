@@ -26,7 +26,10 @@ fn main() {
 #[cfg(windows)]
 mod imp {
     use gachi_bridge::PluginEnd;
-    use gachi_engine::{CallbackLoad, Engine, EngineConfig, Frame, HostChoice, InputChannels, LoadWindow, PacketSink};
+    use gachi_engine::{
+        CallbackLoad, Engine, EngineConfig, Frame, HostChoice, InputChannels, LoadWindow,
+        PacketSink,
+    };
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -50,7 +53,10 @@ mod imp {
     /// `--send`: the time a real send takes, per peer and packet; `--send=copies`: with
     /// every link doubled.
     fn send_time(peers: usize) -> Duration {
-        let per_peer = match std::env::args().find(|a| a.starts_with("--send")).as_deref() {
+        let per_peer = match std::env::args()
+            .find(|a| a.starts_with("--send"))
+            .as_deref()
+        {
             None => 0.0,
             Some("--send=copies") => 9.5,
             Some(_) => 5.5,
@@ -59,7 +65,10 @@ mod imp {
     }
 
     fn show(w: &LoadWindow) -> String {
-        format!("{:>5.0} {:>5.0} {:>6.0} {:>6.0}", w.p50_us, w.p99_us, w.p999_us, w.max_us)
+        format!(
+            "{:>5.0} {:>5.0} {:>6.0} {:>6.0}",
+            w.p50_us, w.p99_us, w.p999_us, w.max_us
+        )
     }
 
     /// Noise, so nothing in the chain can take a shortcut on silence.
@@ -82,7 +91,8 @@ mod imp {
             input: InputChannels::Stereo(0, 1),
         };
         let sent = Arc::new(AtomicUsize::new(0));
-        let mut engine = Engine::start(cfg, Box::new(Count(sent.clone(), send_time(peers)))).expect("engine");
+        let mut engine =
+            Engine::start(cfg, Box::new(Count(sent.clone(), send_time(peers)))).expect("engine");
         let mut plugin = PluginEnd::open(name, 1).expect("bridge");
         plugin.set_format(RATE, block as u32);
         let mut txs: Vec<_> = (0..peers)
@@ -111,7 +121,12 @@ mod imp {
             while acc >= PACKET {
                 acc -= PACKET;
                 for tx in &mut txs {
-                    let mut f = Frame { seq, channels: 2, frames: PACKET as u16, ..Frame::EMPTY };
+                    let mut f = Frame {
+                        seq,
+                        channels: 2,
+                        frames: PACKET as u16,
+                        ..Frame::EMPTY
+                    };
                     for s in &mut f.data[..PACKET * 2] {
                         *s = noise(&mut seed);
                     }
@@ -149,7 +164,11 @@ mod imp {
                 engine.output_cb.load.take();
             }
         }
-        let (r, i, o) = (round.take(), engine.input_cb.load.take(), engine.output_cb.load.take());
+        let (r, i, o) = (
+            round.take(),
+            engine.input_cb.load.take(),
+            engine.output_cb.load.take(),
+        );
         let budget = period.as_secs_f64() * 1e6;
         println!(
             "{peers:>2} others  block {block:>3} ({budget:>4.0} µs) | in {} | out {} | round trip {} | past the plugin's wait ({:.0} µs) {over_wait} | late {late}/{blocks}",
@@ -164,7 +183,11 @@ mod imp {
 
     /// Busy threads walking a big buffer (cache and memory traffic as well as CPU), at
     /// normal priority, or at the "Pro Audio" priority the DAW's own audio threads have.
-    fn load(threads: usize, audio: bool, stop: Arc<std::sync::atomic::AtomicBool>) -> Vec<std::thread::JoinHandle<()>> {
+    fn load(
+        threads: usize,
+        audio: bool,
+        stop: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Vec<std::thread::JoinHandle<()>> {
         (0..threads)
             .map(|i| {
                 let stop = stop.clone();
@@ -176,7 +199,11 @@ mod imp {
                     let mut k = i;
                     while !stop.load(Relaxed) {
                         for _ in 0..4096 {
-                            k = (k.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407) >> 33) % buf.len();
+                            k = (k
+                                .wrapping_mul(6364136223846793005)
+                                .wrapping_add(1442695040888963407)
+                                >> 33)
+                                % buf.len();
                             buf[k] = buf[k].wrapping_mul(31).wrapping_add(7);
                         }
                     }
@@ -187,20 +214,35 @@ mod imp {
     }
 
     pub fn main() {
-        let secs: f64 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(5.0);
+        let secs: f64 = std::env::args()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5.0);
         if std::env::args().any(|a| a == "--stress") {
             // 7 others, under no load, every logical CPU busy at normal priority, and half of
             // them busy at audio priority (a DAW with heavy plugins)
             gachi_bridge::pro_audio();
             let cpus = std::thread::available_parallelism().map_or(8, |n| n.get());
             let name = format!("gachi-load-bench-{}", std::process::id());
-            for (label, n, audio) in [("no load", 0, false), ("all CPUs busy, normal priority", cpus, false), ("half the CPUs busy, audio priority", cpus / 2, true), ("all CPUs busy, audio priority", cpus, true)] {
+            for (label, n, audio) in [
+                ("no load", 0, false),
+                ("all CPUs busy, normal priority", cpus, false),
+                ("half the CPUs busy, audio priority", cpus / 2, true),
+                ("all CPUs busy, audio priority", cpus, true),
+            ] {
                 println!("== {label} ({n} threads)");
                 let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let threads = load(n, audio, stop.clone());
                 std::thread::sleep(Duration::from_millis(300));
                 for block in [32, 64, 128] {
-                    case(&format!("{name}-{label}-{block}").replace(' ', "-").replace(',', ""), 7, block, secs);
+                    case(
+                        &format!("{name}-{label}-{block}")
+                            .replace(' ', "-")
+                            .replace(',', ""),
+                        7,
+                        block,
+                        secs,
+                    );
                 }
                 stop.store(true, Relaxed);
                 threads.into_iter().for_each(|t| t.join().unwrap());

@@ -111,10 +111,8 @@
 
   /** The languages there are, as [code, its own name], for the settings. */
   const languages = () => CODES.map((c) => [c, FILES[c]['language.name'] || c]);
-  /** One key in every language (e.g. the default names a first run gets). */
-  const everywhere = (key) => CODES.map((c) => FILES[c][key]).filter(Boolean);
 
   set(window.GACHI_LANG);
-  window.i18n = { set, apply, fit, tr, languages, everywhere, get lang() { return lang; } };
+  window.i18n = { set, apply, fit, tr, languages, get lang() { return lang; } };
   window.tr = tr;
 })();

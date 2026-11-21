@@ -108,7 +108,11 @@ impl CallbackLoad {
             g => g as f32 / 1000.0,
         };
         if total == 0 {
-            return LoadWindow { gap_max_us: gap_ns as f32 / 1000.0, gap_min_us: gap_min, ..LoadWindow::default() };
+            return LoadWindow {
+                gap_max_us: gap_ns as f32 / 1000.0,
+                gap_min_us: gap_min,
+                ..LoadWindow::default()
+            };
         }
         let at = |q: f64| {
             let want = ((total as f64 * q).ceil() as u64).max(1);

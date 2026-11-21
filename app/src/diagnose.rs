@@ -34,7 +34,10 @@ pub struct Side {
 
 impl Side {
     pub fn new(nat: Option<NatKind>, candidates: &[SocketAddr]) -> Self {
-        let mut side = Side { nat, ..Default::default() };
+        let mut side = Side {
+            nat,
+            ..Default::default()
+        };
         for a in candidates {
             if let IpAddr::V4(ip) = a.ip() {
                 if gachi_net::behind_router(a.ip()) {
@@ -54,7 +57,13 @@ impl Side {
         let home = |a: &&Ipv4Addr| a.is_private();
         self.public.is_some()
             && self.public == other.public
-            && self.lan.iter().filter(home).any(|a| other.lan.iter().filter(home).any(|b| a.octets()[..3] == b.octets()[..3]))
+            && self.lan.iter().filter(home).any(|a| {
+                other
+                    .lan
+                    .iter()
+                    .filter(home)
+                    .any(|b| a.octets()[..3] == b.octets()[..3])
+            })
     }
 }
 
@@ -71,11 +80,15 @@ pub fn no_direct_path(me: &Side, them: &Side, name: &str) -> String {
         gachi_lang::tr!("direct.both_share_same")
     } else {
         match (me.nat, them.nat) {
-            (Some(NatKind::Varies), Some(NatKind::Varies)) => gachi_lang::tr!("direct.youre_both_internet"),
+            (Some(NatKind::Varies), Some(NatKind::Varies)) => {
+                gachi_lang::tr!("direct.youre_both_internet")
+            }
             (Some(NatKind::Varies), _) => gachi_lang::tr!("direct.internet_makes_direct"),
             (_, Some(NatKind::Varies)) => gachi_lang::tr!("direct.name_s_internet", name),
             // both ordinary: what is left is a firewall on the way (the PC's, or a strict router)
-            (Some(NatKind::Steady), Some(NatKind::Steady)) => gachi_lang::tr!("direct.both_connections_normally"),
+            (Some(NatKind::Steady), Some(NatKind::Steady)) => {
+                gachi_lang::tr!("direct.both_connections_normally")
+            }
             // (the other side does not say: an older version)
             _ => gachi_lang::tr!("direct.name_s_internet_may", name),
         }
@@ -96,7 +109,10 @@ mod tests {
     fn our_kind_of_network_from_the_stun_answers() {
         let a: SocketAddr = "203.0.113.7:4000".parse().unwrap();
         assert_eq!(nat_kind(Mapping::Steady, Some(a)), NatKind::Steady);
-        assert_eq!(nat_kind(Mapping::Varies { step: 1 }, Some(a)), NatKind::Varies);
+        assert_eq!(
+            nat_kind(Mapping::Varies { step: 1 }, Some(a)),
+            NatKind::Varies
+        );
         assert_eq!(nat_kind(Mapping::Unknown, Some(a)), NatKind::Unknown);
         assert_eq!(nat_kind(Mapping::Unknown, None), NatKind::Blocked);
     }
@@ -109,7 +125,8 @@ mod tests {
         let hotspot = side(Some(Varies), &["172.20.10.2:4000", "198.51.100.200:4000"]);
         let blocked = side(Some(Blocked), &["10.1.2.3:4000"]);
         let old = side(None, &["192.168.5.5:4000", "198.51.100.77:4000"]);
-        let say = |me: &Side, them: &Side| gachi_lang::with("ko-KR", || no_direct_path(me, them, "지민"));
+        let say =
+            |me: &Side, them: &Side| gachi_lang::with("ko-KR", || no_direct_path(me, them, "지민"));
 
         assert!(say(&blocked, &home_b).contains("내 네트워크가 직접 연결(UDP)을 막고"));
         assert!(say(&home_a, &blocked).contains("지민님 네트워크가 직접 연결(UDP)을 막고"));
@@ -130,7 +147,12 @@ mod tests {
         let cgn_b = side(Some(Steady), &["100.70.1.9:4000", "198.51.100.9:4000"]);
         assert!(say(&cgn_a, &cgn_b).contains("같은 공인 주소"));
         // every message names the person and says what to do
-        for (me, them) in [(&blocked, &home_b), (&home_a, &hotspot), (&home_a, &home_b), (&home_a, &old)] {
+        for (me, them) in [
+            (&blocked, &home_b),
+            (&home_a, &hotspot),
+            (&home_a, &home_b),
+            (&home_a, &old),
+        ] {
             let m = say(me, them);
             assert!(m.starts_with("지민님과 직접 연결이 안 돼요."), "{m}");
         }
@@ -153,8 +175,14 @@ mod tests {
             for them in &sides {
                 let en = with("en-US", || no_direct_path(me, them, "Sam"));
                 let ja = with("ja-JP", || no_direct_path(me, them, "Sam"));
-                assert!(en.starts_with("Can't connect directly to Sam.") && !hangul(&en), "{en}");
-                assert!(ja.starts_with("Samさんと直接接続できません。") && !hangul(&ja), "{ja}");
+                assert!(
+                    en.starts_with("Can't connect directly to Sam.") && !hangul(&en),
+                    "{en}"
+                );
+                assert!(
+                    ja.starts_with("Samさんと直接接続できません。") && !hangul(&ja),
+                    "{ja}"
+                );
             }
         }
     }

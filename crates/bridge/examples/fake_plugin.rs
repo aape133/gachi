@@ -40,7 +40,10 @@ fn main() {
     };
     end.set_format(48_000, block as u32);
     gachi_bridge::pro_audio();
-    println!("연결됨: {block} 프레임 블록 ({:.2} ms), {secs} 초", block as f64 / 48.0);
+    println!(
+        "연결됨: {block} 프레임 블록 ({:.2} ms), {secs} 초",
+        block as f64 / 48.0
+    );
 
     let period = Duration::from_secs_f64(block as f64 / 48_000.0);
     let blocks = (secs * 48_000.0 / block as f64) as u64;
@@ -84,8 +87,18 @@ fn main() {
             }
         }
         if Instant::now() >= report {
-            let rms = if n > 0 { (sum_sq / n as f64).sqrt() } else { 0.0 };
-            let db = |v: f64| if v > 0.0 { format!("{:6.1} dBFS", 20.0 * v.log10()) } else { "   무음   ".into() };
+            let rms = if n > 0 {
+                (sum_sq / n as f64).sqrt()
+            } else {
+                0.0
+            };
+            let db = |v: f64| {
+                if v > 0.0 {
+                    format!("{:6.1} dBFS", 20.0 * v.log10())
+                } else {
+                    "   무음   ".into()
+                }
+            };
             println!(
                 "{:5.0} s  믹스 최대 {} 평균 {}  같은 블록 {same_block} / 늦음 {late}  내 소리 크기 {:.2}  앱 {}",
                 start.elapsed().as_secs_f64(),

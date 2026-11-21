@@ -93,7 +93,12 @@ struct Bridge;
 
 impl Link {
     fn new() -> Arc<Self> {
-        Arc::new(Self { end: Mutex::new(None), stop: AtomicBool::new(false), blocks: AtomicU32::new(0), well: AtomicBool::new(false) })
+        Arc::new(Self {
+            end: Mutex::new(None),
+            stop: AtomicBool::new(false),
+            blocks: AtomicU32::new(0),
+            well: AtomicBool::new(false),
+        })
     }
 
     /// Keeps trying to open the app's bridge (twice a second) and lets go of it once the app
@@ -154,7 +159,11 @@ fn instance_id() -> u64 {
     use std::hash::{BuildHasher, Hasher};
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();
     h.write_u64(std::process::id() as u64);
-    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    h.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos()),
+    );
     h.finish() | 1 // never 0 (= no owner)
 }
 
@@ -198,7 +207,13 @@ impl Processor {
             own: AtomicBool::new(true),
             link: Link::new(),
             worker: Mutex::new(None),
-            audio: Mutex::new(Audio { sample_rate: 48_000, missed: 0, own: f32::NAN, up: Vec::new(), down: Vec::new() }),
+            audio: Mutex::new(Audio {
+                sample_rate: 48_000,
+                missed: 0,
+                own: f32::NAN,
+                up: Vec::new(),
+                down: Vec::new(),
+            }),
             max_block: AtomicU32::new(0),
             in_channels: AtomicU32::new(2),
             out_channels: AtomicU32::new(2),
@@ -212,7 +227,10 @@ impl Processor {
             self.link.stop.store(false, Relaxed);
             let link = self.link.clone();
             let id = instance_id();
-            *w = std::thread::Builder::new().name("gachi-plugin-link".into()).spawn(move || link.run(id)).ok();
+            *w = std::thread::Builder::new()
+                .name("gachi-plugin-link".into())
+                .spawn(move || link.run(id))
+                .ok();
         }
     }
 
@@ -230,9 +248,13 @@ impl Processor {
 
     /// Applies the last value of each parameter change in this block.
     unsafe fn read_params(&self, changes: *mut IParameterChanges) {
-        let Some(changes) = ComRef::from_raw(changes) else { return };
+        let Some(changes) = ComRef::from_raw(changes) else {
+            return;
+        };
         for i in 0..changes.getParameterCount() {
-            let Some(q) = ComRef::from_raw(changes.getParameterData(i)) else { continue };
+            let Some(q) = ComRef::from_raw(changes.getParameterData(i)) else {
+                continue;
+            };
             let n = q.getPointCount();
             if n <= 0 {
                 continue;
@@ -248,7 +270,6 @@ impl Processor {
             }
         }
     }
-
 }
 
 /// Sends `a.up[..n * 2]` (the block, already copied in) and leaves the app's mix in
@@ -273,11 +294,19 @@ fn exchange(a: &mut Audio, end: &mut Bridge, n: usize) {
     // wait is a quarter of the block, spent on the DAW's audio thread), but on every 8th:
     // after a stall of a few blocks it is quick again, and back in step within 8 blocks
     let wait = a.missed < 2 || a.missed.is_multiple_of(8);
-    let budget = if wait { Duration::from_secs_f64(n as f64 / a.sample_rate.max(1) as f64 / 4.0).min(MAX_WAIT) } else { Duration::ZERO };
+    let budget = if wait {
+        Duration::from_secs_f64(n as f64 / a.sample_rate.max(1) as f64 / 4.0).min(MAX_WAIT)
+    } else {
+        Duration::ZERO
+    };
     while end.down_available() < want && t.elapsed() < budget && end.app_alive() {
         std::hint::spin_loop();
     }
-    a.missed = if end.down_available() >= want { 0 } else { a.missed.saturating_add(1) };
+    a.missed = if end.down_available() >= want {
+        0
+    } else {
+        a.missed.saturating_add(1)
+    };
     // 3. the newest block's worth: what is older goes (play current sound, not old). If
     // this block's mix is not back, that is the last one's: a block late beats silence
     let mut extra = end.down_available().saturating_sub(n);
@@ -295,7 +324,11 @@ fn exchange(a: &mut Audio, end: &mut Bridge, n: usize) {
     // app's mix is limited and never is either; the shared region is anyone's on this
     // desktop to write
     for x in &mut a.down[..got * 2] {
-        *x = if x.is_finite() { x.clamp(-4.0, 4.0) } else { 0.0 };
+        *x = if x.is_finite() {
+            x.clamp(-4.0, 4.0)
+        } else {
+            0.0
+        };
     }
 }
 
@@ -328,7 +361,9 @@ fn bridge_well(_: &Bridge) -> bool {
 impl Processor {
     /// One block (see the module docs). Called through `process`, which keeps a panic in.
     unsafe fn process_block(&self, data: *mut ProcessData) -> tresult {
-        let Some(data) = data.as_ref() else { return kInvalidArgument };
+        let Some(data) = data.as_ref() else {
+            return kInvalidArgument;
+        };
         // 32-bit float only (canProcessSampleSize); a host that sends 64-bit anyway would
         // have us read its doubles as floats
         if data.symbolicSampleSize != SymbolicSampleSizes_::kSample32 {
@@ -336,15 +371,27 @@ impl Processor {
         }
         self.read_params(data.inputParameterChanges);
         let n = data.numSamples.max(0) as usize;
-        if n == 0 || data.numInputs < 1 || data.numOutputs < 1 || data.inputs.is_null() || data.outputs.is_null() {
+        if n == 0
+            || data.numInputs < 1
+            || data.numOutputs < 1
+            || data.inputs.is_null()
+            || data.outputs.is_null()
+        {
             return kResultOk;
         }
         let ins = &*data.inputs;
         let outs = &*data.outputs;
         // a mono track hands over one channel (whatever arrangement was agreed): take what
         // is there. Leaving the output unwritten would play whatever was in the buffer.
-        let (ic, oc) = (ins.numChannels.clamp(0, 2) as usize, outs.numChannels.clamp(0, 2) as usize);
-        if ic == 0 || oc == 0 || ins.__field0.channelBuffers32.is_null() || outs.__field0.channelBuffers32.is_null() {
+        let (ic, oc) = (
+            ins.numChannels.clamp(0, 2) as usize,
+            outs.numChannels.clamp(0, 2) as usize,
+        );
+        if ic == 0
+            || oc == 0
+            || ins.__field0.channelBuffers32.is_null()
+            || outs.__field0.channelBuffers32.is_null()
+        {
             return kResultOk;
         }
         let in_ch = slice::from_raw_parts(ins.__field0.channelBuffers32, ic);
@@ -408,7 +455,11 @@ impl Processor {
             a.up[k * 2 + 1] = *ri.add(k);
         }
         exchange(&mut a, end, n);
-        let own = if self.own.load(Relaxed) { own_gain(end) } else { 0.0 };
+        let own = if self.own.load(Relaxed) {
+            own_gain(end)
+        } else {
+            0.0
+        };
         self.link.well.store(bridge_well(end), Relaxed);
         self.link.blocks.fetch_add(1, Relaxed);
         drop(guard);
@@ -428,7 +479,9 @@ impl Processor {
             None => {
                 for k in 0..n {
                     let g = from + step * (k + 1) as f32;
-                    *lo.add(k) = ((a.up[k * 2] + a.up[k * 2 + 1]) * g + a.down[k * 2] + a.down[k * 2 + 1]) * 0.5;
+                    *lo.add(k) =
+                        ((a.up[k * 2] + a.up[k * 2 + 1]) * g + a.down[k * 2] + a.down[k * 2 + 1])
+                            * 0.5;
                 }
             }
         }
@@ -462,14 +515,23 @@ unsafe fn main_bus(dir: BusDirection, bus: *mut BusInfo, channels: i32) {
     bus.mediaType = MediaTypes_::kAudio as MediaType;
     bus.direction = dir;
     bus.channelCount = channels;
-    copy_wstring(if dir == BusDirections_::kInput as BusDirection { "Input" } else { "Output" }, &mut bus.name);
+    copy_wstring(
+        if dir == BusDirections_::kInput as BusDirection {
+            "Input"
+        } else {
+            "Output"
+        },
+        &mut bus.name,
+    );
     bus.busType = BusTypes_::kMain as BusType;
     bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32;
 }
 
 /// Saved state: [bypass, my sound], one byte each.
 unsafe fn write_state(stream: *mut IBStream, bypass: bool, own: bool) -> tresult {
-    let Some(s) = ComRef::from_raw(stream) else { return kResultFalse };
+    let Some(s) = ComRef::from_raw(stream) else {
+        return kResultFalse;
+    };
     let mut bytes = [bypass as u8, own as u8];
     let mut written = 0;
     s.write(bytes.as_mut_ptr() as *mut c_void, 2, &mut written)
@@ -479,7 +541,8 @@ unsafe fn read_state(stream: *mut IBStream) -> Option<(bool, bool)> {
     let s = ComRef::from_raw(stream)?;
     let mut bytes = [0u8, 1u8];
     let mut read = 0;
-    (s.read(bytes.as_mut_ptr() as *mut c_void, 2, &mut read) == kResultOk && read == 2).then_some((bytes[0] != 0, bytes[1] != 0))
+    (s.read(bytes.as_mut_ptr() as *mut c_void, 2, &mut read) == kResultOk && read == 2)
+        .then_some((bytes[0] != 0, bytes[1] != 0))
 }
 
 impl IComponentTrait for Processor {
@@ -499,20 +562,45 @@ impl IComponentTrait for Processor {
         (media == MediaTypes_::kAudio as MediaType) as i32
     }
 
-    unsafe fn getBusInfo(&self, media: MediaType, dir: BusDirection, index: i32, bus: *mut BusInfo) -> tresult {
+    unsafe fn getBusInfo(
+        &self,
+        media: MediaType,
+        dir: BusDirection,
+        index: i32,
+        bus: *mut BusInfo,
+    ) -> tresult {
         if media != MediaTypes_::kAudio as MediaType || index != 0 || bus.is_null() {
             return kInvalidArgument;
         }
         let input = dir == BusDirections_::kInput as BusDirection;
-        main_bus(dir, bus, if input { &self.in_channels } else { &self.out_channels }.load(Relaxed) as i32);
+        main_bus(
+            dir,
+            bus,
+            if input {
+                &self.in_channels
+            } else {
+                &self.out_channels
+            }
+            .load(Relaxed) as i32,
+        );
         kResultOk
     }
 
-    unsafe fn getRoutingInfo(&self, _in_info: *mut RoutingInfo, _out_info: *mut RoutingInfo) -> tresult {
+    unsafe fn getRoutingInfo(
+        &self,
+        _in_info: *mut RoutingInfo,
+        _out_info: *mut RoutingInfo,
+    ) -> tresult {
         kNotImplemented
     }
 
-    unsafe fn activateBus(&self, _media: MediaType, _dir: BusDirection, _index: i32, _state: TBool) -> tresult {
+    unsafe fn activateBus(
+        &self,
+        _media: MediaType,
+        _dir: BusDirection,
+        _index: i32,
+        _state: TBool,
+    ) -> tresult {
         kResultOk
     }
 
@@ -539,7 +627,13 @@ impl IComponentTrait for Processor {
 }
 
 impl IAudioProcessorTrait for Processor {
-    unsafe fn setBusArrangements(&self, inputs: *mut SpeakerArrangement, num_ins: i32, outputs: *mut SpeakerArrangement, num_outs: i32) -> tresult {
+    unsafe fn setBusArrangements(
+        &self,
+        inputs: *mut SpeakerArrangement,
+        num_ins: i32,
+        outputs: *mut SpeakerArrangement,
+        num_outs: i32,
+    ) -> tresult {
         if num_ins != 1 || num_outs != 1 || inputs.is_null() || outputs.is_null() {
             return kResultFalse;
         }
@@ -560,13 +654,27 @@ impl IAudioProcessorTrait for Processor {
         }
     }
 
-    unsafe fn getBusArrangement(&self, dir: BusDirection, index: i32, arr: *mut SpeakerArrangement) -> tresult {
+    unsafe fn getBusArrangement(
+        &self,
+        dir: BusDirection,
+        index: i32,
+        arr: *mut SpeakerArrangement,
+    ) -> tresult {
         if index != 0 || arr.is_null() {
             return kInvalidArgument;
         }
         let input = dir == BusDirections_::kInput as BusDirection;
-        let channels = if input { &self.in_channels } else { &self.out_channels }.load(Relaxed);
-        *arr = if channels == 1 { SpeakerArr::kMono } else { SpeakerArr::kStereo };
+        let channels = if input {
+            &self.in_channels
+        } else {
+            &self.out_channels
+        }
+        .load(Relaxed);
+        *arr = if channels == 1 {
+            SpeakerArr::kMono
+        } else {
+            SpeakerArr::kStereo
+        };
         kResultOk
     }
 
@@ -583,7 +691,9 @@ impl IAudioProcessorTrait for Processor {
     }
 
     unsafe fn setupProcessing(&self, setup: *mut ProcessSetup) -> tresult {
-        let Some(setup) = setup.as_ref() else { return kInvalidArgument };
+        let Some(setup) = setup.as_ref() else {
+            return kInvalidArgument;
+        };
         let max = setup.maxSamplesPerBlock.max(1) as usize;
         self.max_block.store(max as u32, Relaxed);
         // buffers are sized here, never on the audio thread
@@ -601,7 +711,10 @@ impl IAudioProcessorTrait for Processor {
     unsafe fn process(&self, data: *mut ProcessData) -> tresult {
         // a panic must not unwind into the host (it would take the DAW down with it): the
         // block is then left as the host gave it
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe { self.process_block(data) })).unwrap_or(kResultFalse)
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            self.process_block(data)
+        }))
+        .unwrap_or(kResultFalse)
     }
 
     unsafe fn getTailSamples(&self) -> u32 {
@@ -630,7 +743,10 @@ impl Controller {
     const CID: TUID = uid(0x6A3C_1E52, 0x8F0B_4D7A, 0x9C21_5B7E, 0x0A61_C0DF);
 
     fn new() -> Self {
-        Self { bypass: Cell::new(0.0), own: Cell::new(1.0) }
+        Self {
+            bypass: Cell::new(0.0),
+            own: Cell::new(1.0),
+        }
     }
 
     fn cell(&self, id: u32) -> Option<&Cell<f64>> {
@@ -674,10 +790,25 @@ impl IEditControllerTrait for Controller {
     }
 
     unsafe fn getParameterInfo(&self, index: i32, info: *mut ParameterInfo) -> tresult {
-        let Some(info) = info.as_mut() else { return kInvalidArgument };
+        let Some(info) = info.as_mut() else {
+            return kInvalidArgument;
+        };
         let (id, title, short, default, flags) = match index {
-            0 => (P_BYPASS, "Bypass", "Bypass", 0.0, ParameterInfo_::ParameterFlags_::kIsBypass | ParameterInfo_::ParameterFlags_::kCanAutomate),
-            1 => (P_OWN, "My sound", "Mine", 1.0, ParameterInfo_::ParameterFlags_::kCanAutomate),
+            0 => (
+                P_BYPASS,
+                "Bypass",
+                "Bypass",
+                0.0,
+                ParameterInfo_::ParameterFlags_::kIsBypass
+                    | ParameterInfo_::ParameterFlags_::kCanAutomate,
+            ),
+            1 => (
+                P_OWN,
+                "My sound",
+                "Mine",
+                1.0,
+                ParameterInfo_::ParameterFlags_::kCanAutomate,
+            ),
             _ => return kInvalidArgument,
         };
         info.id = id;
@@ -699,12 +830,19 @@ impl IEditControllerTrait for Controller {
             (P_OWN, false) => "Off",
             _ => return kInvalidArgument,
         };
-        let Some(string) = string.as_mut() else { return kInvalidArgument };
+        let Some(string) = string.as_mut() else {
+            return kInvalidArgument;
+        };
         copy_wstring(text, string);
         kResultOk
     }
 
-    unsafe fn getParamValueByString(&self, id: u32, string: *mut TChar, value: *mut f64) -> tresult {
+    unsafe fn getParamValueByString(
+        &self,
+        id: u32,
+        string: *mut TChar,
+        value: *mut f64,
+    ) -> tresult {
         if self.cell(id).is_none() || string.is_null() || value.is_null() {
             return kInvalidArgument;
         }
@@ -713,7 +851,8 @@ impl IEditControllerTrait for Controller {
         while len < 128 && *string.add(len) != 0 {
             len += 1;
         }
-        let text = String::from_utf16_lossy(slice::from_raw_parts(string as *const u16, len)).to_lowercase();
+        let text = String::from_utf16_lossy(slice::from_raw_parts(string as *const u16, len))
+            .to_lowercase();
         *value = match text.trim() {
             "on" | "1" | "bypassed" => 1.0,
             "off" | "0" => 0.0,
@@ -763,7 +902,9 @@ impl Class for Factory {
 
 impl IPluginFactoryTrait for Factory {
     unsafe fn getFactoryInfo(&self, info: *mut PFactoryInfo) -> tresult {
-        let Some(info) = info.as_mut() else { return kInvalidArgument };
+        let Some(info) = info.as_mut() else {
+            return kInvalidArgument;
+        };
         copy_cstring(VENDOR, &mut info.vendor);
         copy_cstring("", &mut info.url);
         copy_cstring("", &mut info.email);
@@ -776,7 +917,9 @@ impl IPluginFactoryTrait for Factory {
     }
 
     unsafe fn getClassInfo(&self, index: i32, info: *mut PClassInfo) -> tresult {
-        let Some(info) = info.as_mut() else { return kInvalidArgument };
+        let Some(info) = info.as_mut() else {
+            return kInvalidArgument;
+        };
         let (cid, category) = match index {
             0 => (Processor::CID, "Audio Module Class"),
             1 => (Controller::CID, "Component Controller Class"),
@@ -789,7 +932,12 @@ impl IPluginFactoryTrait for Factory {
         kResultOk
     }
 
-    unsafe fn createInstance(&self, cid: FIDString, iid: FIDString, obj: *mut *mut c_void) -> tresult {
+    unsafe fn createInstance(
+        &self,
+        cid: FIDString,
+        iid: FIDString,
+        obj: *mut *mut c_void,
+    ) -> tresult {
         if cid.is_null() || iid.is_null() || obj.is_null() {
             return kInvalidArgument;
         }
@@ -810,7 +958,9 @@ impl IPluginFactoryTrait for Factory {
 
 impl IPluginFactory2Trait for Factory {
     unsafe fn getClassInfo2(&self, index: i32, info: *mut PClassInfo2) -> tresult {
-        let Some(info) = info.as_mut() else { return kInvalidArgument };
+        let Some(info) = info.as_mut() else {
+            return kInvalidArgument;
+        };
         let (cid, category, sub) = match index {
             0 => (Processor::CID, "Audio Module Class", "Fx"),
             1 => (Controller::CID, "Component Controller Class", ""),
@@ -843,7 +993,9 @@ extern "system" fn ExitDll() -> bool {
 
 #[no_mangle]
 extern "system" fn GetPluginFactory() -> *mut IPluginFactory {
-    ComWrapper::new(Factory).to_com_ptr::<IPluginFactory>().map_or(ptr::null_mut(), |p| p.into_raw())
+    ComWrapper::new(Factory)
+        .to_com_ptr::<IPluginFactory>()
+        .map_or(ptr::null_mut(), |p| p.into_raw())
 }
 
 #[cfg(all(test, windows))]
@@ -881,7 +1033,13 @@ mod tests {
             }
         });
         let n = 256;
-        let mut a = Audio { sample_rate: 48_000, missed: 0, own: f32::NAN, up: vec![0.0; n * 2], down: vec![0.0; n * 2] };
+        let mut a = Audio {
+            sample_rate: 48_000,
+            missed: 0,
+            own: f32::NAN,
+            up: vec![0.0; n * 2],
+            down: vec![0.0; n * 2],
+        };
         // (the stall spans a few blocks, then the plugin waits again within 8 blocks)
         let mut current = 0;
         let blocks = 40;
@@ -895,7 +1053,10 @@ mod tests {
         }
         stop.store(true, Ordering::Relaxed);
         worker.join().unwrap();
-        assert!(current >= 18, "{current} of the last 20 blocks played their own mix");
+        assert!(
+            current >= 18,
+            "{current} of the last 20 blocks played their own mix"
+        );
     }
 
     /// Whatever is in the shared region, the plugin hands the DAW numbers only, and none far
@@ -906,7 +1067,13 @@ mod tests {
         let app = gachi_bridge::AppEnd::create(&name).expect("bridge");
         let mut end = gachi_bridge::PluginEnd::open(&name, 9).expect("plugin end");
         let n = 64;
-        let mut a = Audio { sample_rate: 48_000, missed: 0, own: f32::NAN, up: vec![0.0; n * 2], down: vec![0.0; n * 2] };
+        let mut a = Audio {
+            sample_rate: 48_000,
+            missed: 0,
+            own: f32::NAN,
+            up: vec![0.0; n * 2],
+            down: vec![0.0; n * 2],
+        };
         let mut bad = vec![0.25f32; n * 2];
         bad[0] = f32::NAN;
         bad[1] = f32::INFINITY;
@@ -915,7 +1082,11 @@ mod tests {
         bad[4] = -1e30;
         app.write_down(&bad);
         exchange(&mut a, &mut end, n);
-        assert!(a.down.iter().all(|x| x.is_finite() && x.abs() <= 4.0), "{:?}", &a.down[..6]);
+        assert!(
+            a.down.iter().all(|x| x.is_finite() && x.abs() <= 4.0),
+            "{:?}",
+            &a.down[..6]
+        );
         assert_eq!(&a.down[..6], &[0.0, 0.0, 0.0, 4.0, -4.0, 0.25]);
         assert!((0.0..=4.0).contains(&end.own_gain()));
     }

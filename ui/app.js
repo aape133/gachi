@@ -22,7 +22,36 @@
   const fmtCode = (c) => `${c.slice(0, 3)}-${c.slice(3)}`;
   // the name a first run gets, in each language (the home screen asks for a real one)
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const dbText = (db) => (db <= -40 ? '-∞' : (db > 0 ? '+' : '') + f1(db));
+  /** Every fader and every meter is on one scale, in dB: +6 at the top, 0 a little under it,
+   *  -60 at the bottom (a fader there is off). 0 on a fader is "as it came"; 0 on a meter is
+   *  as loud as a signal goes without breaking up: what is over it shows red.
+   *
+   *  The scale is not even: as on a DAW's mixer the part that is used, around 0, is wide
+   *  (2.5 % of the length a dB down to -12) and the bottom close-set. LAW: dB → the place
+   *  along the length (0..1), straight between its points. A fader's slider holds the place
+   *  (0..FADER_UNITS), so its cap goes with the pointer; `faderDb` reads the dB off it. */
+  const FADER_MIN = -60, FADER_MAX = 6, FADER_UNITS = 1000, FADER_STEP = 5;
+  const LAW = [[-60, 0], [-48, 0.08], [-36, 0.2], [-24, 0.35], [-12, 0.55], [0, 0.85], [6, 1]];
+  const along = (x, from, to) => {
+    if (x <= LAW[0][from]) return LAW[0][to];
+    for (let i = 1; i < LAW.length; i++) {
+      const [a, b] = [LAW[i - 1], LAW[i]];
+      if (x <= b[from]) return a[to] + ((x - a[from]) / (b[from] - a[from])) * (b[to] - a[to]);
+    }
+    return LAW[LAW.length - 1][to];
+  };
+  const dbToPos = (db) => along(db, 0, 1);
+  const posToDb = (pos) => along(pos, 1, 0);
+  /** the slider's value for a level, and the level (to a tenth of a dB) at a slider's value */
+  // (`el._cut`: a scale that ends at 0 dB, see SELF_CUT; else the whole of it)
+  const faderAt = (db, cut = 1) => Math.round((Math.min(1, dbToPos(db) / cut) * FADER_UNITS) / FADER_STEP) * FADER_STEP;
+  const faderDb = (el) => (+el.value <= 0 ? FADER_MIN : Math.round(posToDb((+el.value / FADER_UNITS) * (el._cut || 1)) * 10) / 10);
+  /** My own strip (not in VST mode) ends at 0 dB: what I send cannot be over it without
+   *  breaking up, so nothing is shown over it and the fader does not go there (louder is
+   *  the gain knob's). The same scale as the others', cut off at its 0. */
+  const SELF_CUT = dbToPos(0);
+  const FADER_ATTRS = `min="0" max="${FADER_UNITS}" step="${FADER_STEP}" data-zero="${faderAt(0)}"`;
+  const dbText = (db) => (db <= FADER_MIN ? '-∞' : (db > 0 ? '+' : '') + f1(db));
   const panText = (v) => (v === 0 ? 'C' : (v < 0 ? 'L' : 'R') + Math.abs(v));
   const quality = (ms) => (ms < 20 ? ['good', tr('app.good')] : ms < 30 ? ['warn', tr('app.fair')] : ['bad', tr('app.high')]);
   const mmss = (ms) => {
@@ -83,14 +112,15 @@
     el.style.setProperty('--a', (pan ? Math.min(50, p) : 0) + '%');
     el.style.setProperty('--b', (pan ? Math.max(50, p) : p) + '%');
   }
-  /** peak (0..1) → bar height on a dB scale: -60 dB at the bottom, 0 dB at the top */
-  const meterPos = (p) => (p > 0.001 ? Math.min(1, Math.max(0, (20 * Math.log10(p) + 60) / 60)) : 0);
+  /** peak → bar height, on the faders' own scale (see FADER_MIN): a meter and the fader
+   *  beside it read off the same marks, and a level is where its fader's cap would be */
+  const meterPos = (p, cut = 1) => (p > 0.001 ? Math.min(1, dbToPos(20 * Math.log10(p)) / cut) : 0);
   /** rises at once, falls smoothly (about 30 dB a second) instead of flickering */
   function meterBar(el, peak) {
     // (30 times a second for every bar: the page is touched only when the bar moves, so
     // silent channels and people cost nothing to draw)
     const was = el._v || 0;
-    const v = Math.max(meterPos(peak), was - 0.03);
+    const v = Math.max(meterPos(peak, el._cut), was - 0.03);
     if (v !== was) { el._v = v; el.style.setProperty('--v', v.toFixed(3)); }
     // (at full scale: shown for a second, a single block of it is over before it is seen)
     if (peak >= 0.99) el._clipAt = performance.now();
@@ -497,29 +527,41 @@
   /* ── a person: the same parts in both views (the styles lay them out) ── */
   const KNOB_DEG = 135; // the pan knob turns this far either way
   /** the fader's scale: where each mark sits, from the bottom (`min`) to the top (`max`) */
-  const scaleHtml = (marks, min, max) => marks.map((d) => `<span style="bottom:${((d - min) / (max - min)) * 100}%">${d === min && min <= -40 ? '-∞' : d > 0 ? '+' + d : d}</span>`).join('');
-  const PEER_MARKS = [6, 0, -6, -12, -24, -40];
-  const GAIN_MARKS = [24, 12, 0, -12, -24];
+  const scaleHtml = (marks, cut = 1) => marks.filter((d) => dbToPos(d) <= cut).map((d) => `<span style="bottom:${((dbToPos(d) / cut) * 100).toFixed(1)}%">${d <= FADER_MIN ? '-∞' : d > 0 ? '+' + d : d}</span>`).join('');
+  /** the highest a meter went, kept as a figure over it until it is clicked (levels are set
+   *  against each other by it after a song); red once it was over 0 dB */
+  const PEAK_HTML = () => `<button class="pk" data-act="peak" data-f="peak" title="${esc(tr('card.peak_hint'))}" aria-label="${esc(tr('card.peak_hint'))}">-∞</button>`;
+  function notePeak(st, lv) {
+    const p = Math.max(lv[0] || 0, lv[1] || 0);
+    if (!st || !(p > (st.peak || 0))) return;
+    st.peak = p;
+    const db = 20 * Math.log10(p);
+    put(st.pk, db < FADER_MIN ? '-∞' : (db > 0 ? '+' : '') + db.toFixed(1));
+    st.pk.classList.toggle('over', p >= 0.999);
+  }
+  function clearPeak(st) { st.peak = 0; put(st.pk, '-∞'); st.pk.classList.remove('over'); }
+  const FADER_MARKS = [6, 0, -6, -12, -24, -36, -48, -60];
 
   function buildSelfStrip() {
     const el = h(`
       <article class="strip self" data-id="self">
         <button class="lat q-accent" data-act="local"><i class="dot"></i><span class="t" data-f="local"></span></button>
-        <div class="knob-box" aria-hidden="true"><div class="knob"><div class="knob-face"></div></div><span class="knob-val"></span></div>
+        <div class="knob-box"><div class="knob"><div class="knob-face" data-f="knob"></div><input type="range" min="-24" max="24" step="0.5" value="0" data-act="trim"></div><span class="knob-val" data-f="trim"></span></div>
         <div class="msr">
           <button class="ms mic" data-act="mute">M</button>
           <button class="ms mon" data-act="monitor">MON</button>
           <button class="ms r" data-act="rec" title="${esc(tr('card.include_recording_only'))}" aria-label="${esc(tr('card.include_recording_only'))}"><i></i></button>
         </div>
         <div class="lane">
+          ${PEAK_HTML()}
           <div class="meter" data-f="meter"><i></i><i></i></div>
-          <div class="scale" data-f="scale"></div>
-          <div class="fader"><input type="range" step="0.5" data-act="fader"></div>
+          <div class="scale" data-f="scale" aria-hidden="true"></div>
+          <div class="fader"><input type="range" ${FADER_ATTRS} value="${faderAt(0)}" data-act="fader"></div>
           <span class="db" data-f="db"></span>
         </div>
         <button class="plate" data-act="color" title="${esc(tr('card.my_track'))}"><b class="nm" data-f="name"></b><span class="inst" data-f="inst"></span></button>
       </article>`);
-    strips.set('self', { el, meter: $('[data-f=meter]', el) });
+    strips.set('self', { el, meter: $('[data-f=meter]', el), pk: $('[data-f=peak]', el) });
     return el;
   }
 
@@ -556,14 +598,31 @@
     mo.title = mon.title; mo.setAttribute('aria-label', mon.title);
     $('[data-act=rec]', el).classList.toggle('on', self.rec !== false);
     el.classList.toggle('rec-on', self.rec !== false);
-    // the fader: what I send (device mode), or how loud I hear myself in the DAW (VST mode)
+    // the fader: how loud I go out to the others (device mode), or how loud I hear myself in
+    // the DAW (VST mode); on the scale every fader and meter here has. The knob over it: the
+    // input's gain, before the fader, as on a DAW's channel (the DAW has its own: none then)
     const f = $('[data-act=fader]', el);
-    const [min, max, v] = daw ? [-40, 6, self.monitorDb ?? 0] : [-24, 24, self.gain];
-    if (+f.min !== min) { f.min = min; f.max = max; $('[data-f=scale]', el).innerHTML = scaleHtml(daw ? PEER_MARKS : GAIN_MARKS, min, max); }
-    f.value = v; paintRange(f);
-    f.title = daw ? tr('card.how_loud_hear') : tr('card.input');
+    // (what I send ends at 0 dB: see SELF_CUT; how loud I hear myself in the DAW does not)
+    const cut = daw ? 1 : SELF_CUT;
+    if (f._cut !== cut) {
+      f._cut = cut; f.dataset.zero = faderAt(0, cut);
+      for (const bar of st.meter.children) { bar._cut = cut; bar._v = -1; }
+      $('[data-f=scale]', el).innerHTML = scaleHtml(FADER_MARKS, cut);
+      el.classList.toggle('to-zero', cut < 1);
+    }
+    const v = daw ? self.monitorDb ?? 0 : Math.min(0, self.level ?? 0);
+    if (document.activeElement !== f || faderDb(f) !== v) f.value = faderAt(v, cut);
+    paintRange(f);
+    f.title = daw ? tr('card.how_loud_hear') : tr('card.send_level');
     f.setAttribute('aria-label', f.title);
+    f.setAttribute('aria-valuetext', dbText(v) + ' dB');
     put($('[data-f=db]', el), dbText(v));
+    const k = $('[data-act=trim]', el), g = self.gain || 0;
+    el.classList.toggle('daw', daw);
+    k.value = g; k.disabled = daw;
+    k.title = tr('card.input_gain'); k.setAttribute('aria-label', k.title);
+    $('[data-f=knob]', el).style.transform = `rotate(${(g / 24) * KNOB_DEG}deg)`;
+    put($('[data-f=trim]', el), (g > 0 ? '+' : '') + (Number.isInteger(g) ? g : f1(g)));
     put($('[data-f=name]', el), s.name);
     put($('[data-f=inst]', el), (room?.isHost ? tr('card.host') + ' · ' : '') + (s.instrument || tr('card.add_instrument')));
     st.meter.classList.toggle('mono', myStream().channels === 1);
@@ -605,14 +664,15 @@
           <button class="ms r" data-act="rec" title="${esc(tr('card.include_recording_only'))}" aria-label="${esc(tr('card.include_recording_only'))}"><i></i></button>
         </div>
         <div class="lane">
+          ${PEAK_HTML()}
           <div class="meter" data-f="meter"><i></i><i></i></div>
-          <div class="scale">${scaleHtml(PEER_MARKS, -40, 6)}</div>
-          <div class="fader"><input type="range" min="-40" max="6" step="0.5" value="${p.volume}" data-act="vol" title="${esc(tr('card.vol'))}" aria-label="${esc(tr('card.vol'))}"></div>
+          <div class="scale" aria-hidden="true">${scaleHtml(FADER_MARKS)}</div>
+          <div class="fader"><input type="range" ${FADER_ATTRS} value="${faderAt(p.volume)}" data-act="vol" title="${esc(tr('card.vol'))}" aria-label="${esc(tr('card.vol'))}"></div>
           <span class="db" data-f="vol"></span>
         </div>
         <button class="plate" data-act="color" draggable="true" title="${esc(tr('card.drag_or_color'))}"><b class="nm" data-f="name"></b><span class="inst" data-f="inst"></span></button>
       </article>`);
-    strips.set(p.id, { el, meter: $('[data-f=meter]', el) });
+    strips.set(p.id, { el, meter: $('[data-f=meter]', el), pk: $('[data-f=peak]', el) });
     placeStrip(el, p.name);
     $$('input[type=range]', el).forEach(paintRange);
     updatePeer(p);
@@ -652,7 +712,8 @@
     put($('[data-f=pan]', el), panText(p.pan));
     $('[data-f=knob]', el).style.transform = `rotate(${(p.pan / 100) * KNOB_DEG}deg)`;
     const vol = $('[data-act=vol]', el), pan = $('[data-act=pan]', el);
-    if (document.activeElement !== vol && +vol.value !== p.volume) { vol.value = p.volume; paintRange(vol); }
+    if (document.activeElement !== vol && faderDb(vol) !== p.volume) { vol.value = faderAt(p.volume); paintRange(vol); }
+    putAttr(vol, 'aria-valuetext', dbText(p.volume) + ' dB');
     if (document.activeElement !== pan && +pan.value !== p.pan) pan.value = p.pan;
     $('[data-act=mute]', el).classList.toggle('on', !!p.mute);
     $('[data-act=solo]', el).classList.toggle('on', !!p.solo);
@@ -728,30 +789,35 @@
     const t = e.target, act = t.dataset.act; if (!act) return;
     const id = t.closest('.strip').dataset.id;
     if (t.type === 'range') paintRange(t);
+    // (a level moved: the highest it went before says nothing of what it is now)
+    if (act === 'vol' || act === 'fader' || act === 'trim') clearPeak(strips.get(id));
     if (id === 'self') {
       if (act === 'fader') {
-        if (backend.getSettings().connection === 'daw') backend.setSelf({ monitorDb: +t.value });
-        else backend.setSelf({ gain: +t.value });
+        if (backend.getSettings().connection === 'daw') backend.setSelf({ monitorDb: faderDb(t) });
+        else backend.setSelf({ level: faderDb(t) });
         syncSelfControls();
       }
+      if (act === 'trim') { backend.setSelf({ gain: +t.value }); syncSelfControls(); }
       return;
     }
     const p = peers.get(id); if (!p) return;
     // (shown at once: the figures that confirm it come back a moment later)
-    if (act === 'vol') { p.volume = +t.value; backend.setPeer(id, { volume: p.volume }); }
+    if (act === 'vol') { p.volume = faderDb(t); backend.setPeer(id, { volume: p.volume }); }
     if (act === 'pan') { p.pan = +t.value; backend.setPeer(id, { pan: p.pan }); }
     updatePeer(p);
   });
   $('#room-input').addEventListener('change', (e) => backend.updateSettings({ inputChannel: e.target.value }));
   stage.addEventListener('dblclick', (e) => {
     const t = e.target; if (t.type !== 'range') return;
-    t.value = 0;
+    // (a fader's 0 dB is not its slider's 0)
+    t.value = t.dataset.zero || 0;
     t.dispatchEvent(new Event('input', { bubbles: true }));
   });
   stage.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const id = b.closest('.strip')?.dataset.id, act = b.dataset.act; if (!id) return;
     if (act === 'color') { colorPopFor === id ? closeColorPop() : openColorPop(id, b); return; }
+    if (act === 'peak') { clearPeak(strips.get(id)); return; }
     if (id === 'self') {
       if (act === 'mute') toggleMute();
       if (act === 'monitor') toggleMonitor();
@@ -778,14 +844,14 @@
      - the knob has no length: up or to the right is right, its whole way in 400 px;
      - with Shift, a quarter of that. ── */
   const KNOB_TRAVEL = 400, DRAG_FINE = 4, DRAG_SLACK = 3;
-  const DRAGGED = '[data-act=pan], [data-act=vol], [data-act=fader], #master-vol';
+  const DRAGGED = '[data-act=pan], [data-act=trim], [data-act=vol], [data-act=fader], #master-vol';
   document.addEventListener('pointerdown', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement) || t.type !== 'range' || !t.matches(DRAGGED) || e.button !== 0 || t.disabled) return;
     // (no jump to the place clicked: the slider's own handling is kept out)
     e.preventDefault();
     t.focus();
-    const knob = t.dataset.act === 'pan';
+    const knob = t.dataset.act === 'pan' || t.dataset.act === 'trim';
     const upright = !knob && !!t.closest('.stage.mixer');
     const box = t.getBoundingClientRect();
     // (a fader's thumb stops half its size short of either end)
@@ -879,9 +945,11 @@
     if (document.hidden) return;
     if (room) {
       setMeter(strips.get('self')?.meter, lv.self);
+      notePeak(strips.get('self'), lv.self);
       for (const id in lv.peers) {
         const st = strips.get(id); if (!st) continue;
         setMeter(st.meter, lv.peers[id]);
+        notePeak(st, lv.peers[id]);
       }
       if (lv.master) setMeter($('#master-meter'), lv.master);
     }
@@ -1120,10 +1188,11 @@
   paintRange(master);
   master.addEventListener('input', () => {
     paintRange(master);
-    backend.setMaster(+master.value);
-    $('#master-val').textContent = dbText(+master.value) + ' dB';
+    backend.setMaster(faderDb(master));
+    $('#master-val').textContent = dbText(faderDb(master)) + ' dB';
+    master.setAttribute('aria-valuetext', dbText(faderDb(master)) + ' dB');
   });
-  master.addEventListener('dblclick', () => { master.value = 0; master.dispatchEvent(new Event('input')); });
+  master.addEventListener('dblclick', () => { master.value = faderAt(0); master.dispatchEvent(new Event('input')); });
 
   let leaveArm = null;
   $('#btn-leave').addEventListener('click', () => {

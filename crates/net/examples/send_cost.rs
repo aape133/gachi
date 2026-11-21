@@ -65,14 +65,23 @@ fn pct(v: &mut [u64], q: f64) -> f64 {
 }
 
 fn show(v: &mut [u64]) -> String {
-    format!("{:>5.1} {:>5.1} {:>6.1} {:>7.1}", pct(v, 0.5), pct(v, 0.99), pct(v, 0.999), pct(v, 1.0))
+    format!(
+        "{:>5.1} {:>5.1} {:>6.1} {:>7.1}",
+        pct(v, 0.5),
+        pct(v, 0.99),
+        pct(v, 0.999),
+        pct(v, 1.0)
+    )
 }
 
 /// One case. `cipher` is forced through what each side announces about AES (both say
 /// "yes" → AES-256-GCM, else ChaCha20-Poly1305), as two real machines would.
 fn case(stun: &str, cipher: Cipher, others: usize, doubled: bool, secs: f64) {
     let aes = cipher == Cipher::Aes256Gcm;
-    assert!(!aes || crypto::aes_in_hardware(), "this CPU has no AES in hardware");
+    assert!(
+        !aes || crypto::aes_in_hardware(),
+        "this CPU has no AES in hardware"
+    );
     let me = start(stun, 1);
     let origin = Instant::now();
     let sent_at: Arc<Vec<AtomicU64>> = Arc::new((0..SLOTS).map(|_| AtomicU64::new(0)).collect());
@@ -87,8 +96,24 @@ fn case(stun: &str, cipher: Cipher, others: usize, doubled: bool, secs: f64) {
         me.add_peer(id, tx);
         let (tx, rx) = rtrb::RingBuffer::<Frame>::new(1024);
         them.add_peer(1, tx);
-        me.set_candidates(id, them.candidates.clone(), them.token, crypto::PeerKey { aes, ..them.peer_key() });
-        them.set_candidates(1, me.candidates.clone(), me.token, crypto::PeerKey { aes, ..me.peer_key() });
+        me.set_candidates(
+            id,
+            them.candidates.clone(),
+            them.token,
+            crypto::PeerKey {
+                aes,
+                ..them.peer_key()
+            },
+        );
+        them.set_candidates(
+            1,
+            me.candidates.clone(),
+            me.token,
+            crypto::PeerKey {
+                aes,
+                ..me.peer_key()
+            },
+        );
         peers.push(them);
         consumers.push(rx);
     }
@@ -149,7 +174,11 @@ fn case(stun: &str, cipher: Cipher, others: usize, doubled: bool, secs: f64) {
     let period = Duration::from_secs_f64(PACKET as f64 / RATE as f64);
     let n = (secs / period.as_secs_f64()) as u32;
     let mut costs = Vec::with_capacity(n as usize);
-    let mut frame = Frame { channels: 2, frames: PACKET as u16, ..Frame::EMPTY };
+    let mut frame = Frame {
+        channels: 2,
+        frames: PACKET as u16,
+        ..Frame::EMPTY
+    };
     let mut seed = 0x2545_F491_4F6C_DD1Du64;
     let start = Instant::now();
     for seq in 0..n {
@@ -233,10 +262,16 @@ fn nic(secs: f64, copies: usize) {
     let gw = netdev::get_default_gateway().expect("a default gateway");
     let ip = *gw.ipv4.first().expect("an IPv4 gateway");
     let to = std::net::SocketAddr::from((ip, 9));
-    let sock = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP)).unwrap();
+    let sock = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )
+    .unwrap();
     let _ = sock.set_send_buffer_size(1 << 20);
     let _ = sock.set_tos(46 << 2);
-    sock.bind(&std::net::SocketAddr::from(([0, 0, 0, 0], 0)).into()).unwrap();
+    sock.bind(&std::net::SocketAddr::from(([0, 0, 0, 0], 0)).into())
+        .unwrap();
     let sock: UdpSocket = sock.into();
     gachi_net::prio::pro_audio();
     let buf = [0x5au8; 230];
@@ -274,18 +309,24 @@ fn crypto_cost() {
     println!("AES in hardware: {}", crypto::aes_in_hardware());
     println!("cipher             format  frames bytes | seal mean  worst | open mean  worst  (ns per packet)");
     for cipher in [Cipher::Aes256Gcm, Cipher::ChaCha20Poly1305] {
-        for (format, fname) in [(SampleFormat::Pcm16, "16-bit"), (SampleFormat::Pcm24, "24-bit")] {
+        for (format, fname) in [
+            (SampleFormat::Pcm16, "16-bit"),
+            (SampleFormat::Pcm24, "24-bit"),
+        ] {
             for frames in [32usize, 64, 128] {
                 let (a, b) = (Identity::generate(), Identity::generate());
                 let tx = a.session_using(cipher, 1, 2, &b.public).unwrap();
                 let rx = b.session_using(cipher, 2, 1, &a.public).unwrap();
-                let samples: Vec<f32> = (0..frames * 2).map(|i| ((i as f32) * 0.37).sin() * 0.5).collect();
+                let samples: Vec<f32> = (0..frames * 2)
+                    .map(|i| ((i as f32) * 0.37).sin() * 0.5)
+                    .collect();
                 let mut plain = [0u8; MAX_PACKET];
                 let n = audio::encode_audio(&mut plain, 1, 7, 2, format, &samples);
                 let mut wire = vec![[0u8; MAX_SEALED]; 100];
                 let mut lens = [0usize; 100];
                 let mut out = [0u8; MAX_SEALED];
-                let (mut seal_sum, mut seal_worst, mut open_sum, mut open_worst) = (0u128, 0u128, 0u128, 0u128);
+                let (mut seal_sum, mut seal_worst, mut open_sum, mut open_worst) =
+                    (0u128, 0u128, 0u128, 0u128);
                 let batches = 1000u128;
                 for _ in 0..batches {
                     let t = Instant::now();
@@ -297,24 +338,55 @@ fn crypto_cost() {
                     seal_worst = seal_worst.max(e);
                     let t = Instant::now();
                     for k in 0..100 {
-                        let Ok(Packet::Sealed { counter, aad, body, .. }) = audio::decode(&wire[k][..lens[k]]) else { panic!("not sealed") };
-                        assert_eq!(rx.open(counter, aad, body, &mut out), Some(n), "{} failed to open", cipher.label());
+                        let Ok(Packet::Sealed {
+                            counter, aad, body, ..
+                        }) = audio::decode(&wire[k][..lens[k]])
+                        else {
+                            panic!("not sealed")
+                        };
+                        assert_eq!(
+                            rx.open(counter, aad, body, &mut out),
+                            Some(n),
+                            "{} failed to open",
+                            cipher.label()
+                        );
                     }
                     let e = t.elapsed().as_nanos();
                     open_sum += e;
                     open_worst = open_worst.max(e);
                 }
                 // what came out is what went in (decode the last one fully)
-                let Ok(Packet::Audio { header, payload, .. }) = audio::decode(&out[..n]) else { panic!("inner packet") };
+                let Ok(Packet::Audio {
+                    header, payload, ..
+                }) = audio::decode(&out[..n])
+                else {
+                    panic!("inner packet")
+                };
                 let mut back = vec![0f32; frames * 2];
-                assert_eq!(audio::decode_samples(&header, payload, &mut back), frames * 2);
-                let tol = if format == SampleFormat::Pcm16 { 1.0 / 16384.0 } else { 1.0 / 4_000_000.0 };
-                assert!(samples.iter().zip(&back).all(|(x, y)| (x - y).abs() < tol), "samples changed on the way");
+                assert_eq!(
+                    audio::decode_samples(&header, payload, &mut back),
+                    frames * 2
+                );
+                let tol = if format == SampleFormat::Pcm16 {
+                    1.0 / 16384.0
+                } else {
+                    1.0 / 4_000_000.0
+                };
+                assert!(
+                    samples.iter().zip(&back).all(|(x, y)| (x - y).abs() < tol),
+                    "samples changed on the way"
+                );
                 // a flipped bit anywhere after the header is refused
                 let mut bad = wire[0];
                 bad[lens[0] / 2] ^= 0x10;
-                if let Ok(Packet::Sealed { counter, aad, body, .. }) = audio::decode(&bad[..lens[0]]) {
-                    assert!(rx.open(counter, aad, body, &mut out).is_none(), "tampered packet opened");
+                if let Ok(Packet::Sealed {
+                    counter, aad, body, ..
+                }) = audio::decode(&bad[..lens[0]])
+                {
+                    assert!(
+                        rx.open(counter, aad, body, &mut out).is_none(),
+                        "tampered packet opened"
+                    );
                 }
                 println!(
                     "{:<18} {fname}  {frames:>6} {:>5} | {:>9.0} {:>6.0} | {:>9.0} {:>6.0}",
@@ -331,7 +403,10 @@ fn crypto_cost() {
 }
 
 fn main() {
-    let secs: f64 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(5.0);
+    let secs: f64 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5.0);
     // --eco on|off: Windows power throttling (EcoQoS) forced on, or opted out of
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--eco") {
@@ -340,7 +415,14 @@ fn main() {
             Some("off") => Some(false),
             _ => None,
         };
-        println!("power throttling {want:?}: {}", if gachi_net::prio::power_throttling(want) { "set" } else { "refused" });
+        println!(
+            "power throttling {want:?}: {}",
+            if gachi_net::prio::power_throttling(want) {
+                "set"
+            } else {
+                "refused"
+            }
+        );
     }
     if std::env::args().any(|a| a == "--crypto") {
         crypto_cost();
@@ -356,7 +438,10 @@ fn main() {
         return;
     }
     let stun = spawn_stun();
-    println!("µs, p50 p99 p99.9 max; one packet = {PACKET} frames every {:.0} µs", PACKET as f64 * 1e6 / RATE as f64);
+    println!(
+        "µs, p50 p99 p99.9 max; one packet = {PACKET} frames every {:.0} µs",
+        PACKET as f64 * 1e6 / RATE as f64
+    );
     let ciphers: Vec<Cipher> = if crypto::aes_in_hardware() {
         vec![Cipher::Aes256Gcm, Cipher::ChaCha20Poly1305]
     } else {

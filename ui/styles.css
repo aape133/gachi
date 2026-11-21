@@ -490,7 +490,8 @@ input[type=range]:disabled { opacity: .45; }
 /* (as tall without a figure: my own strip has no pan, and its buttons below stand level with
    the others') */
 .knob-val { font: 9px/10px var(--num); min-height: 10px; color: var(--text-3); white-space: nowrap; }
-.self .knob-box { visibility: hidden; }
+/* (mine: the input's gain; in VST mode the DAW has that, and the place stays empty) */
+.self.daw .knob-box { visibility: hidden; }
 
 .msr { display: flex; gap: 3px; justify-content: center; }
 .ms {
@@ -512,7 +513,10 @@ input[type=range]:disabled { opacity: .45; }
 @keyframes blink { 50% { opacity: .2; } }
 
 /* meters: a bar per channel; --v 0..1 (–60..0 dB), green, then yellow, then red */
-.meter { display: flex; gap: 2px; }
+/* (--g, --y: where green and yellow end: -12 and -3 dB on the scale; my own strip's ends at
+   0 dB, so they are further along it) */
+.meter { display: flex; gap: 2px; --g: 55%; --y: 77.5%; }
+.strip.to-zero .meter { --g: 64.7%; --y: 91.2%; }
 .meter i { position: relative; display: block; border-radius: 3px; background: var(--well); overflow: hidden; }
 .meter i::after { content: ""; position: absolute; inset: 0; }
 .meter.mono i + i { display: none; }
@@ -523,6 +527,14 @@ input[type=range]:disabled { opacity: .45; }
 .scale span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; }
 .fader { position: relative; }
 .db { font: 11px var(--num); color: var(--text-2); text-align: center; white-space: nowrap; }
+/* the highest the meter went, over it; red once it was over 0 dB; a click clears it */
+.pk { border: 0; padding: 0; background: none; font: 10px/12px var(--num); color: var(--text-3); text-align: center; white-space: nowrap; cursor: pointer; }
+.pk:hover { color: var(--text); }
+.pk.over { color: var(--bad); font-weight: 600; }
+.stage.mixer .pk { grid-area: pk; margin-bottom: -2px; }
+/* (the tracks view: over the volume's figure, at the row's right) */
+.stage.tracks .pk { grid-area: db; justify-self: end; transform: translateY(-8px); }
+.stage.tracks .db { transform: translateY(7px); }
 
 .plate {
   min-width: 0; border: 0; padding: 0; cursor: pointer; color: inherit; text-align: center;
@@ -540,13 +552,17 @@ input[type=range]:disabled { opacity: .45; }
 .stage.mixer .stage-others { flex: 1; gap: 4px; padding: 0 20px 14px 14px; overflow-x: auto; overflow-y: hidden; }
 .stage.mixer .strip { flex: none; width: calc(var(--strip-w, 96px) + 14px); padding: 8px 6px; display: flex; flex-direction: column; gap: 8px; }
 .stage.mixer .lane {
-  flex: 1; display: grid; grid-template: "meter scale fader" 1fr "db db db" auto / auto 16px 20px;
+  flex: 1; display: grid; grid-template: "pk pk pk" auto "meter scale fader" 1fr "db db db" auto / auto 16px 20px;
   justify-content: center; column-gap: 4px; row-gap: 6px; padding-top: 4px;
 }
 .stage.mixer .meter { grid-area: meter; min-height: 60px; }
 .stage.mixer .meter i { width: var(--meter-w, 6px); height: 100%; }
-.stage.mixer .meter i::after { background: linear-gradient(to top, var(--good) 0 75%, var(--warn) 75% 92%, var(--bad) 92%); clip-path: inset(calc((1 - var(--v, 0)) * 100%) 0 0 0); }
-.stage.mixer .scale { grid-area: scale; margin: 7px 0; }
+.stage.mixer .meter i::after { background: linear-gradient(to top, var(--good) 0 var(--g), var(--warn) var(--g) var(--y), var(--bad) var(--y)); clip-path: inset(calc((1 - var(--v, 0)) * 100%) 0 0 0); }
+/* one scale between the meter and the fader, for both: the bar and the fader's cap are at
+   the same height for the same figure (the cap is 10 high and stops half of that short of
+   either end: the meter and the marks are set in by as much) */
+.stage.mixer .meter, .stage.mixer .scale { margin: 5px 0; }
+.stage.mixer .scale { grid-area: scale; }
 .stage.mixer .fader { grid-area: fader; }
 .stage.mixer .fader::before { content: ""; position: absolute; left: 7px; top: 0; bottom: 0; width: 6px; border-radius: 3px; background: var(--well); }
 .stage.mixer .fader input {
@@ -559,7 +575,6 @@ input[type=range]:disabled { opacity: .45; }
 .stage.mixer .plate .nm { font-size: var(--name-size, 12px); }
 /* (the narrowest strip, 64 wide: the dot, "15.5ms" and the warning sign side by side) */
 .stage.mixer .lat { width: 100%; gap: 3px; }
-.stage.mixer .self .knob-box .knob-val { visibility: visible; }
 .stage.mixer .strip.drop-before { box-shadow: -4px 0 0 0 var(--text); }
 .stage.mixer .strip.drop-after { box-shadow: 4px 0 0 0 var(--text); }
 .stage.mixer .invite-slot { flex: none; width: 110px; flex-direction: column; justify-content: center; }
@@ -587,7 +602,7 @@ input[type=range]:disabled { opacity: .45; }
 .stage.tracks .meter { grid-area: meter; flex-direction: column; gap: 2px; }
 .stage.tracks .meter i { height: var(--meter-h, 6px); width: 100%; }
 .stage.tracks .meter.mono i { height: calc(var(--meter-h, 6px) + 2px); }
-.stage.tracks .meter i::after { background: linear-gradient(to right, var(--good) 0 75%, var(--warn) 75% 92%, var(--bad) 92%); clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0); }
+.stage.tracks .meter i::after { background: linear-gradient(to right, var(--good) 0 var(--g), var(--warn) var(--g) var(--y), var(--bad) var(--y)); clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0); }
 .stage.tracks .fader { grid-area: fader; display: flex; align-items: center; }
 .stage.tracks .fader input { width: 100%; }
 .stage.tracks .db { grid-area: db; text-align: right; }
@@ -625,7 +640,7 @@ input[type=range]:disabled { opacity: .45; }
 .master-in { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .master .meter { flex-direction: column; gap: 2px; }
 .master .meter i { height: 3px; width: 100%; border-radius: 2px; }
-.master .meter i::after { background: linear-gradient(to right, var(--good) 0 75%, var(--warn) 75% 92%, var(--bad) 92%); clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0); }
+.master .meter i::after { background: linear-gradient(to right, var(--good) 0 var(--g), var(--warn) var(--g) var(--y), var(--bad) var(--y)); clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0); }
 .master input { height: 12px; }
 /* (room for "-40.0 dB" on one line: at 52 wide, anything below -10 broke in two) */
 .master .val { width: 60px; flex: none; text-align: right; font-size: 12px; white-space: nowrap; }
@@ -803,7 +818,9 @@ input[type=range]:disabled { opacity: .45; }
     grid-template-columns: minmax(140px, 1fr) 90px minmax(150px, 1.3fr) 32px;
     grid-template-areas: "plate msr lane pan";
   }
-  .stage.tracks .lane { display: grid; grid-area: lane; grid-template: "meter meter" auto "fader db" auto / 1fr 40px; gap: 6px 8px; align-items: center; }
+  .stage.tracks .lane { display: grid; grid-area: lane; grid-template: "meter pk" auto "fader db" auto / 1fr 40px; gap: 6px 8px; align-items: center; }
+  .stage.tracks .pk { grid-area: pk; transform: none; }
+  .stage.tracks .db { transform: none; }
   .stage.tracks .plate { padding-right: 88px; }
   .dock { padding: 0 12px; }
   .dock .wide-label { display: none; }
@@ -842,6 +859,7 @@ input[type=range]:disabled { opacity: .45; }
 .bpm-input,
 .lat,
 .knob-val,
+.pk,
 .scale,
 .db,
 .pop-total .n,

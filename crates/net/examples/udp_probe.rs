@@ -50,13 +50,14 @@ fn receiver_priority(how: &str) {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{
-            AvSetMmThreadCharacteristicsW, AvSetMmThreadPriority, GetCurrentThread, SetThreadPriority, AVRT_PRIORITY_CRITICAL,
-            THREAD_PRIORITY_TIME_CRITICAL,
+            AvSetMmThreadCharacteristicsW, AvSetMmThreadPriority, GetCurrentThread,
+            SetThreadPriority, AVRT_PRIORITY_CRITICAL, THREAD_PRIORITY_TIME_CRITICAL,
         };
         match how {
             "time" => {
                 // SAFETY: the current thread's pseudo-handle is always valid.
-                let ok = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) };
+                let ok =
+                    unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) };
                 println!("receiver: THREAD_PRIORITY_TIME_CRITICAL (ok={})", ok != 0);
             }
             "critical" => {
@@ -64,7 +65,8 @@ fn receiver_priority(how: &str) {
                 let mut index = 0u32;
                 // SAFETY: NUL-terminated name and a valid out-pointer; the handle is ours.
                 let h = unsafe { AvSetMmThreadCharacteristicsW(task.as_ptr(), &mut index) };
-                let ok = !h.is_null() && unsafe { AvSetMmThreadPriority(h, AVRT_PRIORITY_CRITICAL) } != 0;
+                let ok = !h.is_null()
+                    && unsafe { AvSetMmThreadPriority(h, AVRT_PRIORITY_CRITICAL) } != 0;
                 println!("receiver: MMCSS Pro Audio, priority critical (ok={ok})");
             }
             _ => {
@@ -78,7 +80,10 @@ fn receiver_priority(how: &str) {
 }
 
 fn main() {
-    let secs: u64 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(60);
+    let secs: u64 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60);
     let with_load = std::env::args().any(|a| a == "--load");
     let rx = UdpSocket::bind("127.0.0.1:0").unwrap();
     rx.set_read_timeout(Some(Duration::from_millis(5))).unwrap();
@@ -116,7 +121,11 @@ fn main() {
     };
 
     let args: Vec<String> = std::env::args().collect();
-    let prio = args.iter().position(|a| a == "--prio").and_then(|i| args.get(i + 1)).map_or("mmcss", |s| s.as_str());
+    let prio = args
+        .iter()
+        .position(|a| a == "--prio")
+        .and_then(|i| args.get(i + 1))
+        .map_or("mmcss", |s| s.as_str());
     receiver_priority(prio);
     let mut buf = [0u8; 2048];
     let end = Instant::now() + Duration::from_secs(secs);
@@ -135,9 +144,20 @@ fn main() {
             // (the load goes on and off every 20 s, from 20 s on)
             let phase = with_load && (t0.elapsed().as_secs() / 20) % 2 == 1;
             lates.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let q = |p: f64| lates.get(((lates.len().max(1) - 1) as f64 * p) as usize).copied().unwrap_or(0.0);
+            let q = |p: f64| {
+                lates
+                    .get(((lates.len().max(1) - 1) as f64 * p) as usize)
+                    .copied()
+                    .unwrap_or(0.0)
+            };
             let flag = if q(1.0) > 5.0 { "  ← spike" } else { "" };
-            let label = if !with_load { "" } else if loading.load(Ordering::Relaxed) { " [busy]" } else { " [idle]" };
+            let label = if !with_load {
+                ""
+            } else if loading.load(Ordering::Relaxed) {
+                " [busy]"
+            } else {
+                " [idle]"
+            };
             println!(
                 "{:5.0} s  {:7}  {:6.3}  {:6.3}  {:7.3}  {:7.3}{label}{flag}",
                 t0.elapsed().as_secs_f64(),

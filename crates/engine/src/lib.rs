@@ -16,25 +16,28 @@
 pub mod device;
 pub mod engine;
 pub mod extras;
-pub mod recfile;
+pub mod feedback;
 pub mod frame;
 mod host_thread;
 pub mod jitter;
-pub mod feedback;
 pub mod limiter;
 pub mod load;
 pub mod meter;
 pub mod params;
+pub mod recfile;
 
 pub use device::{list_devices, open_asio_control_panel, DeviceInfo, HostChoice, ASIO_AVAILABLE};
-pub use engine::{auto_packet_frames, DriverCheck, Engine, RecordingFiles, EngineConfig, EngineError, InputChannels, PacketSink, PeerHandle, StreamInfo};
+pub use engine::{
+    auto_packet_frames, DriverCheck, Engine, EngineConfig, EngineError, InputChannels, PacketSink,
+    PeerHandle, RecordingFiles, StreamInfo,
+};
 pub use extras::{safe_name, MetronomeParams, RecOptions, RecordingResult, MIX_TRACK, SELF_TRACK};
 pub use frame::Frame;
 pub use jitter::{JitterBuffer, JitterStats};
 pub use load::{CallbackLoad, LoadWindow};
 pub use meter::{ChannelMeters, Meter};
+pub use params::{db_to_gain, PeerParams, SelfParams, FADER_MAX_DB, FADER_MIN_DB};
 pub use recfile::RecFormat;
-pub use params::{db_to_gain, PeerParams, SelfParams};
 
 /// Tests only: counts what the allocator is asked for inside [`alloc_guard::count`], on
 /// the calling thread. The audio callbacks must come out at zero: an allocation can take a

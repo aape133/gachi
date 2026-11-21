@@ -47,6 +47,15 @@ impl Kept {
     pub fn release(&mut self, id: u64) {
         self.streams.remove(&id);
     }
+
+    /// An engine of ours has the driver open. Nothing else may load a driver then: each
+    /// cpal host keeps its own count of who uses the driver, so a second one (another
+    /// engine, a listing of the devices) loads it anew and, done, unloads it under the
+    /// engine that runs. The driver's thread then writes into buffers that are gone, and
+    /// Windows closes the program.
+    pub fn busy(&self) -> bool {
+        !self.streams.is_empty()
+    }
 }
 
 type Job = Box<dyn FnOnce(&mut Kept) + Send>;
@@ -62,7 +71,8 @@ fn sender() -> &'static mpsc::Sender<Job> {
                 while let Ok(job) = rx.recv() {
                     BUSY_SINCE.store(epoch().elapsed().as_millis() as u64 + 1, Relaxed);
                     // a panicking driver must not take the thread (and every later call) down
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut kept)));
+                    let _ =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut kept)));
                     BUSY_SINCE.store(0, Relaxed);
                 }
             })
@@ -74,7 +84,10 @@ fn sender() -> &'static mpsc::Sender<Job> {
 /// Runs `f` on the ASIO thread and waits for its result, at most `limit`. `None` when the
 /// driver hangs (then `f` is not even queued) or did not answer in time (then `f` still
 /// runs whenever the driver comes back).
-pub(crate) fn run<R: Send + 'static>(limit: Duration, f: impl FnOnce(&mut Kept) -> R + Send + 'static) -> Option<R> {
+pub(crate) fn run<R: Send + 'static>(
+    limit: Duration,
+    f: impl FnOnce(&mut Kept) -> R + Send + 'static,
+) -> Option<R> {
     if stuck() {
         return None;
     }
@@ -105,7 +118,10 @@ mod tests {
         let (go_tx, go_rx) = mpsc::channel::<()>();
         // a "driver call" that hangs until we let it go
         let t = Instant::now();
-        assert_eq!(run(Duration::from_millis(100), move |_| go_rx.recv().ok()), None);
+        assert_eq!(
+            run(Duration::from_millis(100), move |_| go_rx.recv().ok()),
+            None
+        );
         assert!(t.elapsed() < Duration::from_secs(1));
         // not stuck yet (a slow open is normal), and still busy
         assert!(!stuck());

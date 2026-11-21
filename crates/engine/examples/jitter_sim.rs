@@ -108,7 +108,12 @@ fn run(sc: Scenario, target: f64, seed: u64) -> Outcome {
         flight.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let n = flight.iter().take_while(|p| p.0 <= now).count();
         for (arr, s) in flight.drain(..n) {
-            let mut f = Frame { seq: s, channels: 1, frames: PF as u16, ..Frame::EMPTY };
+            let mut f = Frame {
+                seq: s,
+                channels: 1,
+                frames: PF as u16,
+                ..Frame::EMPTY
+            };
             for i in 0..PF {
                 f.data[i] = (s as usize * PF + i) as f32;
             }
@@ -174,26 +179,129 @@ fn everyday(seconds: &[f64]) -> f64 {
             level = l;
         }
     }
-    let lately = if seconds.len() >= 4 { seconds.iter().rev().take(4).fold(f64::MAX, |m, &s| m.min(s)).min(40.0) } else { 0.0 };
+    let lately = if seconds.len() >= 4 {
+        seconds
+            .iter()
+            .rev()
+            .take(4)
+            .fold(f64::MAX, |m, &s| m.min(s))
+            .min(40.0)
+    } else {
+        0.0
+    };
     level.max(lately)
 }
 
 fn main() {
-    let wired = Net { base: 0.08, jitter: 0.03, spike_p: 0.002, spike: (0.3, 1.2) };
-    let wifi = Net { base: 1.0, jitter: 1.2, spike_p: 0.01, spike: (3.0, 15.0) };
+    let wired = Net {
+        base: 0.08,
+        jitter: 0.03,
+        spike_p: 0.002,
+        spike: (0.3, 1.2),
+    };
+    let wifi = Net {
+        base: 1.0,
+        jitter: 1.2,
+        spike_p: 0.01,
+        spike: (3.0, 15.0),
+    };
     let scenarios = [
-        Scenario { name: "wired · ASIO 64/64 · packet 32", bs: 64, br: 64, pf: 32, cb_jitter: 0.15, net: wired },
-        Scenario { name: "wired · ASIO 32/32 · packet 32", bs: 32, br: 32, pf: 32, cb_jitter: 0.15, net: wired },
-        Scenario { name: "wired · ASIO 128/128 · packet 32", bs: 128, br: 128, pf: 32, cb_jitter: 0.2, net: wired },
-        Scenario { name: "wired · send 64, play 128 · packet 32", bs: 64, br: 128, pf: 32, cb_jitter: 0.15, net: wired },
-        Scenario { name: "Wi-Fi · ASIO 64/64 · packet 32", bs: 64, br: 64, pf: 32, cb_jitter: 0.15, net: wifi },
-        Scenario { name: "wired · ASIO 64/64 · packet 16", bs: 64, br: 64, pf: 16, cb_jitter: 0.15, net: wired },
-        Scenario { name: "wired · ASIO 32/32 · packet 16", bs: 32, br: 32, pf: 16, cb_jitter: 0.15, net: wired },
-        Scenario { name: "wired · ASIO 64/64 · packet 64", bs: 64, br: 64, pf: 64, cb_jitter: 0.15, net: wired },
-        Scenario { name: "wired · ASIO 128/128 · packet 64", bs: 128, br: 128, pf: 64, cb_jitter: 0.2, net: wired },
-        Scenario { name: "wired · send 64, play 32 · packet 64", bs: 64, br: 32, pf: 64, cb_jitter: 0.15, net: wired },
-        Scenario { name: "Wi-Fi · ASIO 64/64 · packet 64", bs: 64, br: 64, pf: 64, cb_jitter: 0.15, net: wifi },
-        Scenario { name: "Wi-Fi · ASIO 64/64 · packet 16", bs: 64, br: 64, pf: 16, cb_jitter: 0.15, net: wifi },
+        Scenario {
+            name: "wired · ASIO 64/64 · packet 32",
+            bs: 64,
+            br: 64,
+            pf: 32,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · ASIO 32/32 · packet 32",
+            bs: 32,
+            br: 32,
+            pf: 32,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · ASIO 128/128 · packet 32",
+            bs: 128,
+            br: 128,
+            pf: 32,
+            cb_jitter: 0.2,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · send 64, play 128 · packet 32",
+            bs: 64,
+            br: 128,
+            pf: 32,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "Wi-Fi · ASIO 64/64 · packet 32",
+            bs: 64,
+            br: 64,
+            pf: 32,
+            cb_jitter: 0.15,
+            net: wifi,
+        },
+        Scenario {
+            name: "wired · ASIO 64/64 · packet 16",
+            bs: 64,
+            br: 64,
+            pf: 16,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · ASIO 32/32 · packet 16",
+            bs: 32,
+            br: 32,
+            pf: 16,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · ASIO 64/64 · packet 64",
+            bs: 64,
+            br: 64,
+            pf: 64,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · ASIO 128/128 · packet 64",
+            bs: 128,
+            br: 128,
+            pf: 64,
+            cb_jitter: 0.2,
+            net: wired,
+        },
+        Scenario {
+            name: "wired · send 64, play 32 · packet 64",
+            bs: 64,
+            br: 32,
+            pf: 64,
+            cb_jitter: 0.15,
+            net: wired,
+        },
+        Scenario {
+            name: "Wi-Fi · ASIO 64/64 · packet 64",
+            bs: 64,
+            br: 64,
+            pf: 64,
+            cb_jitter: 0.15,
+            net: wifi,
+        },
+        Scenario {
+            name: "Wi-Fi · ASIO 64/64 · packet 16",
+            bs: 64,
+            br: 64,
+            pf: 16,
+            cb_jitter: 0.15,
+            net: wifi,
+        },
     ];
     println!("scenario                                   clean target       spread_p  packet  output   app asks");
     for sc in scenarios {
@@ -205,7 +313,11 @@ fn main() {
         let mut found = None;
         while t <= 128.0 {
             let mut clean = true;
-            for seed in [0x9E3779B97F4A7C15u64, 0xD1B54A32D192ED03, 0x8CB92BA72F3D8DD7] {
+            for seed in [
+                0x9E3779B97F4A7C15u64,
+                0xD1B54A32D192ED03,
+                0x8CB92BA72F3D8DD7,
+            ] {
                 let o = run(sc, t, seed);
                 spread = spread.max(o.spread_p);
                 if o.underruns > 0 || o.concealed > 0 {
@@ -221,9 +333,17 @@ fn main() {
         }
         let t = found.unwrap_or(f64::NAN);
         // the app's formula (app/src/session.rs: auto_ms + to_packets)
-        let want_ms = (spread + 1.6 * pm + 0.25 * out_ms + 0.15).max(out_ms + pm).min(40f64.max(out_ms + 4.0 * pm));
+        let want_ms = (spread + 1.6 * pm + 0.25 * out_ms + 0.15)
+            .max(out_ms + pm)
+            .min(40f64.max(out_ms + 4.0 * pm));
         let asks = ((want_ms / pm * 4.0).ceil() / 4.0).min(128.0);
-        let verdict = if t.is_nan() { "never clean" } else if asks >= t { "ok" } else { "TOO SMALL" };
+        let verdict = if t.is_nan() {
+            "never clean"
+        } else if asks >= t {
+            "ok"
+        } else {
+            "TOO SMALL"
+        };
         println!(
             "{:<42} {:>6.2} pk = {:>5.2} ms  {:>5.2} ms  {:>4.2} ms  {:>4.2} ms  {:>6.2} pk = {:>5.2} ms  {verdict}",
             sc.name, t, t * pm, spread, pm, out_ms, asks, asks * pm

@@ -36,7 +36,9 @@ fn tables() -> &'static [HashMap<String, String>] {
     TABLES.get_or_init(|| {
         FILES
             .iter()
-            .map(|(code, text)| parse(text).unwrap_or_else(|e| panic!("ui/locales/{code}.json: {e}")))
+            .map(|(code, text)| {
+                parse(text).unwrap_or_else(|e| panic!("ui/locales/{code}.json: {e}"))
+            })
             .collect()
     })
 }
@@ -56,7 +58,11 @@ pub fn resolve(choice: &str) -> &'static str {
 }
 
 fn index(choice: &str) -> usize {
-    let choice = if choice.is_empty() || choice.eq_ignore_ascii_case("auto") { system() } else { choice };
+    let choice = if choice.is_empty() || choice.eq_ignore_ascii_case("auto") {
+        system()
+    } else {
+        choice
+    };
     let want = choice.split('.').next().unwrap_or("").replace('_', "-");
     let lang = |s: &str| s.split('-').next().unwrap_or("").to_ascii_lowercase();
     let codes = || FILES.iter().map(|(c, _)| *c).enumerate();
@@ -72,10 +78,11 @@ pub fn get() -> &'static str {
 }
 
 fn current() -> usize {
-    HERE.with(Cell::get).unwrap_or_else(|| match CHOSEN.load(Ordering::Relaxed) {
-        0 => index(""),
-        n => n - 1,
-    })
+    HERE.with(Cell::get)
+        .unwrap_or_else(|| match CHOSEN.load(Ordering::Relaxed) {
+            0 => index(""),
+            n => n - 1,
+        })
 }
 
 /// The settings' choice: a language code, or "auto" (anything we don't have works too:
@@ -108,20 +115,32 @@ fn detect() -> Option<String> {
     }
     let mut buf = [0u16; 85];
     // SAFETY: plain calls; the buffer is as long as we say
-    let n = unsafe { LCIDToLocaleName(GetUserDefaultUILanguage() as u32, buf.as_mut_ptr(), buf.len() as i32, 0) };
+    let n = unsafe {
+        LCIDToLocaleName(
+            GetUserDefaultUILanguage() as u32,
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            0,
+        )
+    };
     (n > 1).then(|| String::from_utf16_lossy(&buf[..n as usize - 1]))
 }
 
 #[cfg(not(windows))]
 fn detect() -> Option<String> {
-    ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty() && v != "C"))
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty() && v != "C"))
 }
 
 /// A sentence in the language spoken now (English if that language lacks it; the key
 /// itself if no file has it).
 pub fn text(key: &'static str) -> &'static str {
     let t = tables();
-    t[current()].get(key).or_else(|| t[0].get(key)).map_or(key, String::as_str)
+    t[current()]
+        .get(key)
+        .or_else(|| t[0].get(key))
+        .map_or(key, String::as_str)
 }
 
 /// `{name}` holes filled in; one without a value stays as written.
@@ -131,7 +150,11 @@ pub fn fill(s: &str, args: &[(&str, &dyn Display)]) -> String {
     while let Some(open) = rest.find('{') {
         out.push_str(&rest[..open]);
         let after = &rest[open + 1..];
-        match after.find('}').and_then(|close| args.iter().find(|(k, _)| *k == &after[..close]).map(|(_, v)| (close, v))) {
+        match after.find('}').and_then(|close| {
+            args.iter()
+                .find(|(k, _)| *k == &after[..close])
+                .map(|(_, v)| (close, v))
+        }) {
             Some((close, v)) => {
                 out.push_str(&v.to_string());
                 rest = &after[close + 1..];
@@ -157,7 +180,11 @@ pub fn page_script(choice: &str) -> String {
         }
         js += &format!("{}:{}", quote(code), text.trim());
     }
-    js += &format!("}};window.GACHI_LANG={};window.GACHI_SYSTEM_LANG={};", quote(choice), quote(system()));
+    js += &format!(
+        "}};window.GACHI_LANG={};window.GACHI_SYSTEM_LANG={};",
+        quote(choice),
+        quote(system())
+    );
     js
 }
 
@@ -185,7 +212,10 @@ macro_rules! __tr_arg {
 
 /// A language file: one JSON object of strings.
 fn parse(text: &str) -> Result<HashMap<String, String>, String> {
-    let mut p = Parser { s: text.as_bytes(), i: 0 };
+    let mut p = Parser {
+        s: text.as_bytes(),
+        i: 0,
+    };
     let mut map = HashMap::new();
     p.expect(b'{')?;
     if p.peek() == Some(b'}') {
@@ -234,7 +264,11 @@ impl Parser<'_> {
     }
 
     fn hex4(&mut self) -> Result<u32, String> {
-        let h = self.s.get(self.i..self.i + 4).and_then(|b| std::str::from_utf8(b).ok()).ok_or("short \\u escape")?;
+        let h = self
+            .s
+            .get(self.i..self.i + 4)
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .ok_or("short \\u escape")?;
         self.i += 4;
         u32::from_str_radix(h, 16).map_err(|e| e.to_string())
     }
@@ -259,7 +293,9 @@ impl Parser<'_> {
                         b'"' | b'\\' | b'/' => e as char,
                         b'u' => {
                             let mut u = self.hex4()?;
-                            if (0xD800..0xDC00).contains(&u) && self.s.get(self.i..self.i + 2) == Some(b"\\u") {
+                            if (0xD800..0xDC00).contains(&u)
+                                && self.s.get(self.i..self.i + 2) == Some(b"\\u")
+                            {
                                 self.i += 2;
                                 u = 0x10000 + ((u - 0xD800) << 10) + (self.hex4()? - 0xDC00);
                             }

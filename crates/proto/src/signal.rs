@@ -35,7 +35,24 @@ pub struct Profile {
 /// hue at a glance. The UI gives each its lightness per theme, so they read on a dark and
 /// on a light background alike. The first ten are as they always were (a version that
 /// knows only those shows the others in a colour made from the peer id).
-pub const COLOR_HUES: [u16; 16] = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320, 288, 236, COLOR_SOFT + 28, COLOR_SOFT + 78, COLOR_SOFT + 212, COLOR_SOFT + 305];
+pub const COLOR_HUES: [u16; 16] = [
+    255,
+    215,
+    190,
+    165,
+    135,
+    90,
+    48,
+    25,
+    355,
+    320,
+    288,
+    236,
+    COLOR_SOFT + 28,
+    COLOR_SOFT + 78,
+    COLOR_SOFT + 212,
+    COLOR_SOFT + 305,
+];
 
 /// Added to a hue in [`COLOR_HUES`]: the colour is a soft (less saturated) one.
 pub const COLOR_SOFT: u16 = 1000;
@@ -257,10 +274,15 @@ pub enum ToWorker {
 pub enum FromWorker {
     /// To the host: the code is open. Keep `host_key` (share it in the room) to reopen or
     /// take over this code later.
-    Opened { code: String, host_key: String },
+    Opened {
+        code: String,
+        host_key: String,
+    },
     /// To the host, after [`ToWorker::Rekey`]: the code's new `host_key` (the old one no
     /// longer takes the code over).
-    Rekeyed { host_key: String },
+    Rekeyed {
+        host_key: String,
+    },
     /// To the host: someone wants in.
     JoinRequest {
         req: u32,
@@ -269,15 +291,23 @@ pub enum FromWorker {
     },
     /// To the newcomer, right after it connects: the host's join key (hex) and whether the
     /// room has a password.
-    Host { join_key: String, locked: bool },
+    Host {
+        join_key: String,
+        locked: bool,
+    },
     /// To the newcomer: accepted.
     Welcome {
         #[serde(flatten)]
         welcome: SealedWelcome,
     },
-    Error { kind: ErrorKind, message: String },
+    Error {
+        kind: ErrorKind,
+        message: String,
+    },
     /// On `/ws/nearby`: open rooms on the caller's network.
-    Nearby { rooms: Vec<NearbyRoom> },
+    Nearby {
+        rooms: Vec<NearbyRoom>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -303,37 +333,87 @@ mod tests {
 
     #[test]
     fn json_shapes_match_the_worker() {
-        let m = ToWorker::Capacity { max_peers: 8, members: 3 };
-        assert_eq!(serde_json::to_string(&m).unwrap(), r#"{"t":"capacity","max_peers":8,"members":3}"#);
+        let m = ToWorker::Capacity {
+            max_peers: 8,
+            members: 3,
+        };
+        assert_eq!(
+            serde_json::to_string(&m).unwrap(),
+            r#"{"t":"capacity","max_peers":8,"members":3}"#
+        );
 
         let reject = ToWorker::Admit {
             req: 7,
-            admission: Admission::Reject { kind: ErrorKind::WrongPassword, message: "x".into() },
+            admission: Admission::Reject {
+                kind: ErrorKind::WrongPassword,
+                message: "x".into(),
+            },
         };
         assert_eq!(
             serde_json::to_string(&reject).unwrap(),
             r#"{"t":"admit","req":7,"result":"reject","kind":"wrong_password","message":"x"}"#
         );
 
-        let join = SealedJoin { eph: "ab".into(), pw: true, sealed: "cd".into() };
+        let join = SealedJoin {
+            eph: "ab".into(),
+            pw: true,
+            sealed: "cd".into(),
+        };
         let s = serde_json::to_string(&ToWorker::Join { join: join.clone() }).unwrap();
         assert_eq!(s, r#"{"t":"join","eph":"ab","pw":true,"sealed":"cd"}"#);
-        let back: FromWorker = serde_json::from_str(&s.replacen(r#""t":"join""#, r#""t":"join_request","req":3"#, 1)).unwrap();
+        let back: FromWorker =
+            serde_json::from_str(&s.replacen(r#""t":"join""#, r#""t":"join_request","req":3"#, 1))
+                .unwrap();
         assert_eq!(back, FromWorker::JoinRequest { req: 3, join });
 
-        let accept = ToWorker::Admit { req: 1, admission: Admission::Accept { welcome: SealedWelcome { sealed: "ee".into() } } };
-        assert_eq!(serde_json::to_string(&accept).unwrap(), r#"{"t":"admit","req":1,"result":"accept","welcome":{"sealed":"ee"}}"#);
+        let accept = ToWorker::Admit {
+            req: 1,
+            admission: Admission::Accept {
+                welcome: SealedWelcome {
+                    sealed: "ee".into(),
+                },
+            },
+        };
+        assert_eq!(
+            serde_json::to_string(&accept).unwrap(),
+            r#"{"t":"admit","req":1,"result":"accept","welcome":{"sealed":"ee"}}"#
+        );
         let w: FromWorker = serde_json::from_str(r#"{"t":"welcome","sealed":"ee"}"#).unwrap();
-        assert_eq!(w, FromWorker::Welcome { welcome: SealedWelcome { sealed: "ee".into() } });
-        let h: FromWorker = serde_json::from_str(r#"{"t":"host","join_key":"00","locked":true}"#).unwrap();
-        assert_eq!(h, FromWorker::Host { join_key: "00".into(), locked: true });
+        assert_eq!(
+            w,
+            FromWorker::Welcome {
+                welcome: SealedWelcome {
+                    sealed: "ee".into()
+                }
+            }
+        );
+        let h: FromWorker =
+            serde_json::from_str(r#"{"t":"host","join_key":"00","locked":true}"#).unwrap();
+        assert_eq!(
+            h,
+            FromWorker::Host {
+                join_key: "00".into(),
+                locked: true
+            }
+        );
     }
 
     /// A new host key on the server's terms: `{"t":"rekey"}` out, `rekeyed` back.
     #[test]
     fn a_new_host_key_is_asked_for_and_told() {
-        assert_eq!(serde_json::to_string(&ToWorker::Rekey).unwrap(), r#"{"t":"rekey"}"#);
-        let m: FromWorker = serde_json::from_str(r#"{"t":"rekeyed","host_key":"0123456789abcdef0123456789abcdef"}"#).unwrap();
-        assert_eq!(m, FromWorker::Rekeyed { host_key: "0123456789abcdef0123456789abcdef".into() });
+        assert_eq!(
+            serde_json::to_string(&ToWorker::Rekey).unwrap(),
+            r#"{"t":"rekey"}"#
+        );
+        let m: FromWorker = serde_json::from_str(
+            r#"{"t":"rekeyed","host_key":"0123456789abcdef0123456789abcdef"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            m,
+            FromWorker::Rekeyed {
+                host_key: "0123456789abcdef0123456789abcdef".into()
+            }
+        );
     }
 }

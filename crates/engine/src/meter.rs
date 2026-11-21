@@ -44,7 +44,9 @@ pub struct ChannelMeters {
 
 impl Default for ChannelMeters {
     fn default() -> Self {
-        Self { peaks: std::array::from_fn(|_| AtomicU32::new(0)) }
+        Self {
+            peaks: std::array::from_fn(|_| AtomicU32::new(0)),
+        }
     }
 }
 

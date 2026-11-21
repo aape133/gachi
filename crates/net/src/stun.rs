@@ -18,7 +18,11 @@ const ATTR_XOR_MAPPED: u16 = 0x0020;
 /// Resolves a STUN server name to an IPv4 address (our public IPv4 is what NATs hide).
 pub fn resolve(server: &str) -> Option<SocketAddr> {
     let addrs: Vec<SocketAddr> = server.to_socket_addrs().ok()?.collect();
-    addrs.iter().find(|a| a.is_ipv4()).or(addrs.first()).copied()
+    addrs
+        .iter()
+        .find(|a| a.is_ipv4())
+        .or(addrs.first())
+        .copied()
 }
 
 pub fn request(txid: &[u8; 12]) -> [u8; 20] {
@@ -68,7 +72,9 @@ fn decode_addr(v: &[u8], xor: bool, txid: &[u8; 12]) -> Option<SocketAddr> {
         1 => {
             let mut b: [u8; 4] = v[4..8].try_into().ok()?;
             if xor {
-                b.iter_mut().zip(MAGIC.to_be_bytes()).for_each(|(x, m)| *x ^= m);
+                b.iter_mut()
+                    .zip(MAGIC.to_be_bytes())
+                    .for_each(|(x, m)| *x ^= m);
             }
             Ipv4Addr::from(b).into()
         }
@@ -95,7 +101,12 @@ pub fn response(txid: &[u8; 12], addr: SocketAddr) -> Vec<u8> {
         IpAddr::V4(ip) => {
             val[1] = 1;
             val.extend_from_slice(&xport.to_be_bytes());
-            val.extend(ip.octets().iter().zip(MAGIC.to_be_bytes()).map(|(a, m)| a ^ m));
+            val.extend(
+                ip.octets()
+                    .iter()
+                    .zip(MAGIC.to_be_bytes())
+                    .map(|(a, m)| a ^ m),
+            );
         }
         IpAddr::V6(ip) => {
             val[1] = 2;
@@ -141,7 +152,9 @@ impl Mapping {
     pub fn from_answers(first: Option<SocketAddr>, second: Option<SocketAddr>) -> Self {
         match (first, second) {
             (Some(a), Some(b)) if a == b => Self::Steady,
-            (Some(a), Some(b)) if a.ip() == b.ip() => Self::Varies { step: b.port() as i32 - a.port() as i32 },
+            (Some(a), Some(b)) if a.ip() == b.ip() => Self::Varies {
+                step: b.port() as i32 - a.port() as i32,
+            },
             (Some(_), Some(_)) => Self::Varies { step: 0 },
             _ => Self::Unknown,
         }
@@ -151,12 +164,18 @@ impl Mapping {
     /// order (many do: each new destination gets the last port plus a small step). `last`
     /// is the latest answer. Nothing for routers that pick ports at random.
     pub fn predicted(self, last: SocketAddr, n: usize) -> Vec<SocketAddr> {
-        let Self::Varies { step } = self else { return Vec::new() };
+        let Self::Varies { step } = self else {
+            return Vec::new();
+        };
         if step == 0 || step.abs() > MAX_STEP {
             return Vec::new();
         }
         (1..=n as i32)
-            .filter_map(|k| u16::try_from(last.port() as i32 + step * k).ok().filter(|p| *p >= 1024))
+            .filter_map(|k| {
+                u16::try_from(last.port() as i32 + step * k)
+                    .ok()
+                    .filter(|p| *p >= 1024)
+            })
             .map(|port| SocketAddr::new(last.ip(), port))
             .collect()
     }
@@ -169,7 +188,9 @@ const MAX_STEP: i32 = 16;
 pub fn query_tries(socket: &Sock, server: SocketAddr, tries: u32) -> Option<SocketAddr> {
     let txid: [u8; 12] = rand::random();
     let req = request(&txid);
-    socket.set_read_timeout(Some(Duration::from_millis(330))).ok()?;
+    socket
+        .set_read_timeout(Some(Duration::from_millis(330)))
+        .ok()?;
     let mut buf = [0u8; 576];
     for _ in 0..tries {
         socket.send_to(&req, server).ok()?;
@@ -196,19 +217,41 @@ mod tests {
     #[test]
     fn the_router_kind_shows_in_two_answers() {
         let a = |s: &str| Some(s.parse::<SocketAddr>().unwrap());
-        assert_eq!(Mapping::from_answers(a("203.0.113.5:4000"), None), Mapping::Unknown);
-        assert_eq!(Mapping::from_answers(a("203.0.113.5:4000"), a("203.0.113.5:4000")), Mapping::Steady);
+        assert_eq!(
+            Mapping::from_answers(a("203.0.113.5:4000"), None),
+            Mapping::Unknown
+        );
+        assert_eq!(
+            Mapping::from_answers(a("203.0.113.5:4000"), a("203.0.113.5:4000")),
+            Mapping::Steady
+        );
         // ports in order: the next ones can be guessed
         let m = Mapping::from_answers(a("203.0.113.5:40000"), a("203.0.113.5:40002"));
         assert_eq!(m, Mapping::Varies { step: 2 });
-        assert_eq!(m.predicted(a("203.0.113.5:40002").unwrap(), 2), ["203.0.113.5:40004".parse().unwrap(), "203.0.113.5:40006".parse::<SocketAddr>().unwrap()]);
+        assert_eq!(
+            m.predicted(a("203.0.113.5:40002").unwrap(), 2),
+            [
+                "203.0.113.5:40004".parse().unwrap(),
+                "203.0.113.5:40006".parse::<SocketAddr>().unwrap()
+            ]
+        );
         // ports at random, or another address altogether: nothing to guess
         let m = Mapping::from_answers(a("203.0.113.5:40000"), a("203.0.113.5:12345"));
-        assert!(matches!(m, Mapping::Varies { .. }) && m.predicted(a("203.0.113.5:12345").unwrap(), 2).is_empty());
-        assert_eq!(Mapping::from_answers(a("203.0.113.5:40000"), a("203.0.113.9:40000")), Mapping::Varies { step: 0 });
-        assert!(Mapping::Steady.predicted(a("203.0.113.5:4000").unwrap(), 2).is_empty());
+        assert!(
+            matches!(m, Mapping::Varies { .. })
+                && m.predicted(a("203.0.113.5:12345").unwrap(), 2).is_empty()
+        );
+        assert_eq!(
+            Mapping::from_answers(a("203.0.113.5:40000"), a("203.0.113.9:40000")),
+            Mapping::Varies { step: 0 }
+        );
+        assert!(Mapping::Steady
+            .predicted(a("203.0.113.5:4000").unwrap(), 2)
+            .is_empty());
         // never off the end of the port range
-        assert!(Mapping::Varies { step: 16 }.predicted(a("203.0.113.5:65530").unwrap(), 2).is_empty());
+        assert!(Mapping::Varies { step: 16 }
+            .predicted(a("203.0.113.5:65530").unwrap(), 2)
+            .is_empty());
     }
 
     #[test]
@@ -218,7 +261,11 @@ mod tests {
             let addr: SocketAddr = addr.parse().unwrap();
             assert_eq!(parse_response(&response(&txid, addr), &txid), Some(addr));
         }
-        assert_eq!(parse_response(&response(&txid, "1.2.3.4:5".parse().unwrap()), &[8u8; 12]), None, "other txid");
+        assert_eq!(
+            parse_response(&response(&txid, "1.2.3.4:5".parse().unwrap()), &[8u8; 12]),
+            None,
+            "other txid"
+        );
     }
 
     #[test]
@@ -234,6 +281,9 @@ mod tests {
         with.extend_from_slice(&r.split_off(20));
         let len = (with.len() - 20) as u16;
         with[2..4].copy_from_slice(&len.to_be_bytes());
-        assert_eq!(parse_response(&with, &txid), Some("1.2.3.4:1234".parse().unwrap()));
+        assert_eq!(
+            parse_response(&with, &txid),
+            Some("1.2.3.4:1234".parse().unwrap())
+        );
     }
 }

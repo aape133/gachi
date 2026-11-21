@@ -50,7 +50,13 @@ fn main() {
         packet_frames: 32,
         input: InputChannels::Stereo(0, 1),
     };
-    let mut engine = match Engine::start(cfg, Box::new(Loop { tx: tx.clone(), sent: sent.clone() })) {
+    let mut engine = match Engine::start(
+        cfg,
+        Box::new(Loop {
+            tx: tx.clone(),
+            sent: sent.clone(),
+        }),
+    ) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("engine failed: {e}");
@@ -58,18 +64,30 @@ fn main() {
         }
     };
     println!("stream: {:?}", engine.info);
-    println!("local latency (in+out buffers): {:.2} ms", engine.local_latency_ms());
+    println!(
+        "local latency (in+out buffers): {:.2} ms",
+        engine.local_latency_ms()
+    );
 
     let (ptx, peer) = engine.add_peer(1);
     peer.params.mute.store(true, Ordering::Relaxed);
     *tx.lock().unwrap() = Some(ptx);
 
     let rec_dir = std::env::temp_dir().join("gachi-loopback-rec");
-    let names = Arc::new(Mutex::new(std::collections::HashMap::from([(0, "me".to_string()), (1, "loop".to_string())])));
-    engine.start_recording(rec_dir, Default::default(), names).expect("start recording");
+    let names = Arc::new(Mutex::new(std::collections::HashMap::from([
+        (0, "me".to_string()),
+        (1, "loop".to_string()),
+    ])));
+    engine
+        .start_recording(rec_dir, Default::default(), names)
+        .expect("start recording");
     if sounds {
         engine.play_test_tone(1.0);
-        engine.set_metronome(true, 120.0, std::time::SystemTime::now() + Duration::from_millis(1200));
+        engine.set_metronome(
+            true,
+            120.0,
+            std::time::SystemTime::now() + Duration::from_millis(1200),
+        );
     }
 
     for sec in 1..=3 {
@@ -96,7 +114,13 @@ fn main() {
     }
     engine.set_metronome(false, 120.0, std::time::SystemTime::now());
     match engine.stop_recording() {
-        Some(Ok(r)) => println!("recorded {:.2} s, {} files, dropped blocks {} → {}", r.seconds, r.files.len(), r.dropped_blocks, r.dir.display()),
+        Some(Ok(r)) => println!(
+            "recorded {:.2} s, {} files, dropped blocks {} → {}",
+            r.seconds,
+            r.files.len(),
+            r.dropped_blocks,
+            r.dir.display()
+        ),
         other => println!("recording: {other:?}"),
     }
 }

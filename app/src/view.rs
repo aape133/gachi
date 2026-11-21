@@ -113,7 +113,15 @@ pub struct PeerUi {
 
 impl Default for PeerUi {
     fn default() -> Self {
-        Self { volume_db: 0.0, pan: 0.0, mute: false, solo: false, jitter_auto: true, jitter_packets: 3, rec: true }
+        Self {
+            volume_db: 0.0,
+            pan: 0.0,
+            mute: false,
+            solo: false,
+            jitter_auto: true,
+            jitter_packets: 3,
+            rec: true,
+        }
     }
 }
 
@@ -131,7 +139,10 @@ pub struct PeerPatch {
 
 #[derive(Clone, Debug)]
 pub struct SelfUi {
+    /// the input's gain (the knob on my strip), before the fader
     pub gain_db: f32,
+    /// my fader: how loud I go out to the others
+    pub level_db: f32,
     pub muted: bool,
     pub monitor: bool,
     pub master_db: f32,
@@ -143,15 +154,33 @@ pub struct SelfUi {
     pub rec: bool,
 }
 
+impl SelfUi {
+    /// What the input is multiplied by on its way out: the knob's gain, then the fader (at
+    /// its bottom: nothing).
+    pub fn input_gain(&self) -> f32 {
+        10f32.powf(self.gain_db / 20.0) * gachi_engine::db_to_gain(self.level_db)
+    }
+}
+
 impl Default for SelfUi {
     fn default() -> Self {
-        Self { gain_db: 0.0, muted: false, monitor: false, master_db: 0.0, monitor_db: 0.0, own: true, rec: true }
+        Self {
+            gain_db: 0.0,
+            level_db: 0.0,
+            muted: false,
+            monitor: false,
+            master_db: 0.0,
+            monitor_db: 0.0,
+            own: true,
+            rec: true,
+        }
     }
 }
 
 #[derive(Deserialize, Default, Debug)]
 pub struct SelfPatch {
     pub gain: Option<f32>,
+    pub level: Option<f32>,
     pub muted: Option<bool>,
     pub monitor: Option<bool>,
     #[serde(rename = "monitorDb")]

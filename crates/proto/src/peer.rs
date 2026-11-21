@@ -10,9 +10,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum PeerMsg {
-    Chat { text: String },
-    Profile { profile: Profile },
-    Status { audio: AudioInfo },
+    Chat {
+        text: String,
+    },
+    Profile {
+        profile: Profile,
+    },
+    Status {
+        audio: AudioInfo,
+    },
     /// From the host: the room metronome. Beat 0 is at `start_us` on the **host's** clock;
     /// each peer converts with its measured clock offset to the host.
     /// `by` = who asked for it (for "… turned the metronome on").
@@ -39,19 +45,29 @@ pub enum PeerMsg {
     /// open, size, password, the key to reclaim the code on the connection server).
     RoomState(RoomState),
     /// From the host: a newcomer was admitted; connect to it.
-    Introduce { peer: crate::signal::PeerInfo },
+    Introduce {
+        peer: crate::signal::PeerInfo,
+    },
     /// My addresses changed (e.g. the router opened a port for us).
-    Candidates { addrs: Vec<std::net::SocketAddr> },
+    Candidates {
+        addrs: Vec<std::net::SocketAddr>,
+    },
     /// How your audio reaches me: percent of your packets that went missing on the way
     /// (before late copies filled gaps). The sender decides from it whether to send copies.
-    LinkReport { raw_loss: f32 },
+    LinkReport {
+        raw_loss: f32,
+    },
     /// From the host: this member is put out of the room. Everyone drops it (so it is out
     /// even if its own app ignores this), and it leaves.
-    Kick { id: crate::PeerId },
+    Kick {
+        id: crate::PeerId,
+    },
     /// From the host: this member is gone without having said so (it never got through to
     /// the host, and has just come back in as a newcomer from the same PC). Everyone drops
     /// it. Older versions do not know this message and drop it later on their own.
-    Gone { id: crate::PeerId },
+    Gone {
+        id: crate::PeerId,
+    },
 }
 
 /// The room as the host runs it. Shared only inside the (encrypted) room.
@@ -129,7 +145,9 @@ mod tests {
     #[test]
     fn longest_chat_fits_one_packet() {
         let long = "가".repeat(1000);
-        let msg = PeerMsg::Chat { text: clip_chat(&long) };
+        let msg = PeerMsg::Chat {
+            text: clip_chat(&long),
+        };
         assert!(msg.to_bytes().len() <= MAX_CONTROL_PAYLOAD);
         assert_eq!(PeerMsg::from_bytes(&msg.to_bytes()), Some(msg));
     }
@@ -139,8 +157,23 @@ mod tests {
     #[test]
     fn a_metronome_message_without_a_count_in_still_reads() {
         let old = br#"{"t":"metronome","on":true,"bpm":120.0,"beats":4,"start_us":5,"by":1}"#;
-        assert_eq!(PeerMsg::from_bytes(old), Some(PeerMsg::Metronome { on: true, bpm: 120.0, beats: 4, start_us: 5, by: 1, count_in: 0 }));
-        let ours = PeerMsg::MetronomeRequest { on: true, bpm: 90.0, beats: 3, count_in: 2 };
+        assert_eq!(
+            PeerMsg::from_bytes(old),
+            Some(PeerMsg::Metronome {
+                on: true,
+                bpm: 120.0,
+                beats: 4,
+                start_us: 5,
+                by: 1,
+                count_in: 0
+            })
+        );
+        let ours = PeerMsg::MetronomeRequest {
+            on: true,
+            bpm: 90.0,
+            beats: 3,
+            count_in: 2,
+        };
         assert_eq!(PeerMsg::from_bytes(&ours.to_bytes()), Some(ours));
     }
 }

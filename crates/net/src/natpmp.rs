@@ -16,7 +16,12 @@ pub const LIFETIME_SECS: u32 = 3600;
 pub fn gateway() -> Option<Ipv4Addr> {
     // (a VPN's adapter routes everything "on link": its gateway reads 0.0.0.0, which is no
     // router to ask, and sending there fails at once)
-    netdev::get_default_gateway().ok()?.ipv4.iter().copied().find(|ip| !ip.is_unspecified() && !ip.is_broadcast() && !ip.is_loopback())
+    netdev::get_default_gateway()
+        .ok()?
+        .ipv4
+        .iter()
+        .copied()
+        .find(|ip| !ip.is_unspecified() && !ip.is_broadcast() && !ip.is_loopback())
 }
 
 /// One request/response exchange, retried with growing waits (RFC: 250 ms, doubling).
@@ -57,7 +62,10 @@ pub fn map_udp(router: SocketAddr, internal: u16, lifetime: u32) -> Option<(u16,
     if n < 16 || u16::from_be_bytes([resp[8], resp[9]]) != internal {
         return None;
     }
-    Some((u16::from_be_bytes([resp[10], resp[11]]), u32::from_be_bytes([resp[12], resp[13], resp[14], resp[15]])))
+    Some((
+        u16::from_be_bytes([resp[10], resp[11]]),
+        u32::from_be_bytes([resp[12], resp[13], resp[14], resp[15]]),
+    ))
 }
 
 /// Public address for our `port` through NAT-PMP, and the lease (seconds).

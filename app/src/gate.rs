@@ -66,7 +66,17 @@ pub async fn open(
     let tries = if code.is_none() { 3 } else { 1 };
     let mut last = (ErrorKind::BadRequest, String::new());
     for _ in 0..tries {
-        match open_once(app, server, code.clone(), host_key.clone(), max_peers, members, locked).await {
+        match open_once(
+            app,
+            server,
+            code.clone(),
+            host_key.clone(),
+            max_peers,
+            members,
+            locked,
+        )
+        .await
+        {
             Err((ErrorKind::CodeTaken, m)) => last = (ErrorKind::CodeTaken, m),
             r => return r,
         }
@@ -84,19 +94,45 @@ async fn open_once(
     locked: bool,
 ) -> Result<Opened, (ErrorKind, String)> {
     let started = Instant::now();
-    let hello = ToWorker::HostOpen { code: code.clone(), host_key, max_peers, members, join_key: gachi_proto::to_hex(&JOIN_KEY.public), locked };
+    let hello = ToWorker::HostOpen {
+        code: code.clone(),
+        host_key,
+        max_peers,
+        members,
+        join_key: gachi_proto::to_hex(&JOIN_KEY.public),
+        locked,
+    };
     let url = Endpoint::parse(server).host_url(code.as_deref());
-    let (tx, mut rx) = signal::connect(&url).await.map_err(|e| (ErrorKind::BadRequest, gachi_lang::tr!("code.cant_reach_server", e)))?;
+    let (tx, mut rx) = signal::connect(&url).await.map_err(|e| {
+        (
+            ErrorKind::BadRequest,
+            gachi_lang::tr!("code.cant_reach_server", e),
+        )
+    })?;
     let _ = tx.send(hello);
     let (code, host_key) = match tokio::time::timeout(Duration::from_secs(8), rx.recv()).await {
         Ok(Some(FromWorker::Opened { code, host_key })) => (code, host_key),
-        Ok(Some(FromWorker::Error { kind, message })) => return Err((kind, crate::refusal::localize(kind, &message))),
-        Ok(_) => return Err((ErrorKind::BadRequest, gachi_lang::tr!("code.lost_connection_server"))),
+        Ok(Some(FromWorker::Error { kind, message })) => {
+            return Err((kind, crate::refusal::localize(kind, &message)))
+        }
+        Ok(_) => {
+            return Err((
+                ErrorKind::BadRequest,
+                gachi_lang::tr!("code.lost_connection_server"),
+            ))
+        }
         Err(_) => return Err((ErrorKind::Timeout, gachi_lang::tr!("app.no_answer_server"))),
     };
-    tracing::info!(ms = started.elapsed().as_millis() as u64, "room code opened");
+    tracing::info!(
+        ms = started.elapsed().as_millis() as u64,
+        "room code opened"
+    );
     let task = tauri::async_runtime::spawn(serve(app.clone(), rx));
-    Ok(Opened { code, host_key, gate: Gate { tx, task } })
+    Ok(Opened {
+        code,
+        host_key,
+        gate: Gate { tx, task },
+    })
 }
 
 /// Answers join requests until the connection ends; then tries to get the code back.
@@ -109,12 +145,18 @@ async fn serve(app: AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<From
             let room = {
                 let guard = state.session.lock().await;
                 let Some(s) = guard.as_ref() else { return };
-                s.room_state.password.clone().map(|p| (s.room_state.code.clone(), p))
+                s.room_state
+                    .password
+                    .clone()
+                    .map(|p| (s.room_state.code.clone(), p))
             };
             if let (Some(room), true) = (room, join.pw) {
                 if pw_cache.as_ref().is_none_or(|(r, _)| *r != room) {
                     let (code, pw) = room.clone();
-                    let key = tauri::async_runtime::spawn_blocking(move || joinseal::password_key(&code, &pw)).await;
+                    let key = tauri::async_runtime::spawn_blocking(move || {
+                        joinseal::password_key(&code, &pw)
+                    })
+                    .await;
                     if let Ok(key) = key {
                         pw_cache = Some((room, key));
                     }
@@ -126,8 +168,15 @@ async fn serve(app: AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<From
         match msg {
             FromWorker::JoinRequest { req, join } => {
                 // only the key for this room's current code and password
-                let room = s.room_state.password.clone().map(|p| (s.room_state.code.clone(), p));
-                let pw = pw_cache.as_ref().filter(|(r, _)| Some(r) == room.as_ref()).map(|(_, k)| k);
+                let room = s
+                    .room_state
+                    .password
+                    .clone()
+                    .map(|p| (s.room_state.code.clone(), p));
+                let pw = pw_cache
+                    .as_ref()
+                    .filter(|(r, _)| Some(r) == room.as_ref())
+                    .map(|(_, k)| k);
                 let admission = s.admit_sealed(&app, &join, pw);
                 if let Some(g) = &s.gate {
                     g.send(ToWorker::Admit { req, admission });
@@ -149,7 +198,10 @@ async fn serve(app: AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<From
                     s.broadcast_room_state();
                 }
             }
-            FromWorker::Opened { .. } | FromWorker::Welcome { .. } | FromWorker::Nearby { .. } | FromWorker::Host { .. } => {}
+            FromWorker::Opened { .. }
+            | FromWorker::Welcome { .. }
+            | FromWorker::Nearby { .. }
+            | FromWorker::Host { .. } => {}
         }
     }
     // the connection dropped (network hiccup): take the code back while we still can
@@ -160,7 +212,9 @@ async fn serve(app: AppHandle, mut rx: tokio::sync::mpsc::UnboundedReceiver<From
 /// We are the host and the code should be open, but we hold no connection: open one with
 /// the room's `host_key`. Retries for ~25 s (the server keeps the code 30 s). If the code is
 /// gone or taken, opens a new one and tells the room.
-pub fn take_over(app: AppHandle) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+pub fn take_over(
+    app: AppHandle,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     // boxed: open → serve → take_over → open would otherwise be an infinitely sized future
     Box::pin(take_over_inner(app))
 }
@@ -181,7 +235,14 @@ async fn take_over_inner(app: AppHandle) {
             // a stale gate from before the drop: let it go
             s.gate = None;
             let locked = s.room_state.password.is_some();
-            (s.server.clone(), s.room_state.code.clone(), s.room_state.host_key.clone(), s.room_state.max_peers, s.member_count(), locked)
+            (
+                s.server.clone(),
+                s.room_state.code.clone(),
+                s.room_state.host_key.clone(),
+                s.room_state.max_peers,
+                s.member_count(),
+                locked,
+            )
         };
         match open(&app, &server, Some(code.clone()), key, max, members, locked).await {
             Ok(o) => {
@@ -229,20 +290,31 @@ pub async fn install(app: &AppHandle, o: Opened) {
 }
 
 /// Host: turn the code on/off, change the room size, or swap to a new code.
-pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Option<u8>, new_code: bool) -> Result<(), String> {
+pub async fn configure(
+    app: AppHandle,
+    open_code: Option<bool>,
+    max_peers: Option<u8>,
+    new_code: bool,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
     // apply what needs no network first
     let (server, code, key, max, members, want_open, reconnect, locked) = {
         let mut guard = state.session.lock().await;
-        let s = guard.as_mut().ok_or_else(|| gachi_lang::tr!("code.not_room"))?;
+        let s = guard
+            .as_mut()
+            .ok_or_else(|| gachi_lang::tr!("code.not_room"))?;
         if !s.is_host {
             return Err(gachi_lang::tr!("code.only_host_change"));
         }
         if let Some(n) = max_peers {
             // never below the people already here
-            s.room_state.max_peers = n.clamp(s.member_count().max(2), s.room_cap().max(s.member_count()));
+            s.room_state.max_peers =
+                n.clamp(s.member_count().max(2), s.room_cap().max(s.member_count()));
             if let Some(g) = &s.gate {
-                g.send(ToWorker::Capacity { max_peers: s.room_state.max_peers, members: s.member_count() });
+                g.send(ToWorker::Capacity {
+                    max_peers: s.room_state.max_peers,
+                    members: s.member_count(),
+                });
             }
         }
         let want_open = open_code.unwrap_or(s.room_state.open);
@@ -264,7 +336,16 @@ pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Optio
         let _ = app.emit("room", s.room_view());
         let code = (!new_code).then(|| s.room_state.code.clone());
         let locked = s.room_state.password.is_some();
-        (s.server.clone(), code, s.room_state.host_key.clone(), s.room_state.max_peers, s.member_count(), want_open, reconnect, locked)
+        (
+            s.server.clone(),
+            code,
+            s.room_state.host_key.clone(),
+            s.room_state.max_peers,
+            s.member_count(),
+            want_open,
+            reconnect,
+            locked,
+        )
     };
     if !want_open || !reconnect {
         return Ok(());
@@ -276,7 +357,9 @@ pub async fn configure(app: AppHandle, open_code: Option<bool>, max_peers: Optio
         }
         Err((ErrorKind::CodeTaken, _)) => {
             // our old code is in use elsewhere now: open with a new one
-            let o = open(&app, &server, None, None, max, members, locked).await.map_err(|(_, e)| e)?;
+            let o = open(&app, &server, None, None, max, members, locked)
+                .await
+                .map_err(|(_, e)| e)?;
             let new = o.code.clone();
             install(&app, o).await;
             let new = gachi_proto::code::display(&new);

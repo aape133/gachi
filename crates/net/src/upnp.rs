@@ -26,13 +26,25 @@ const FOUND_FOR: Duration = Duration::from_secs(600);
 /// One search: `to` = where the question goes (the UPnP group, or the router itself),
 /// `from` = our address on the network the router is on (so that on a PC with several
 /// adapters, a VPN or a virtual one, the question leaves through the right one).
-fn search_once(from: Option<IpAddr>, to: SocketAddr, timeout: Duration) -> Option<igd_next::Gateway> {
+fn search_once(
+    from: Option<IpAddr>,
+    to: SocketAddr,
+    timeout: Duration,
+) -> Option<igd_next::Gateway> {
     let bind = SocketAddr::new(from.unwrap_or(IpAddr::from([0, 0, 0, 0])), 0);
     let start = Instant::now();
     // the library gives up at the first answer it cannot read (another device on the
     // network that answers the search its own way): ask again while there is time
-    while let Some(left) = timeout.checked_sub(start.elapsed()).filter(|d| *d > Duration::from_millis(200)) {
-        match igd_next::search_gateway(SearchOptions { bind_addr: bind, broadcast_address: to, timeout: Some(left), single_search_timeout: Some(left) }) {
+    while let Some(left) = timeout
+        .checked_sub(start.elapsed())
+        .filter(|d| *d > Duration::from_millis(200))
+    {
+        match igd_next::search_gateway(SearchOptions {
+            bind_addr: bind,
+            broadcast_address: to,
+            timeout: Some(left),
+            single_search_timeout: Some(left),
+        }) {
             Ok(gw) => return Some(gw),
             Err(e) => {
                 tracing::debug!(to = %crate::logaddr::Shown(to), from = %crate::logaddr::opt_ip(from), "UPnP search: {e}");
@@ -53,7 +65,16 @@ fn search_once(from: Option<IpAddr>, to: SocketAddr, timeout: Duration) -> Optio
 fn worth_asking_again(e: &igd_next::SearchError) -> bool {
     use std::io::ErrorKind::*;
     match e {
-        igd_next::SearchError::IoError(io) => !matches!(io.kind(), AddrNotAvailable | AddrInUse | InvalidInput | PermissionDenied | Unsupported | NetworkUnreachable | HostUnreachable),
+        igd_next::SearchError::IoError(io) => !matches!(
+            io.kind(),
+            AddrNotAvailable
+                | AddrInUse
+                | InvalidInput
+                | PermissionDenied
+                | Unsupported
+                | NetworkUnreachable
+                | HostUnreachable
+        ),
         _ => true,
     }
 }
@@ -64,7 +85,11 @@ fn worth_asking_again(e: &igd_next::SearchError) -> bool {
 /// in the last minutes is asked directly first (it answers "what is your address?" in
 /// milliseconds), so the check gives the same answer every time.
 fn search(lan_ip: Option<IpAddr>) -> Option<igd_next::Gateway> {
-    let remembered = FOUND.lock().ok().and_then(|f| f.clone()).filter(|(at, _)| at.elapsed() < FOUND_FOR);
+    let remembered = FOUND
+        .lock()
+        .ok()
+        .and_then(|f| f.clone())
+        .filter(|(at, _)| at.elapsed() < FOUND_FOR);
     if let Some((_, gw)) = remembered {
         if gw.get_external_ip().is_ok() {
             return Some(gw);
@@ -82,9 +107,11 @@ fn search(lan_ip: Option<IpAddr>) -> Option<igd_next::Gateway> {
         }
         asked += 1;
         let tx = tx.clone();
-        let _ = std::thread::Builder::new().name("gachi-upnp-search".into()).spawn(move || {
-            let _ = tx.send(search_once(from, to, SEARCH_WAIT));
-        });
+        let _ = std::thread::Builder::new()
+            .name("gachi-upnp-search".into())
+            .spawn(move || {
+                let _ = tx.send(search_once(from, to, SEARCH_WAIT));
+            });
     }
     drop(tx);
     let found = rx.iter().take(asked).flatten().next();
@@ -104,13 +131,21 @@ fn lan_ip() -> Option<IpAddr> {
 pub fn available() -> bool {
     let (tx, rx) = std::sync::mpsc::channel();
     let tx2 = tx.clone();
-    let _ = std::thread::Builder::new().name("gachi-upnp-check".into()).spawn(move || {
-        let _ = tx.send(search(lan_ip()).is_some());
-    });
-    let _ = std::thread::Builder::new().name("gachi-natpmp-check".into()).spawn(move || {
-        let found = crate::natpmp::gateway().and_then(|gw| crate::natpmp::external_ip(SocketAddr::new(gw.into(), crate::natpmp::PORT))).is_some();
-        let _ = tx2.send(found);
-    });
+    let _ = std::thread::Builder::new()
+        .name("gachi-upnp-check".into())
+        .spawn(move || {
+            let _ = tx.send(search(lan_ip()).is_some());
+        });
+    let _ = std::thread::Builder::new()
+        .name("gachi-natpmp-check".into())
+        .spawn(move || {
+            let found = crate::natpmp::gateway()
+                .and_then(|gw| {
+                    crate::natpmp::external_ip(SocketAddr::new(gw.into(), crate::natpmp::PORT))
+                })
+                .is_some();
+            let _ = tx2.send(found);
+        });
     rx.iter().take(2).any(|found| found)
 }
 
@@ -125,8 +160,13 @@ pub fn run(lan_ip: IpAddr, port: u16, stop: Arc<AtomicBool>, on_mapped: impl FnO
     let local = SocketAddr::new(lan_ip, port);
     let map = |ext: Option<u16>| -> Option<u16> {
         match ext {
-            Some(p) => gw.add_port(PortMappingProtocol::UDP, p, local, LEASE_SECS, "gachi").ok().map(|_| p),
-            None => gw.add_any_port(PortMappingProtocol::UDP, local, LEASE_SECS, "gachi").ok(),
+            Some(p) => gw
+                .add_port(PortMappingProtocol::UDP, p, local, LEASE_SECS, "gachi")
+                .ok()
+                .map(|_| p),
+            None => gw
+                .add_any_port(PortMappingProtocol::UDP, local, LEASE_SECS, "gachi")
+                .ok(),
         }
     };
     // same port outside as inside if we can, else whatever the router gives us
@@ -159,7 +199,9 @@ pub fn run(lan_ip: IpAddr, port: u16, stop: Arc<AtomicBool>, on_mapped: impl FnO
 /// The same with NAT-PMP (routers without UPnP): map, renew at half the lease, delete at the end.
 fn run_natpmp(port: u16, stop: Arc<AtomicBool>, on_mapped: impl FnOnce(SocketAddr)) {
     use crate::natpmp;
-    let Some(router) = natpmp::gateway().map(|gw| SocketAddr::new(gw.into(), natpmp::PORT)) else { return };
+    let Some(router) = natpmp::gateway().map(|gw| SocketAddr::new(gw.into(), natpmp::PORT)) else {
+        return;
+    };
     let Some((public, lease)) = natpmp::map(router, port) else {
         tracing::info!("no NAT-PMP router either");
         return;
@@ -190,12 +232,25 @@ mod search_tests {
     fn hopeless_searches_are_not_repeated() {
         use igd_next::SearchError;
         use std::io::{Error, ErrorKind};
-        assert!(!worth_asking_again(&SearchError::IoError(Error::from(ErrorKind::AddrNotAvailable))));
-        assert!(worth_asking_again(&SearchError::IoError(Error::from(ErrorKind::TimedOut))));
+        assert!(!worth_asking_again(&SearchError::IoError(Error::from(
+            ErrorKind::AddrNotAvailable
+        ))));
+        assert!(worth_asking_again(&SearchError::IoError(Error::from(
+            ErrorKind::TimedOut
+        ))));
         assert!(worth_asking_again(&SearchError::InvalidResponse));
         // the search for an address no PC can send to ends at once
         let t = Instant::now();
-        assert!(search_once(Some(IpAddr::from([127, 0, 0, 1])), "0.0.0.0:1900".parse().unwrap(), Duration::from_secs(3)).is_none());
-        assert!(t.elapsed() < Duration::from_secs(1), "asked again for {:?}", t.elapsed());
+        assert!(search_once(
+            Some(IpAddr::from([127, 0, 0, 1])),
+            "0.0.0.0:1900".parse().unwrap(),
+            Duration::from_secs(3)
+        )
+        .is_none());
+        assert!(
+            t.elapsed() < Duration::from_secs(1),
+            "asked again for {:?}",
+            t.elapsed()
+        );
     }
 }

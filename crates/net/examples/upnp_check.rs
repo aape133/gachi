@@ -10,13 +10,25 @@
 use std::time::Instant;
 
 fn main() {
-    let times: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(8);
+    let times: usize = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8);
     let mut yes = 0;
     for k in 0..times {
         let t = Instant::now();
         let found = gachi_net::upnp::available();
         yes += found as usize;
-        println!("{:>2}: {} in {:>5.0} ms", k + 1, if found { "can open a port" } else { "no answer     " }, t.elapsed().as_secs_f64() * 1e3);
+        println!(
+            "{:>2}: {} in {:>5.0} ms",
+            k + 1,
+            if found {
+                "can open a port"
+            } else {
+                "no answer     "
+            },
+            t.elapsed().as_secs_f64() * 1e3
+        );
         // (a little apart, as someone opening the settings again would be)
         std::thread::sleep(std::time::Duration::from_millis(700));
     }

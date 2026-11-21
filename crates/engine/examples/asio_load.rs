@@ -6,7 +6,9 @@
 
 #[cfg(feature = "asio")]
 fn main() {
-    use gachi_engine::{Engine, EngineConfig, Frame, HostChoice, InputChannels, LoadWindow, PacketSink};
+    use gachi_engine::{
+        Engine, EngineConfig, Frame, HostChoice, InputChannels, LoadWindow, PacketSink,
+    };
     use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -16,7 +18,10 @@ fn main() {
         fn send(&mut self, _: &Frame) {}
     }
 
-    let secs: u64 = std::env::args().skip(1).find_map(|s| s.parse().ok()).unwrap_or(60);
+    let secs: u64 = std::env::args()
+        .skip(1)
+        .find_map(|s| s.parse().ok())
+        .unwrap_or(60);
     let cfg = EngineConfig {
         host: HostChoice::Asio,
         input_device: None,
@@ -75,8 +80,16 @@ fn main() {
             let mut seq = 0u32;
             while !stop.load(Relaxed) {
                 for tx in &mut txs {
-                    let mut f = Frame { seq, channels: 2, frames: 32, ..Frame::EMPTY };
-                    f.data[..64].iter_mut().enumerate().for_each(|(i, s)| *s = ((i as f32) * 0.37).sin() * 0.1);
+                    let mut f = Frame {
+                        seq,
+                        channels: 2,
+                        frames: 32,
+                        ..Frame::EMPTY
+                    };
+                    f.data[..64]
+                        .iter_mut()
+                        .enumerate()
+                        .for_each(|(i, s)| *s = ((i as f32) * 0.37).sin() * 0.1);
                     let _ = tx.push(f);
                 }
                 seq += 1;
@@ -88,7 +101,12 @@ fn main() {
         })
     };
 
-    let show = |w: &LoadWindow| format!("{:>4.0} {:>4.0} {:>5.0} {:>5.0} | gap {:>5.0}..{:<5.0}", w.p50_us, w.p99_us, w.p999_us, w.max_us, w.gap_min_us, w.gap_max_us);
+    let show = |w: &LoadWindow| {
+        format!(
+            "{:>4.0} {:>4.0} {:>5.0} {:>5.0} | gap {:>5.0}..{:<5.0}",
+            w.p50_us, w.p99_us, w.p999_us, w.max_us, w.gap_min_us, w.gap_max_us
+        )
+    };
     // --panel: open the driver's control panel the way the settings screen does
     if std::env::args().any(|a| a == "--panel") {
         let t = Instant::now();
@@ -118,7 +136,10 @@ fn main() {
     }
     stop.store(true, Relaxed);
     feeder.join().unwrap();
-    println!("longest gap: in {worst_in:.0} µs, out {worst_out:.0} µs (one buffer = {:.0} µs)", outb as f64 * 1e6 / info.sample_rate as f64);
+    println!(
+        "longest gap: in {worst_in:.0} µs, out {worst_out:.0} µs (one buffer = {:.0} µs)",
+        outb as f64 * 1e6 / info.sample_rate as f64
+    );
 }
 
 #[cfg(not(feature = "asio"))]

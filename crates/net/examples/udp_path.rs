@@ -47,9 +47,15 @@ fn pro_audio() {}
 fn send(to: std::net::IpAddr, secs: u64, flows: usize) {
     let socks: Vec<socket2::Socket> = (0..flows)
         .map(|f| {
-            let sock = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP)).unwrap();
+            let sock = socket2::Socket::new(
+                socket2::Domain::IPV4,
+                socket2::Type::DGRAM,
+                Some(socket2::Protocol::UDP),
+            )
+            .unwrap();
             sock.set_reuse_address(true).ok();
-            sock.bind(&SocketAddr::from(([0, 0, 0, 0], SEND_PORT + f as u16)).into()).expect("bind a sender port");
+            sock.bind(&SocketAddr::from(([0, 0, 0, 0], SEND_PORT + f as u16)).into())
+                .expect("bind a sender port");
             let _ = sock.set_send_buffer_size(1 << 20);
             sock
         })
@@ -68,18 +74,29 @@ fn send(to: std::net::IpAddr, secs: u64, flows: usize) {
     // the sender's own hold-ups: a send later than planned by this much (it was off the CPU)
     let (mut late_5, mut late_10, mut worst_late) = (0u32, 0u32, 0f64);
     while start.elapsed().as_secs() < secs {
-        let want = if flows > 1 { 1 } else { ((start.elapsed().as_secs() / PHASE_S) % 2) as u8 };
+        let want = if flows > 1 {
+            1
+        } else {
+            ((start.elapsed().as_secs() / PHASE_S) % 2) as u8
+        };
         if want != phase {
             phase = want;
             for s in &socks {
                 let _ = s.set_tos(if phase == 0 { 46 << 2 } else { 0 });
             }
             if flows == 1 {
-                println!("  {:>4} s: {}", start.elapsed().as_secs(), if phase == 0 { "EF (46)" } else { "plain (0)" });
+                println!(
+                    "  {:>4} s: {}",
+                    start.elapsed().as_secs(),
+                    if phase == 0 { "EF (46)" } else { "plain (0)" }
+                );
             }
         }
         let planned = start + Duration::from_secs_f64(seq as f64 * PERIOD_US / 1e6);
-        let late = Instant::now().saturating_duration_since(planned).as_secs_f64() * 1000.0;
+        let late = Instant::now()
+            .saturating_duration_since(planned)
+            .as_secs_f64()
+            * 1000.0;
         if seq > 0 {
             worst_late = worst_late.max(late);
             if late > 5.0 {
@@ -116,16 +133,28 @@ struct Phase {
 
 fn recv(from: std::net::IpAddr, secs: u64) {
     let sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], RECV_PORT))).expect("bind 50600");
-    sock.set_read_timeout(Some(Duration::from_millis(5))).unwrap();
-    let knock_to: Vec<SocketAddr> = (0..4).map(|f| SocketAddr::new(from, SEND_PORT + f)).collect();
+    sock.set_read_timeout(Some(Duration::from_millis(5)))
+        .unwrap();
+    let knock_to: Vec<SocketAddr> = (0..4)
+        .map(|f| SocketAddr::new(from, SEND_PORT + f))
+        .collect();
     // --no-mmcss: receive at normal priority (Windows throttles network processing while
     // MMCSS "multimedia" threads run: NetworkThrottlingIndex)
     let mmcss = !std::env::args().any(|a| a == "--no-mmcss");
     if mmcss {
         pro_audio();
     }
-    println!("receiving thread: {}", if mmcss { "MMCSS Pro Audio" } else { "normal priority (no MMCSS)" });
-    println!("listening on {RECV_PORT} for {from}: waiting up to 10 min for the sender, then {secs} s");
+    println!(
+        "receiving thread: {}",
+        if mmcss {
+            "MMCSS Pro Audio"
+        } else {
+            "normal priority (no MMCSS)"
+        }
+    );
+    println!(
+        "listening on {RECV_PORT} for {from}: waiting up to 10 min for the sender, then {secs} s"
+    );
     let start = Instant::now();
     let mut last_knock = start - Duration::from_secs(1);
     // [phase 0 (EF, one flow)], [phase 1 (plain): flow 0..3]
@@ -148,7 +177,9 @@ fn recv(from: std::net::IpAddr, secs: u64) {
             }
             last_knock = Instant::now();
         }
-        let Ok((n, src)) = sock.recv_from(&mut buf) else { continue };
+        let Ok((n, src)) = sock.recv_from(&mut buf) else {
+            continue;
+        };
         if src.ip() != from || n < 5 {
             continue;
         }
@@ -193,7 +224,15 @@ fn recv(from: std::net::IpAddr, secs: u64) {
     println!("ms         packets | lateness p50   p99  p99.9    max | seconds with worst > 5 / 10 / 20 ms | gaps > 10 / 20 ms, longest");
     for (i, p) in phases.iter_mut().enumerate().filter(|(_, p)| p.n > 0) {
         p.lateness.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let q = |f: f64| p.lateness.get(((p.lateness.len() as f64 * f) as usize).min(p.lateness.len().saturating_sub(1))).copied().unwrap_or(0.0);
+        let q = |f: f64| {
+            p.lateness
+                .get(
+                    ((p.lateness.len() as f64 * f) as usize)
+                        .min(p.lateness.len().saturating_sub(1)),
+                )
+                .copied()
+                .unwrap_or(0.0)
+        };
         let over = |ms: f64| p.seconds.iter().filter(|&&s| s > ms).count();
         println!(
             "{:<10} {:>8} | {:>12.2} {:>5.2} {:>6.2} {:>6.1} | {:>3} / {:>3} / {:>3} of {:>3} | {:>4} / {:>4}, {:.1}",

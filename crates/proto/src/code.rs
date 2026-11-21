@@ -5,7 +5,9 @@ pub const LEN: usize = 6;
 
 /// Builds a code from a random index source (`rand_index(n)` must return `0..n`).
 pub fn generate(mut rand_index: impl FnMut(usize) -> usize) -> String {
-    (0..LEN).map(|_| ALPHABET[rand_index(ALPHABET.len())] as char).collect()
+    (0..LEN)
+        .map(|_| ALPHABET[rand_index(ALPHABET.len())] as char)
+        .collect()
 }
 
 /// Accepts user input like `k7m-q2x` or `K7M Q2X`; returns the canonical code.

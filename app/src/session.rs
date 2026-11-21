@@ -8,14 +8,14 @@
 use crate::settings::Settings;
 use crate::view::{Breakdown, ConnView, PeerUi, PeerView, RoomView, SelfUi};
 use crate::{gate, link, signal, AppState};
-use gachi_net::crypto::{Cipher, PeerKey};
 use gachi_engine::{db_to_gain, DriverCheck, Engine, PeerHandle, RecordingResult, SELF_TRACK};
+use gachi_net::crypto::{Cipher, PeerKey};
 use gachi_net::{Gathered, Net, NetConfig, NetEvent};
 use gachi_proto::audio::SampleFormat;
 use gachi_proto::peer::{clip_chat, PeerMsg, RoomState};
 use gachi_proto::signal::{
-    Admission, AudioInfo, ErrorKind, FromWorker, JoinRequest, Link, PeerInfo, Profile, RoomInfo, SealedJoin, SealedWelcome,
-    ToWorker, Welcome,
+    Admission, AudioInfo, ErrorKind, FromWorker, JoinRequest, Link, PeerInfo, Profile, RoomInfo,
+    SealedJoin, SealedWelcome, ToWorker, Welcome,
 };
 use gachi_proto::PeerId;
 use serde_json::json;
@@ -29,8 +29,15 @@ use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub enum Intent {
-    Create { name: String, max_peers: u8, password: Option<String> },
-    Join { code: String, password: Option<String> },
+    Create {
+        name: String,
+        max_peers: u8,
+        password: Option<String>,
+    },
+    Join {
+        code: String,
+        password: Option<String>,
+    },
 }
 
 /// `start` errors that the UI handles specially (it asks for the room password).
@@ -103,7 +110,10 @@ pub const PASSWORD_MAX: usize = 64;
 /// fit is not sent at all, and members would miss the key the next host needs). The
 /// oldest bans go first; nothing else in it is long.
 fn fitting(mut state: RoomState) -> RoomState {
-    while !state.banned.is_empty() && PeerMsg::RoomState(state.clone()).to_bytes().len() > gachi_proto::audio::MAX_CONTROL_PAYLOAD {
+    while !state.banned.is_empty()
+        && PeerMsg::RoomState(state.clone()).to_bytes().len()
+            > gachi_proto::audio::MAX_CONTROL_PAYLOAD
+    {
         state.banned.remove(0);
     }
     state
@@ -113,13 +123,29 @@ fn fitting(mut state: RoomState) -> RoomState {
 /// who was here before. After the last number (65 000 joins, or a `next` from a hostile
 /// former host) the lowest free one: never a number someone here has, never an overflow.
 fn next_peer_id(next: PeerId, taken: &[PeerId]) -> PeerId {
-    let start = taken.iter().max().map_or(2, |m| m.saturating_add(1)).max(next).max(2);
-    (start..u16::MAX).chain(2..start).find(|k| !taken.contains(k)).unwrap_or(start)
+    let start = taken
+        .iter()
+        .max()
+        .map_or(2, |m| m.saturating_add(1))
+        .max(next)
+        .max(2);
+    (start..u16::MAX)
+        .chain(2..start)
+        .find(|k| !taken.contains(k))
+        .unwrap_or(start)
 }
 
 fn clip_room_name(name: &str) -> String {
-    let name: String = gachi_proto::peer::clean_text(name).trim().chars().take(ROOM_NAME_MAX).collect();
-    if name.is_empty() { new_room_name() } else { name }
+    let name: String = gachi_proto::peer::clean_text(name)
+        .trim()
+        .chars()
+        .take(ROOM_NAME_MAX)
+        .collect();
+    if name.is_empty() {
+        new_room_name()
+    } else {
+        name
+    }
 }
 
 /// The host's key from the server did not read.
@@ -149,9 +175,18 @@ pub fn new_room_name() -> String {
 /// behind one router have different home-network addresses.
 fn same_pc(a: &[SocketAddr], b: &[SocketAddr]) -> bool {
     let home = |x: &[SocketAddr]| -> Vec<std::net::Ipv4Addr> {
-        x.iter().filter_map(|a| match a.ip() { std::net::IpAddr::V4(ip) if ip.is_private() => Some(ip), _ => None }).collect()
+        x.iter()
+            .filter_map(|a| match a.ip() {
+                std::net::IpAddr::V4(ip) if ip.is_private() => Some(ip),
+                _ => None,
+            })
+            .collect()
     };
-    let public = |x: &[SocketAddr]| -> Option<std::net::IpAddr> { x.iter().map(|a| a.ip()).find(|ip| !gachi_net::behind_router(*ip) && ip.is_ipv4()) };
+    let public = |x: &[SocketAddr]| -> Option<std::net::IpAddr> {
+        x.iter()
+            .map(|a| a.ip())
+            .find(|ip| !gachi_net::behind_router(*ip) && ip.is_ipv4())
+    };
     let (ha, hb) = (home(a), home(b));
     ha.iter().any(|ip| hb.contains(ip)) && public(a) == public(b)
 }
@@ -164,7 +199,9 @@ fn clean_room_state(mut state: RoomState, ours: &RoomState) -> RoomState {
     state.name = clip_room_name(&state.name);
     state.max_peers = state.max_peers.clamp(2, gachi_proto::signal::ROOM_MAX);
     state.code = gachi_proto::code::normalize(&state.code).unwrap_or_else(|| ours.code.clone());
-    state.host_key = state.host_key.filter(|k| k.len() == 32 && k.bytes().all(|b| b.is_ascii_hexdigit()));
+    state.host_key = state
+        .host_key
+        .filter(|k| k.len() == 32 && k.bytes().all(|b| b.is_ascii_hexdigit()));
     state.password = state.password.filter(|p| p.len() <= 256);
     let over = state.banned.len().saturating_sub(MAX_BANNED);
     state.banned.drain(..over);
@@ -207,7 +244,10 @@ const COPIES_BACKOFF: Duration = Duration::from_secs(300);
 fn copies_wanted(raw_loss: f32, last_loss_ago: Option<Duration>) -> Option<Duration> {
     if raw_loss >= COPIES_ON_LOSS {
         Some(COPIES_HOLD)
-    } else if raw_loss >= COPIES_CLEAN_LOSS && last_loss_ago.is_some_and(|ago| (COPIES_REPEAT_APART..=COPIES_REPEAT_WITHIN).contains(&ago)) {
+    } else if raw_loss >= COPIES_CLEAN_LOSS
+        && last_loss_ago
+            .is_some_and(|ago| (COPIES_REPEAT_APART..=COPIES_REPEAT_WITHIN).contains(&ago))
+    {
         Some(COPIES_HOLD_REPEATED)
     } else {
         None
@@ -354,7 +394,10 @@ fn leaving_closes_code(is_host: bool, others: usize) -> bool {
 }
 
 /// Awaits `fut`, but gives up within ~0.1 s once the join is cancelled.
-async fn unless_cancelled<F: std::future::Future>(fut: F, cancelled: &impl Fn() -> bool) -> Result<F::Output, String> {
+async fn unless_cancelled<F: std::future::Future>(
+    fut: F,
+    cancelled: &impl Fn() -> bool,
+) -> Result<F::Output, String> {
     tokio::pin!(fut);
     loop {
         tokio::select! {
@@ -376,7 +419,10 @@ fn quiet_wifi(link: Link) -> Option<gachi_net::wifi::QuietWifi> {
     }
     let q = gachi_net::wifi::QuietWifi::start();
     match &q {
-        Some(q) => tracing::info!(cards = q.cards, "Wi-Fi: background scan off, streaming mode on while in the room"),
+        Some(q) => tracing::info!(
+            cards = q.cards,
+            "Wi-Fi: background scan off, streaming mode on while in the room"
+        ),
         None => tracing::info!("Wi-Fi: could not turn the background scan off"),
     }
     q
@@ -403,12 +449,17 @@ fn ban_key(ip: std::net::IpAddr) -> Option<std::net::IpAddr> {
     match ip {
         IpAddr::V4(v4) => {
             let [a, b, ..] = v4.octets();
-            let shared = v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() || (a == 100 && (64..128).contains(&b));
+            let shared = v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || (a == 100 && (64..128).contains(&b));
             (!shared).then_some(ip)
         }
         IpAddr::V6(v6) => {
             let s = v6.segments();
-            ((s[0] & 0xe000) == 0x2000).then(|| IpAddr::V6(Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0)))
+            ((s[0] & 0xe000) == 0x2000)
+                .then(|| IpAddr::V6(Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0)))
         }
     }
 }
@@ -444,7 +495,10 @@ fn auto_target_ms(spread_ms: f32, jitter_ms: f32, packet_ms: f32, out_ms: f32) -
     let by_jitter = jitter_ms * 2.5;
     let by_output = out_ms + packet_ms;
     let max = MAX_AUTO_MS.max(out_ms + 4.0 * packet_ms);
-    by_spread.max(by_jitter).max(by_output).clamp(packet_ms, max)
+    by_spread
+        .max(by_jitter)
+        .max(by_output)
+        .clamp(packet_ms, max)
 }
 
 /// A target in ms as packets of `packet_ms` (quarter packets, rounded up: never less).
@@ -454,16 +508,36 @@ fn to_packets(ms: f32, packet_ms: f32) -> f32 {
 
 /// Names and instruments from others: trimmed, at most 12 characters, never empty.
 fn clip_profile(p: Profile) -> Profile {
-    let clean = |t: &str| -> String { gachi_proto::peer::clean_text(t).trim().chars().take(12).collect() };
+    let clean = |t: &str| -> String {
+        gachi_proto::peer::clean_text(t)
+            .trim()
+            .chars()
+            .take(12)
+            .collect()
+    };
     let (name, instrument) = (clean(&p.name), clean(&p.instrument));
-    let color = p.color.filter(|c| (*c as usize) < gachi_proto::signal::COLOR_HUES.len());
-    Profile { name: if name.is_empty() { gachi_lang::tr!("room.guest") } else { name }, instrument, color }
+    let color = p
+        .color
+        .filter(|c| (*c as usize) < gachi_proto::signal::COLOR_HUES.len());
+    Profile {
+        name: if name.is_empty() {
+            gachi_lang::tr!("room.guest")
+        } else {
+            name
+        },
+        instrument,
+        color,
+    }
 }
 
 /// A track's name in a recording's file names: the name, and the instrument if one is given.
 fn track_label(p: &Profile) -> String {
     let inst = p.instrument.trim();
-    if inst.is_empty() { p.name.clone() } else { format!("{} ({inst})", p.name) }
+    if inst.is_empty() {
+        p.name.clone()
+    } else {
+        format!("{} ({inst})", p.name)
+    }
 }
 
 /// A recording's folder and what its files' names start with:
@@ -471,14 +545,24 @@ fn track_label(p: &Profile) -> String {
 /// the folders sort by time; the room's name and code, to tell one room's from another's
 /// (rooms left unnamed all have the same name); and the name and time in every file too,
 /// so that a file taken out of its folder (into a DAW) still says which recording it is from.
-fn recording_names(room: &str, code: &str, at: chrono::DateTime<chrono::Local>) -> (String, String) {
+fn recording_names(
+    room: &str,
+    code: &str,
+    at: chrono::DateTime<chrono::Local>,
+) -> (String, String) {
     let room = gachi_engine::safe_name(room);
-    (format!("{} {room} [{code}]", at.format("%Y-%m-%d %H%M")), format!("{room} {} - ", at.format("%H%M")))
+    (
+        format!("{} {room} [{code}]", at.format("%Y-%m-%d %H%M")),
+        format!("{room} {} - ", at.format("%H%M")),
+    )
 }
 
 /// A peer's key as the net layer takes it (with its AES support), once the room told us.
 fn peer_key(info: &PeerInfo) -> Option<PeerKey> {
-    info.key.map(|public| PeerKey { public, aes: info.aes })
+    info.key.map(|public| PeerKey {
+        public,
+        aes: info.aes,
+    })
 }
 
 fn sample_format(settings: &Settings) -> SampleFormat {
@@ -518,7 +602,10 @@ pub fn open_error(settings: &Settings, e: &gachi_engine::EngineError) -> String 
     }
     // the driver hands out samples in a format we cannot read (3-byte 24 bit, 64 bit float:
     // some older drivers): closing other programs would not help, so that is not the advice
-    if matches!(e, gachi_engine::EngineError::Config(gachi_engine::ConfigError::StreamTypeNotSupported)) {
+    if matches!(
+        e,
+        gachi_engine::EngineError::Config(gachi_engine::ConfigError::StreamTypeNotSupported)
+    ) {
         return gachi_lang::tr!("room.asio_format_not");
     }
     gachi_lang::tr!("room.cant_open_asio", e)
@@ -529,7 +616,9 @@ fn mono_to_system(us: i64) -> SystemTime {
     // (a day at most either way: the time may come from a peer, and a wild one must not
     // overflow the clock arithmetic)
     const DAY_US: i64 = 86_400_000_000;
-    let delta = us.saturating_sub(gachi_net::now_us() as i64).clamp(-DAY_US, DAY_US);
+    let delta = us
+        .saturating_sub(gachi_net::now_us() as i64)
+        .clamp(-DAY_US, DAY_US);
     let now = SystemTime::now();
     if delta >= 0 {
         now + Duration::from_micros(delta as u64)
@@ -552,8 +641,13 @@ pub fn metro_gain(volume: f32) -> f32 {
 }
 
 /// Settings that need the audio engine reopened when they change.
-pub const ENGINE_KEYS: &[&str] =
-    &["device", "inputChannel", "quality", "packetSize", "connection"];
+pub const ENGINE_KEYS: &[&str] = &[
+    "device",
+    "inputChannel",
+    "quality",
+    "packetSize",
+    "connection",
+];
 
 impl Session {
     pub fn add_peer(&mut self, mut info: PeerInfo) {
@@ -581,9 +675,13 @@ impl Session {
             self.net.add_peer(info.id, tx);
         }
         if let (false, Some(key)) = (info.candidates.is_empty(), peer_key(&info)) {
-            self.net.set_candidates(info.id, info.candidates.clone(), info.token, key);
+            self.net
+                .set_candidates(info.id, info.candidates.clone(), info.token, key);
         }
-        self.rec_names.lock().unwrap().insert(info.id, track_label(&info.profile));
+        self.rec_names
+            .lock()
+            .unwrap()
+            .insert(info.id, track_label(&info.profile));
         let id = info.id;
         let now = Instant::now();
         self.peers.insert(
@@ -619,18 +717,33 @@ impl Session {
             self.net.set_peer_rate(id, self.sample_rate);
         }
         // introduce ourselves (queued until the link is up)
-        self.send_to(id, &PeerMsg::Status { audio: self.my_audio() });
+        self.send_to(
+            id,
+            &PeerMsg::Status {
+                audio: self.my_audio(),
+            },
+        );
     }
 
     /// The host: the member with the lowest id (the earliest to join).
     pub fn host_id(&self) -> PeerId {
-        self.peers.keys().copied().chain([self.me]).min().unwrap_or(self.me)
+        self.peers
+            .keys()
+            .copied()
+            .chain([self.me])
+            .min()
+            .unwrap_or(self.me)
     }
 
     /// Recomputes who is host after someone joined or left; tells the UI if it changed.
     fn refresh_host(&mut self, app: &AppHandle) {
         let host = self.host_id();
-        let was_host_id = self.peers.iter().find(|(_, p)| p.info.is_host).map(|(&id, _)| id).or(self.is_host.then_some(self.me));
+        let was_host_id = self
+            .peers
+            .iter()
+            .find(|(_, p)| p.info.is_host)
+            .map(|(&id, _)| id)
+            .or(self.is_host.then_some(self.me));
         for (&id, p) in self.peers.iter_mut() {
             p.info.is_host = id == host;
         }
@@ -639,7 +752,11 @@ impl Session {
             let text = if self.is_host {
                 gachi_lang::tr!("room.youre_host_now")
             } else {
-                let name = self.peers.get(&host).map(|p| p.info.profile.name.clone()).unwrap_or_default();
+                let name = self
+                    .peers
+                    .get(&host)
+                    .map(|p| p.info.profile.name.clone())
+                    .unwrap_or_default();
                 gachi_lang::tr!("room.name_host_now", name)
             };
             notice(app, text);
@@ -651,7 +768,12 @@ impl Session {
             if self.is_host {
                 if let Some(m) = self.metronome {
                     if let Some(local) = self.metro_local_us(&m) {
-                        let m = Metro { start_us: local.max(0) as u64, owner: self.me, local_us: Some(local), ..m };
+                        let m = Metro {
+                            start_us: local.max(0) as u64,
+                            owner: self.me,
+                            local_us: Some(local),
+                            ..m
+                        };
                         self.metronome = Some(m);
                         self.broadcast(&self.metro_msg(&m, true, self.me));
                     }
@@ -685,7 +807,10 @@ impl Session {
     /// (see `rekey`; false for a member put out, whose key was changed when it was).
     fn peer_gone(&mut self, app: &AppHandle, id: PeerId, rekey: bool) {
         if let Some(p) = self.remove_peer(id) {
-            let _ = app.emit("peer-left", json!({ "id": id.to_string(), "name": p.info.profile.name }));
+            let _ = app.emit(
+                "peer-left",
+                json!({ "id": id.to_string(), "name": p.info.profile.name }),
+            );
             self.refresh_host(app);
             self.send_capacity();
             if rekey {
@@ -719,9 +844,17 @@ impl Session {
         if !self.is_host {
             return Err(gachi_lang::tr!("room.only_host_remove"));
         }
-        let Some(p) = self.peers.get(&id) else { return Err(gachi_lang::tr!("room.already_left")) };
+        let Some(p) = self.peers.get(&id) else {
+            return Err(gachi_lang::tr!("room.already_left"));
+        };
         let name = p.info.profile.name.clone();
-        let addrs: Vec<std::net::IpAddr> = p.info.candidates.iter().map(|a| a.ip()).chain(p.route.map(|a| a.ip())).collect();
+        let addrs: Vec<std::net::IpAddr> = p
+            .info
+            .candidates
+            .iter()
+            .map(|a| a.ip())
+            .chain(p.route.map(|a| a.ip()))
+            .collect();
         for key in addrs.into_iter().filter_map(ban_key) {
             if !self.room_state.banned.contains(&key) {
                 self.room_state.banned.push(key);
@@ -754,7 +887,12 @@ impl Session {
     /// true if anyone was removed.
     pub fn drop_silent_peers(&mut self, app: &AppHandle) -> bool {
         // members put out: gone once the message has had time to reach them
-        let due: Vec<PeerId> = self.kicked.iter().filter(|(_, t)| t.elapsed() > KICK_LINGER).map(|(id, _)| *id).collect();
+        let due: Vec<PeerId> = self
+            .kicked
+            .iter()
+            .filter(|(_, t)| t.elapsed() > KICK_LINGER)
+            .map(|(id, _)| *id)
+            .collect();
         if !due.is_empty() {
             self.kicked.retain(|(id, _)| !due.contains(id));
             for id in due {
@@ -766,11 +904,17 @@ impl Session {
         // gone made us "host" of an empty room, and as host we took the room's code away
         // from the real one. Instead: come back in through the code, as anyone would.
         if self.cut_off {
-            let waited = self.peers.values().any(|p| p.lost_since.is_some_and(|t| t.elapsed() > GONE_AFTER));
+            let waited = self
+                .peers
+                .values()
+                .any(|p| p.lost_since.is_some_and(|t| t.elapsed() > GONE_AFTER));
             if waited && !self.rejoin_asked {
                 self.rejoin_asked = true;
                 tracing::warn!("still cut off: asking the UI to join the room again");
-                let _ = app.emit("room-lost", json!({ "code": self.room_state.code, "password": self.room_state.password }));
+                let _ = app.emit(
+                    "room-lost",
+                    json!({ "code": self.room_state.code, "password": self.room_state.password }),
+                );
             }
             return false;
         }
@@ -801,7 +945,10 @@ impl Session {
     /// Host: the code has been on for `CODE_OPEN_FOR`: turn it off (as the switch in the room
     /// panel does) and say so. true if it was.
     pub fn close_old_code(&mut self, app: &AppHandle) -> bool {
-        if !self.is_host || !self.room_state.open || !self.code_since.is_some_and(|t| t.elapsed() > CODE_OPEN_FOR) {
+        if !self.is_host
+            || !self.room_state.open
+            || !self.code_since.is_some_and(|t| t.elapsed() > CODE_OPEN_FOR)
+        {
             return false;
         }
         self.code_since = None;
@@ -826,7 +973,10 @@ impl Session {
     /// Host: tell the connection server how full we are (it turns newcomers away when full).
     fn send_capacity(&self) {
         if let Some(g) = &self.gate {
-            g.send(ToWorker::Capacity { max_peers: self.room_state.max_peers, members: self.member_count() });
+            g.send(ToWorker::Capacity {
+                max_peers: self.room_state.max_peers,
+                members: self.member_count(),
+            });
         }
     }
 
@@ -839,7 +989,11 @@ impl Session {
             // (how long the room has been open: see `RoomState::age_ms`)
             state.age_ms = Some(now_ms().saturating_sub(self.started_at));
             let bytes = PeerMsg::RoomState(fitting(state)).to_bytes();
-            for &id in self.peers.keys().filter(|id| !self.kicked.iter().any(|(k, _)| k == *id)) {
+            for &id in self
+                .peers
+                .keys()
+                .filter(|id| !self.kicked.iter().any(|(k, _)| k == *id))
+            {
                 self.net.send_control(id, bytes.clone());
             }
             self.sync_lobby();
@@ -849,7 +1003,9 @@ impl Session {
     /// Host with the code on: tells the connection server whether (and how) to show the
     /// room to people on the same network.
     pub fn sync_lobby(&self) {
-        let (true, Some(gate)) = (self.is_host, &self.gate) else { return };
+        let (true, Some(gate)) = (self.is_host, &self.gate) else {
+            return;
+        };
         let lobby = self.show_nearby.then(|| gachi_proto::signal::Lobby {
             name: self.room_state.name.clone(),
             host: self.my_profile.name.clone(),
@@ -879,14 +1035,27 @@ impl Session {
     /// The biggest this room can be made: what every member's version can take part in
     /// (versions up to 0.1.2 mix 8 others at most).
     pub fn room_cap(&self) -> u8 {
-        self.peers.values().map(|p| gachi_proto::signal::seats_of(p.info.seats)).min().unwrap_or(gachi_proto::signal::ROOM_MAX).min(gachi_proto::signal::ROOM_MAX)
+        self.peers
+            .values()
+            .map(|p| gachi_proto::signal::seats_of(p.info.seats))
+            .min()
+            .unwrap_or(gachi_proto::signal::ROOM_MAX)
+            .min(gachi_proto::signal::ROOM_MAX)
     }
 
     /// Host: a sealed join request (passed on by the connection server). Opens it with our
     /// join key and the room password's key (`pw`: `joinseal::password_key` of this room),
     /// admits the newcomer, and seals the answer for it alone.
-    pub fn admit_sealed(&mut self, app: &AppHandle, sj: &SealedJoin, pw: Option<&[u8; 32]>) -> Admission {
-        let reject = |kind, message: &str| Admission::Reject { kind, message: message.into() };
+    pub fn admit_sealed(
+        &mut self,
+        app: &AppHandle,
+        sj: &SealedJoin,
+        pw: Option<&[u8; 32]>,
+    ) -> Admission {
+        let reject = |kind, message: &str| Admission::Reject {
+            kind,
+            message: message.into(),
+        };
         if !self.is_host || !self.room_state.open {
             return reject(ErrorKind::NotFound, "방을 찾을 수 없어요.");
         }
@@ -900,14 +1069,23 @@ impl Session {
         let now = Instant::now();
         self.bad_tries.retain(|t| now - *t < BAD_TRIES_WINDOW);
         if self.bad_tries.len() >= BAD_TRIES_MAX {
-            return reject(ErrorKind::RateLimited, "비밀번호가 여러 번 틀렸어요. 1분 뒤에 다시 시도해 주세요.");
+            return reject(
+                ErrorKind::RateLimited,
+                "비밀번호가 여러 번 틀렸어요. 1분 뒤에 다시 시도해 주세요.",
+            );
         }
-        let (Some(eph), Some(sealed)) = (gachi_proto::key_from_hex(&sj.eph), gachi_proto::from_hex(&sj.sealed)) else {
+        let (Some(eph), Some(sealed)) = (
+            gachi_proto::key_from_hex(&sj.eph),
+            gachi_proto::from_hex(&sj.sealed),
+        ) else {
             return reject(ErrorKind::BadRequest, "잘못된 요청이에요.");
         };
         let pw = if locked { pw } else { None };
         if locked && pw.is_none() {
-            return reject(ErrorKind::Timeout, "방장이 아직 준비 중이에요. 다시 시도해 주세요.");
+            return reject(
+                ErrorKind::Timeout,
+                "방장이 아직 준비 중이에요. 다시 시도해 주세요.",
+            );
         }
         let Some((plain, answer_key)) = crate::gate::JOIN_KEY.open(&eph, pw, &sealed) else {
             if locked {
@@ -922,7 +1100,10 @@ impl Session {
         };
         // a room opened for more than an older version can mix: it would hear only some
         if self.room_state.max_peers > gachi_proto::signal::seats_of(join.seats) {
-            tracing::info!(room = self.room_state.max_peers, "join refused: the newcomer's version is too old for a room this big");
+            tracing::info!(
+                room = self.room_state.max_peers,
+                "join refused: the newcomer's version is too old for a room this big"
+            );
             return reject(ErrorKind::Full, "이 방은 8명보다 크게 열려 있어서 gachi 새 버전이 필요해요. 업데이트한 뒤 다시 들어와 주세요.");
         }
         if join.candidates.iter().any(|a| self.is_banned(a.ip())) {
@@ -931,7 +1112,11 @@ impl Session {
         }
         let welcome = self.admit(app, join);
         let sealed = answer_key.seal(&serde_json::to_vec(&welcome).expect("Welcome serializes"));
-        Admission::Accept { welcome: SealedWelcome { sealed: gachi_proto::to_hex(&sealed) } }
+        Admission::Accept {
+            welcome: SealedWelcome {
+                sealed: gachi_proto::to_hex(&sealed),
+            },
+        }
     }
 
     /// Host: lets an (opened, checked) newcomer in: gives it an id and the member list, and
@@ -944,11 +1129,17 @@ impl Session {
         let ghosts: Vec<PeerId> = self
             .peers
             .iter()
-            .filter(|(_, p)| (p.route.is_none() || p.lost_since.is_some()) && same_pc(&p.info.candidates, &join.candidates))
+            .filter(|(_, p)| {
+                (p.route.is_none() || p.lost_since.is_some())
+                    && same_pc(&p.info.candidates, &join.candidates)
+            })
             .map(|(&id, _)| id)
             .collect();
         for id in ghosts {
-            tracing::info!(id, "the same PC came back in: its old entry (never connected, or silent) goes");
+            tracing::info!(
+                id,
+                "the same PC came back in: its old entry (never connected, or silent) goes"
+            );
             self.broadcast(&PeerMsg::Gone { id });
             self.peer_gone(app, id, true);
         }
@@ -969,7 +1160,10 @@ impl Session {
         };
         // everyone already here (us first), for the newcomer to connect to
         let mut peers = vec![self.my_info()];
-        peers.extend(self.peers.values().map(|p| PeerInfo { is_host: false, ..p.info.clone() }));
+        peers.extend(self.peers.values().map(|p| PeerInfo {
+            is_host: false,
+            ..p.info.clone()
+        }));
         let welcome = Welcome {
             you: id,
             room: RoomInfo {
@@ -981,7 +1175,9 @@ impl Session {
             peers,
         };
         // introduce the newcomer to the room, then add them ourselves
-        self.broadcast(&PeerMsg::Introduce { peer: newcomer.clone() });
+        self.broadcast(&PeerMsg::Introduce {
+            peer: newcomer.clone(),
+        });
         self.add_peer(newcomer);
         self.broadcast_room_state(); // next_id moved; the newcomer gets the state too
         self.send_capacity();
@@ -1005,20 +1201,31 @@ impl Session {
             if changed && audio.sample_rate != 0 && audio.sample_rate != self.sample_rate {
                 notice(
                     app,
-                    gachi_lang::tr!("room.name_runs_theirs", name = p.info.profile.name, theirs = audio.sample_rate, ours = self.sample_rate),
+                    gachi_lang::tr!(
+                        "room.name_runs_theirs",
+                        name = p.info.profile.name,
+                        theirs = audio.sample_rate,
+                        ours = self.sample_rate
+                    ),
                 );
             }
             p.info.audio = Some(audio);
         }
         self.apply_peer_rate(id);
-        let _ = app.emit("stats", json!({ "peers": self.views(), "localMs": self.local_ms() }));
+        let _ = app.emit(
+            "stats",
+            json!({ "peers": self.views(), "localMs": self.local_ms() }),
+        );
     }
 
     fn on_peer_profile(&mut self, app: &AppHandle, id: PeerId, profile: Profile) {
         // the same limits as when it joined (a peer's later changes are not trusted more)
         let profile = clip_profile(profile);
         if let Some(p) = self.peers.get_mut(&id) {
-            self.rec_names.lock().unwrap().insert(id, track_label(&profile));
+            self.rec_names
+                .lock()
+                .unwrap()
+                .insert(id, track_label(&profile));
             p.info.profile = profile;
         }
         let _ = app.emit("room", self.room_view());
@@ -1028,7 +1235,9 @@ impl Session {
     fn on_peer_msg(&mut self, app: &AppHandle, from: PeerId, msg: PeerMsg) {
         match msg {
             PeerMsg::Chat { text } => {
-                let Some(p) = self.peers.get_mut(&from) else { return };
+                let Some(p) = self.peers.get_mut(&from) else {
+                    return;
+                };
                 if p.chats.0.elapsed() > CHAT_WINDOW {
                     p.chats = (Instant::now(), 0);
                 }
@@ -1036,7 +1245,10 @@ impl Session {
                 if p.chats.1 > CHAT_MAX {
                     return;
                 }
-                let _ = app.emit("chat", json!({ "from": from.to_string(), "text": clip_chat(&text) }));
+                let _ = app.emit(
+                    "chat",
+                    json!({ "from": from.to_string(), "text": clip_chat(&text) }),
+                );
             }
             PeerMsg::Profile { profile } => self.on_peer_profile(app, from, profile),
             PeerMsg::Status { audio } => self.on_peer_status(app, from, audio),
@@ -1080,7 +1292,13 @@ impl Session {
             PeerMsg::Gone { id } => {
                 // (only the host's word, and only about someone we never got through to
                 // either, or who went silent here too: one we hear from is plainly there)
-                if from == self.host_id() && id != self.me && self.peers.get(&id).is_some_and(|p| p.route.is_none() || p.lost_since.is_some()) {
+                if from == self.host_id()
+                    && id != self.me
+                    && self
+                        .peers
+                        .get(&id)
+                        .is_some_and(|p| p.route.is_none() || p.lost_since.is_some())
+                {
                     self.peer_gone(app, id, false);
                 }
             }
@@ -1093,7 +1311,10 @@ impl Session {
                     tracing::info!("put out of the room by the host");
                     let _ = app.emit("kicked", json!({}));
                 } else if let Some(p) = self.peers.get(&id) {
-                    notice(app, gachi_lang::tr!("room.host_removed_name", name = p.info.profile.name));
+                    notice(
+                        app,
+                        gachi_lang::tr!("room.host_removed_name", name = p.info.profile.name),
+                    );
                     self.peer_gone(app, id, true);
                 }
             }
@@ -1107,22 +1328,45 @@ impl Session {
                     }
                 }
             }
-            PeerMsg::MetronomeRequest { on, bpm, beats, count_in } => {
+            PeerMsg::MetronomeRequest {
+                on,
+                bpm,
+                beats,
+                count_in,
+            } => {
                 if self.is_host {
                     self.set_room_metronome(app, on, bpm, beats, count_in, from);
                 }
             }
-            PeerMsg::Metronome { on, bpm, beats, start_us, by, count_in } => {
+            PeerMsg::Metronome {
+                on,
+                bpm,
+                beats,
+                start_us,
+                by,
+                count_in,
+            } => {
                 // only the host runs the room metronome
                 if from != self.host_id() {
                     return;
                 }
                 // the host's numbers, within what our own controls allow (a broken or hostile
                 // host must not be able to stop our sound with a NaN tempo)
-                let bpm = if bpm.is_finite() { bpm.clamp(30.0, 300.0) } else { 120.0 };
+                let bpm = if bpm.is_finite() {
+                    bpm.clamp(30.0, 300.0)
+                } else {
+                    120.0
+                };
                 let beats = beats.clamp(1, 12);
                 self.last_tempo = (bpm, beats);
-                self.metronome = on.then_some(Metro { bpm, beats, start_us, owner: from, local_us: None, count_in: count_in.min(MAX_COUNT_IN) });
+                self.metronome = on.then_some(Metro {
+                    bpm,
+                    beats,
+                    start_us,
+                    owner: from,
+                    local_us: None,
+                    count_in: count_in.min(MAX_COUNT_IN),
+                });
                 self.apply_metronome();
                 self.emit_metronome(app, on, by);
             }
@@ -1132,12 +1376,35 @@ impl Session {
     /// Turns the room metronome on/off (we are host): set it, apply it, tell everyone.
     /// `count_in`: bars to count in. Only when it is turned on: a change of tempo while it
     /// runs starts the beats anew, and must not count everybody in again each time.
-    fn set_room_metronome(&mut self, app: &AppHandle, on: bool, bpm: f32, beats: u8, count_in: u8, by: PeerId) {
-        let bpm = if bpm.is_finite() { bpm.clamp(30.0, 300.0) } else { 120.0 };
+    fn set_room_metronome(
+        &mut self,
+        app: &AppHandle,
+        on: bool,
+        bpm: f32,
+        beats: u8,
+        count_in: u8,
+        by: PeerId,
+    ) {
+        let bpm = if bpm.is_finite() {
+            bpm.clamp(30.0, 300.0)
+        } else {
+            120.0
+        };
         let beats = beats.clamp(1, 12);
         let start = gachi_net::now_us() + METRONOME_LEAD_US;
-        let count_in = if self.metronome.is_none() { count_in.min(MAX_COUNT_IN) } else { 0 };
-        let m = Metro { bpm, beats, start_us: start, owner: self.me, local_us: Some(start as i64), count_in };
+        let count_in = if self.metronome.is_none() {
+            count_in.min(MAX_COUNT_IN)
+        } else {
+            0
+        };
+        let m = Metro {
+            bpm,
+            beats,
+            start_us: start,
+            owner: self.me,
+            local_us: Some(start as i64),
+            count_in,
+        };
         self.last_tempo = (bpm, beats);
         self.metronome = on.then_some(m);
         self.broadcast(&self.metro_msg(&m, on, by));
@@ -1147,16 +1414,41 @@ impl Session {
 
     /// Our metronome as a message on our own clock (we must be host).
     fn metro_msg(&self, m: &Metro, on: bool, by: PeerId) -> PeerMsg {
-        let start = self.metro_local_us(m).unwrap_or(m.start_us.min(i64::MAX as u64) as i64).max(0) as u64;
-        PeerMsg::Metronome { on, bpm: m.bpm, beats: m.beats, start_us: start, by, count_in: m.count_in }
+        let start = self
+            .metro_local_us(m)
+            .unwrap_or(m.start_us.min(i64::MAX as u64) as i64)
+            .max(0) as u64;
+        PeerMsg::Metronome {
+            on,
+            bpm: m.bpm,
+            beats: m.beats,
+            start_us: start,
+            by,
+            count_in: m.count_in,
+        }
     }
 
     /// Someone (maybe us) wants the metronome changed: the host decides and broadcasts.
-    pub fn request_metronome(&mut self, app: &AppHandle, on: bool, bpm: f32, beats: u8, count_in: u8) {
+    pub fn request_metronome(
+        &mut self,
+        app: &AppHandle,
+        on: bool,
+        bpm: f32,
+        beats: u8,
+        count_in: u8,
+    ) {
         if self.is_host {
             self.set_room_metronome(app, on, bpm, beats, count_in, self.me);
         } else {
-            self.send_to(self.host_id(), &PeerMsg::MetronomeRequest { on, bpm, beats, count_in });
+            self.send_to(
+                self.host_id(),
+                &PeerMsg::MetronomeRequest {
+                    on,
+                    bpm,
+                    beats,
+                    count_in,
+                },
+            );
         }
     }
 
@@ -1174,8 +1466,13 @@ impl Session {
     fn emit_metronome(&self, app: &AppHandle, on: bool, by: PeerId) {
         let (bpm, beats, start_ms) = match self.metronome {
             Some(m) => {
-                let local = self.metro_local_us(&m).unwrap_or(gachi_net::now_us() as i64);
-                let ms = mono_to_system(local).duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                let local = self
+                    .metro_local_us(&m)
+                    .unwrap_or(gachi_net::now_us() as i64);
+                let ms = mono_to_system(local)
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
                 (m.bpm, m.beats, ms)
             }
             None => (self.last_tempo.0, self.last_tempo.1, 0),
@@ -1206,7 +1503,9 @@ impl Session {
         }
         self.net.set_peer_rate(id, audio.sample_rate);
         if let Some(h) = &p.handle {
-            h.params.rate_ratio.store(audio.sample_rate as f32 / self.sample_rate as f32);
+            h.params
+                .rate_ratio
+                .store(audio.sample_rate as f32 / self.sample_rate as f32);
         }
     }
 
@@ -1254,11 +1553,21 @@ impl Session {
                             p.lost = false;
                             p.lost_since = None;
                             p.lost_offline = false;
-                            notice(app, gachi_lang::tr!("room.name_connected_again", name = p.info.profile.name));
+                            notice(
+                                app,
+                                gachi_lang::tr!(
+                                    "room.name_connected_again",
+                                    name = p.info.profile.name
+                                ),
+                            );
                         }
                     }
                     // back in the room: a host whose code connection dropped meanwhile reopens it
-                    if std::mem::take(&mut self.cut_off) && self.is_host && self.room_state.open && self.gate.is_none() {
+                    if std::mem::take(&mut self.cut_off)
+                        && self.is_host
+                        && self.room_state.open
+                        && self.gate.is_none()
+                    {
                         tauri::async_runtime::spawn(gate::take_over(app.clone()));
                     }
                 }
@@ -1275,11 +1584,21 @@ impl Session {
                             p.lost_since = Some(Instant::now());
                             p.lost_offline = !online;
                             if online {
-                                notice(app, gachi_lang::tr!("room.lost_connection_name", name = p.info.profile.name));
+                                notice(
+                                    app,
+                                    gachi_lang::tr!(
+                                        "room.lost_connection_name",
+                                        name = p.info.profile.name
+                                    ),
+                                );
                             }
                         }
                     }
-                    let silent: Vec<(Instant, bool)> = self.peers.values().filter_map(|p| Some((p.lost_since?, p.lost_offline))).collect();
+                    let silent: Vec<(Instant, bool)> = self
+                        .peers
+                        .values()
+                        .filter_map(|p| Some((p.lost_since?, p.lost_offline)))
+                        .collect();
                     if !self.cut_off && is_cut_off(self.peers.len(), &silent) {
                         self.cut_off = true;
                         tracing::warn!("everyone went silent at once: our own connection dropped");
@@ -1290,9 +1609,13 @@ impl Session {
                 NetEvent::PunchFailed { id } => {
                     if let Some(p) = self.peers.get(&id) {
                         // why, from what both sides know of their networks, and what helps
-                        let me = crate::diagnose::Side::new(Some(crate::diagnose::nat_kind(self.net.mapping, self.net.public)), &self.my_candidates);
+                        let me = crate::diagnose::Side::new(
+                            Some(crate::diagnose::nat_kind(self.net.mapping, self.net.public)),
+                            &self.my_candidates,
+                        );
                         let them = crate::diagnose::Side::new(p.info.nat, &p.info.candidates);
-                        let text = crate::diagnose::no_direct_path(&me, &them, &p.info.profile.name);
+                        let text =
+                            crate::diagnose::no_direct_path(&me, &them, &p.info.profile.name);
                         tracing::info!(id, mine = ?me.nat, theirs = ?them.nat, "no direct path");
                         notice(app, text);
                     }
@@ -1314,7 +1637,7 @@ impl Session {
     pub fn apply_self(&self, ui: &SelfUi) {
         let Some(e) = &self.engine else { return };
         let p = &e.self_params;
-        p.input_gain.store(db_to_gain(ui.gain_db));
+        p.input_gain.store(ui.input_gain());
         p.muted.store(ui.muted, Ordering::Relaxed);
         p.monitor.store(ui.monitor, Ordering::Relaxed);
         p.monitor_gain.store(db_to_gain(ui.monitor_db));
@@ -1381,7 +1704,11 @@ impl Session {
         if changed {
             self.reopen_at = None;
         }
-        if !broken || self.reopen_at.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
+        if !broken
+            || self
+                .reopen_at
+                .is_some_and(|t| t.elapsed() < Duration::from_secs(5))
+        {
             return None;
         }
         self.reopen_at = Some(Instant::now());
@@ -1409,12 +1736,16 @@ impl Session {
 
     /// (input, output) latency in frames: the driver's report, else the callbacks.
     fn device_latency(&self) -> (u32, u32) {
-        self.engine.as_ref().map_or((self.buffer_size, self.buffer_size), |e| e.device_latency())
+        self.engine
+            .as_ref()
+            .map_or((self.buffer_size, self.buffer_size), |e| e.device_latency())
     }
 
     /// (input, output) frames per audio callback, as the device really runs.
     fn real_buffers(&self) -> (u32, u32) {
-        self.engine.as_ref().map_or((self.buffer_size, self.buffer_size), |e| e.real_buffers())
+        self.engine
+            .as_ref()
+            .map_or((self.buffer_size, self.buffer_size), |e| e.real_buffers())
     }
 
     pub fn my_audio(&self) -> AudioInfo {
@@ -1429,7 +1760,9 @@ impl Session {
 
     /// Our audio setup, to the room.
     pub fn announce_status(&self) {
-        self.broadcast(&PeerMsg::Status { audio: self.my_audio() });
+        self.broadcast(&PeerMsg::Status {
+            audio: self.my_audio(),
+        });
     }
 
     /// New name/instrument, to the room.
@@ -1456,7 +1789,11 @@ impl Session {
         for p in self.peers.values_mut() {
             p.handle = None;
         }
-        Reopen { old, rec, sender: self.net.sender_with(sample_format(settings)) }
+        Reopen {
+            old,
+            rec,
+            sender: self.net.sender_with(sample_format(settings)),
+        }
     }
 
     /// Second half: the new engine goes in, each peer's audio is attached to its mixer
@@ -1466,7 +1803,18 @@ impl Session {
         self.sample_rate = engine.info.sample_rate;
         self.buffer_size = engine.info.buffer_size.unwrap_or(settings.buffer_size);
         self.packet_frames = settings.packet_size;
-        let summary = gachi_lang::tr!("audio.summary", device = engine.info.output_device, rate = self.sample_rate, buffer = self.buffer_size, ms = format!("{:.1}", engine.local_latency_ms()), note = self.fallback_note.as_ref().map(|n| format!(". {n}")).unwrap_or_default());
+        let summary = gachi_lang::tr!(
+            "audio.summary",
+            device = engine.info.output_device,
+            rate = self.sample_rate,
+            buffer = self.buffer_size,
+            ms = format!("{:.1}", engine.local_latency_ms()),
+            note = self
+                .fallback_note
+                .as_ref()
+                .map(|n| format!(". {n}"))
+                .unwrap_or_default()
+        );
         let engine = self.engine.insert(engine);
         for (&id, p) in self.peers.iter_mut() {
             let (tx, handle) = engine.add_peer(id);
@@ -1496,8 +1844,12 @@ impl Session {
         e.metronome.gain.store(metro_gain(self.metronome_volume));
         match (self.metronome, local) {
             (Some(m), Some(local)) => {
-                e.metronome.beats_per_bar.store(m.beats as u32, Ordering::Relaxed);
-                e.metronome.count_in.store(m.count_in as u32 * m.beats as u32, Ordering::Relaxed);
+                e.metronome
+                    .beats_per_bar
+                    .store(m.beats as u32, Ordering::Relaxed);
+                e.metronome
+                    .count_in
+                    .store(m.count_in as u32 * m.beats as u32, Ordering::Relaxed);
                 e.set_metronome(true, m.bpm, mono_to_system(local))
             }
             (Some(_), None) => {} // no clock offset yet: start clicking once we have one
@@ -1507,9 +1859,21 @@ impl Session {
 
     /// Starts per-track recording into Documents/gachi/녹음/<date time room [code]> (see
     /// `recording_names`), of the tracks picked on the cards.
-    pub fn start_recording(&mut self, base: PathBuf, format: gachi_engine::RecFormat, mix: bool) -> Result<PathBuf, String> {
-        let engine = self.engine.as_mut().ok_or_else(|| gachi_lang::tr!("room.audio_device_not"))?;
-        let (folder, prefix) = recording_names(&self.room_state.name, &self.room_state.code, chrono::Local::now());
+    pub fn start_recording(
+        &mut self,
+        base: PathBuf,
+        format: gachi_engine::RecFormat,
+        mix: bool,
+    ) -> Result<PathBuf, String> {
+        let engine = self
+            .engine
+            .as_mut()
+            .ok_or_else(|| gachi_lang::tr!("room.audio_device_not"))?;
+        let (folder, prefix) = recording_names(
+            &self.room_state.name,
+            &self.room_state.code,
+            chrono::Local::now(),
+        );
         // (a second recording in the same minute)
         let mut dir = base.join(&folder);
         let mut n = 2;
@@ -1517,7 +1881,15 @@ impl Session {
             dir = base.join(format!("{folder} ({n})"));
             n += 1;
         }
-        engine.start_recording(dir.clone(), gachi_engine::RecOptions { prefix, format, mix }, self.rec_names.clone())?;
+        engine.start_recording(
+            dir.clone(),
+            gachi_engine::RecOptions {
+                prefix,
+                format,
+                mix,
+            },
+            self.rec_names.clone(),
+        )?;
         Ok(dir)
     }
 
@@ -1541,7 +1913,10 @@ impl Session {
 
     /// Our own track's name in recordings, from our name and instrument.
     pub fn set_my_track(&self, profile: &Profile) {
-        self.rec_names.lock().unwrap().insert(SELF_TRACK, track_label(profile));
+        self.rec_names
+            .lock()
+            .unwrap()
+            .insert(SELF_TRACK, track_label(profile));
     }
 
     /// Frames per packet we send: what the engine uses now (automatic follows the device's
@@ -1561,7 +1936,11 @@ impl Session {
     /// The length of this peer's packets (ms): what its jitter buffer counts in. Ours until
     /// its first packet tells.
     fn peer_packet_ms(&self, st: &gachi_net::PeerNetStats) -> f32 {
-        if st.packet_ms > 0.0 { st.packet_ms } else { self.packet_ms() }
+        if st.packet_ms > 0.0 {
+            st.packet_ms
+        } else {
+            self.packet_ms()
+        }
     }
 
     /// Jitter buffer size (ms) from what the stream shows: the spread its packets arrive
@@ -1572,7 +1951,8 @@ impl Session {
         let out_ms = self.real_buffers().1 as f32 / self.sample_rate as f32 * 1000.0;
         // the lateness worth covering, at this session's leaning (until 2 s are measured:
         // the plain worst case)
-        let spread = gachi_net::buffer_level(st.seconds(), self.jitter_worth).unwrap_or(st.spread_ms);
+        let spread =
+            gachi_net::buffer_level(st.seconds(), self.jitter_worth).unwrap_or(st.spread_ms);
         auto_target_ms(spread, st.jitter_ms, self.peer_packet_ms(st), out_ms)
     }
 
@@ -1581,7 +1961,8 @@ impl Session {
         if !p.ui.jitter_auto {
             p.ui.jitter_packets as f32
         } else {
-            self.global_jitter.map_or_else(|| to_packets(p.auto_ms, packet_ms), |g| g as f32)
+            self.global_jitter
+                .map_or_else(|| to_packets(p.auto_ms, packet_ms), |g| g as f32)
         }
     }
 
@@ -1593,7 +1974,9 @@ impl Session {
             let st = self.net.stats(id).unwrap_or_default();
             let want = self.auto_ms(&st);
             let pm = self.peer_packet_ms(&st);
-            let Some(p) = self.peers.get_mut(&id) else { continue };
+            let Some(p) = self.peers.get_mut(&id) else {
+                continue;
+            };
             if st.restarts != p.restarts_seen {
                 // they changed their audio (e.g. WASAPI → ASIO): measure afresh
                 p.restarts_seen = st.restarts;
@@ -1611,11 +1994,15 @@ impl Session {
             } else if want > p.auto_ms {
                 p.auto_ms = want; // still measuring: only ever more
             }
-            let Some(p) = self.peers.get(&id) else { continue };
+            let Some(p) = self.peers.get(&id) else {
+                continue;
+            };
             let packets = self.packets_for(p, pm);
             if let Some(h) = &p.handle {
                 // hundredths of a packet (the jitter buffer steers to fractions)
-                h.params.jitter_target.store((packets * 100.0).round() as u32, Ordering::Relaxed);
+                h.params
+                    .jitter_target
+                    .store((packets * 100.0).round() as u32, Ordering::Relaxed);
             }
         }
     }
@@ -1627,7 +2014,12 @@ impl Session {
                 continue;
             }
             if let Some(st) = self.net.stats(id) {
-                self.send_to(id, &PeerMsg::LinkReport { raw_loss: st.raw_loss_pct });
+                self.send_to(
+                    id,
+                    &PeerMsg::LinkReport {
+                        raw_loss: st.raw_loss_pct,
+                    },
+                );
             }
         }
     }
@@ -1636,7 +2028,9 @@ impl Session {
     /// later, so a short burst of loss does not take both). Off again after a clean minute.
     fn on_link_report(&mut self, from: PeerId, raw_loss: f32) {
         let now = Instant::now();
-        let Some(p) = self.peers.get_mut(&from) else { return };
+        let Some(p) = self.peers.get_mut(&from) else {
+            return;
+        };
         if !raw_loss.is_finite() {
             return;
         }
@@ -1644,7 +2038,9 @@ impl Session {
         let wanted = copies_wanted(raw_loss, p.last_loss.map(|t| now - t));
         // (the report right after one of a loss may be of that same loss: it does not move
         // the time the loss is counted from)
-        if raw_loss >= COPIES_CLEAN_LOSS && p.last_loss.is_none_or(|t| now - t >= COPIES_REPEAT_APART) {
+        if raw_loss >= COPIES_CLEAN_LOSS
+            && p.last_loss.is_none_or(|t| now - t >= COPIES_REPEAT_APART)
+        {
             p.last_loss = Some(now);
         }
         match (p.copies_since, wanted) {
@@ -1655,19 +2051,33 @@ impl Session {
                 p.copies_before = raw_loss;
                 p.copies_worse = 0;
                 p.copies_blocked = None;
-                tracing::info!(peer = from, raw_loss, repeated = hold == COPIES_HOLD_REPEATED, "lossy link: sending every packet twice");
+                tracing::info!(
+                    peer = from,
+                    raw_loss,
+                    repeated = hold == COPIES_HOLD_REPEATED,
+                    "lossy link: sending every packet twice"
+                );
                 self.net.set_redundancy(from, true);
             }
             (Some(since), _) => {
                 // loss that got much worse with the copies: a full link, which twice the
                 // packets only fill further. Back to single packets, and stay there a while
-                p.copies_worse = if copies_hurt(p.copies_before, raw_loss) { p.copies_worse + 1 } else { 0 };
+                p.copies_worse = if copies_hurt(p.copies_before, raw_loss) {
+                    p.copies_worse + 1
+                } else {
+                    0
+                };
                 if p.copies_worse >= COPIES_WORSE_REPORTS {
                     p.copies_since = None;
                     p.clean_since = None;
                     p.copies_worse = 0;
                     p.copies_blocked = Some(now + COPIES_BACKOFF);
-                    tracing::info!(peer = from, before = p.copies_before, raw_loss, "copies made the loss worse: single packets");
+                    tracing::info!(
+                        peer = from,
+                        before = p.copies_before,
+                        raw_loss,
+                        "copies made the loss worse: single packets"
+                    );
                     self.net.set_redundancy(from, false);
                 } else if raw_loss >= COPIES_CLEAN_LOSS {
                     p.clean_since = None;
@@ -1689,7 +2099,8 @@ impl Session {
     /// latency display is made of (to check the numbers against reality).
     fn log_stats(&self) {
         if let Some(e) = &self.engine {
-            let fmt = |r: Option<(u32, u32)>| r.map_or("-".to_string(), |(a, b)| format!("{a}..{b}"));
+            let fmt =
+                |r: Option<(u32, u32)>| r.map_or("-".to_string(), |(a, b)| format!("{a}..{b}"));
             tracing::info!(
                 target: "gachi::stats",
                 "self in_dev={:?} rate={} buf_reported={:?} buf_used={} in_cb_frames={} out_cb_frames={} peers={}",
@@ -1707,7 +2118,10 @@ impl Session {
             let frames = e.output_cb.range().map_or(self.buffer_size, |(_, max)| max);
             let budget_us = frames as f64 * 1e6 / e.info.sample_rate.max(1) as f64;
             let show = |w: gachi_engine::LoadWindow| {
-                format!("{:.0}/{:.0}/{:.0}/{:.0} gap {:.0}..{:.0}", w.p50_us, w.p99_us, w.p999_us, w.max_us, w.gap_min_us, w.gap_max_us)
+                format!(
+                    "{:.0}/{:.0}/{:.0}/{:.0} gap {:.0}..{:.0}",
+                    w.p50_us, w.p99_us, w.p999_us, w.max_us, w.gap_min_us, w.gap_max_us
+                )
             };
             tracing::info!(
                 target: "gachi::stats",
@@ -1774,7 +2188,12 @@ impl Session {
             // their input once they've told us, else assume it matches ours. A packet leaves
             // when it is full: with packets longer than their callbacks, the first sound in
             // one waits the whole packet
-            in_buf: p.info.audio.map(|a| a.input_ms).unwrap_or_else(|| frame_ms(my_in)).max(pm),
+            in_buf: p
+                .info
+                .audio
+                .map(|a| a.input_ms)
+                .unwrap_or_else(|| frame_ms(my_in))
+                .max(pm),
             net: st.rtt_ms.map(|r| r / 2.0).unwrap_or(0.0),
             jitter: packets * pm,
             out_buf: frame_ms(my_out),
@@ -1782,13 +2201,19 @@ impl Session {
         // the buffer a wired link would need, for the Wi-Fi tip (wired links measured
         // ~1.5 ms of spread in our tests)
         let out_cb_ms = self.real_buffers().1 as f32 / self.sample_rate as f32 * 1000.0;
-        let jitter_if_wired = to_packets(auto_target_ms(WIRED_SPREAD_MS, 0.0, pm, out_cb_ms), pm) * pm;
+        let jitter_if_wired =
+            to_packets(auto_target_ms(WIRED_SPREAD_MS, 0.0, pm, out_cb_ms), pm) * pm;
         Some(PeerView {
             id: id.to_string(),
             name: p.info.profile.name.clone(),
             instrument: p.info.profile.instrument.clone(),
             // the colour they picked (older versions: one made from the id)
-            hue: p.info.profile.color.and_then(|c| gachi_proto::signal::COLOR_HUES.get(c as usize)).map_or((id as u32 * 67) % 360, |h| *h as u32),
+            hue: p
+                .info
+                .profile
+                .color
+                .and_then(|c| gachi_proto::signal::COLOR_HUES.get(c as usize))
+                .map_or((id as u32 * 67) % 360, |h| *h as u32),
             is_host: p.info.is_host,
             connected: p.route.is_some() && !p.lost,
             conn: ConnView {
@@ -1806,7 +2231,10 @@ impl Session {
                 daw: p.info.audio.is_some_and(|a| a.daw),
             },
             loss: st.loss_pct,
-            outage_ms: st.last_outage.filter(|(at, _)| at.elapsed() < Duration::from_secs(30)).map_or(0.0, |(_, ms)| ms),
+            outage_ms: st
+                .last_outage
+                .filter(|(at, _)| at.elapsed() < Duration::from_secs(30))
+                .map_or(0.0, |(_, ms)| ms),
             jitter_ms: st.jitter_ms,
             packets,
             auto_packets: auto,
@@ -1826,7 +2254,10 @@ impl Session {
     }
 
     pub fn views(&self) -> Vec<PeerView> {
-        self.peers.keys().filter_map(|&id| self.view_of(id)).collect()
+        self.peers
+            .keys()
+            .filter_map(|&id| self.view_of(id))
+            .collect()
     }
 
     pub fn room_view(&self) -> RoomView {
@@ -1848,10 +2279,19 @@ impl Session {
         let peers: serde_json::Map<String, serde_json::Value> = self
             .peers
             .iter()
-            .map(|(id, p)| (id.to_string(), json!(p.handle.as_ref().map_or([0.0; 2], |h| h.meter.take()))))
+            .map(|(id, p)| {
+                (
+                    id.to_string(),
+                    json!(p.handle.as_ref().map_or([0.0; 2], |h| h.meter.take())),
+                )
+            })
             .collect();
         let (me, master, inputs) = match &self.engine {
-            Some(e) => (e.self_meter.take(), e.master_meter.take(), e.input_meters.take(e.info.input_channels as usize)),
+            Some(e) => (
+                e.self_meter.take(),
+                e.master_meter.take(),
+                e.input_meters.take(e.info.input_channels as usize),
+            ),
             None => ([0.0; 2], [0.0; 2], Vec::new()),
         };
         json!({ "self": me, "master": master, "peers": peers, "inputs": inputs })
@@ -1859,7 +2299,10 @@ impl Session {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// A system message in the chat panel.
@@ -1876,8 +2319,15 @@ const BAD_TRIES_WINDOW: Duration = Duration::from_secs(60);
 
 fn stun_servers() -> Vec<String> {
     match std::env::var("GACHI_STUN") {
-        Ok(v) => v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
-        Err(_) => gachi_net::stun::DEFAULT_SERVERS.iter().map(|s| s.to_string()).collect(),
+        Ok(v) => v
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        Err(_) => gachi_net::stun::DEFAULT_SERVERS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     }
 }
 
@@ -1889,7 +2339,10 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     let settings = state.settings.lock().unwrap().clone();
     let self_ui = state.self_ui.lock().unwrap().clone();
     let step = |id: &str, st: &str, detail: String| {
-        let _ = app.emit("connect-step", json!({ "id": id, "state": st, "detail": detail }));
+        let _ = app.emit(
+            "connect-step",
+            json!({ "id": id, "state": st, "detail": detail }),
+        );
     };
     let cancelled = || state.join_gen.load(Ordering::SeqCst) != gen;
     let cancel_err = || "cancelled".to_string();
@@ -1922,7 +2375,10 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     }
     let servers = stun_servers();
     // the port the user forwarded on the router (settings), if any
-    let wanted = settings.fixed_port.then_some(settings.port).filter(|p| *p >= 1024);
+    let wanted = settings
+        .fixed_port
+        .then_some(settings.port)
+        .filter(|p| *p >= 1024);
     let gathering = tauri::async_runtime::spawn_blocking(move || {
         let (g, taken) = match wanted {
             Some(port) => match Gathered::gather_on(&servers, port) {
@@ -1941,7 +2397,7 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     let (gathered, my_link, port_taken) = unless_cancelled(gathering, &cancelled)
         .await?
         .map_err(|e| e.to_string())?
-    .map_err(|e| gachi_lang::tr!("room.cant_open_network", e))?;
+        .map_err(|e| gachi_lang::tr!("room.cant_open_network", e))?;
     if let Some(port) = port_taken {
         notice(&app, gachi_lang::tr!("room.another_program_using", port));
     }
@@ -1953,17 +2409,32 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     let mut gathered = Some(gathered);
 
     let (me, room_state, peers, gate, media) = match &intent {
-        Intent::Create { name, max_peers, password } => {
+        Intent::Create {
+            name,
+            max_peers,
+            password,
+        } => {
             let max = (*max_peers).clamp(2, gachi_proto::signal::ROOM_MAX);
             // the code request travels to a far server: open UDP and audio meanwhile
             let code_task = {
                 let (app, server) = (app.clone(), settings.server.clone());
                 let locked = password.is_some();
-                tauri::async_runtime::spawn(async move { gate::open(&app, &server, None, None, max, 1, locked).await })
+                tauri::async_runtime::spawn(async move {
+                    gate::open(&app, &server, None, None, max, 1, locked).await
+                })
             };
             // (waits on the driver, for seconds with some: the runtime is told, so that its
             // other tasks are not held up on this thread meanwhile)
-            let media = tokio::task::block_in_place(|| open_media(&step, gathered.take().expect("gathered once"), 1, &settings, candidates_n, 0));
+            let media = tokio::task::block_in_place(|| {
+                open_media(
+                    &step,
+                    gathered.take().expect("gathered once"),
+                    1,
+                    &settings,
+                    candidates_n,
+                    0,
+                )
+            });
             let o = match unless_cancelled(code_task, &cancelled).await {
                 Ok(done) => done.map_err(|e| e.to_string())?.map_err(|(_, e)| e)?,
                 // the code may still open after this; nobody holds it, it is never listed
@@ -1987,19 +2458,28 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         Intent::Join { code, password } => {
             let gathered = gathered.as_ref().expect("not taken on join");
             let url = endpoint.join_url(code);
-            let (tx, mut rx) = unless_cancelled(signal::connect(&url), &cancelled).await?.map_err(|e| gachi_lang::tr!("room.cant_reach_connection", e))?;
+            let (tx, mut rx) = unless_cancelled(signal::connect(&url), &cancelled)
+                .await?
+                .map_err(|e| gachi_lang::tr!("room.cant_reach_connection", e))?;
             let refused = |kind: ErrorKind, message: String| match kind {
                 ErrorKind::PasswordRequired => ERR_PASSWORD_REQUIRED.to_string(),
                 ErrorKind::WrongPassword => ERR_WRONG_PASSWORD.to_string(),
                 _ => crate::refusal::localize(kind, &message),
             };
             // first the host's join key (and whether the room has a password)
-            let (host_key, locked) = match unless_cancelled(tokio::time::timeout(Duration::from_secs(10), rx.recv()), &cancelled).await? {
+            let (host_key, locked) = match unless_cancelled(
+                tokio::time::timeout(Duration::from_secs(10), rx.recv()),
+                &cancelled,
+            )
+            .await?
+            {
                 Ok(Some(FromWorker::Host { join_key, locked })) => {
                     let key = gachi_proto::key_from_hex(&join_key).ok_or_else(host_key_bad)?;
                     (key, locked)
                 }
-                Ok(Some(FromWorker::Error { kind, message })) => return Err(refused(kind, message)),
+                Ok(Some(FromWorker::Error { kind, message })) => {
+                    return Err(refused(kind, message))
+                }
                 Ok(_) => return Err(server_gone()),
                 Err(_) => return Err(gachi_lang::tr!("room.connection_server_not_answering")),
             };
@@ -2022,22 +2502,34 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
             let (sealed, answer_key) = tauri::async_runtime::spawn_blocking(move || {
                 let pw = password.map(|p| gachi_net::joinseal::password_key(&code, &p));
                 let plain = serde_json::to_vec(&join).expect("JoinRequest serializes");
-                let (eph, sealed, answer) = gachi_net::joinseal::seal(&host_key, pw.as_ref(), &plain)?;
-                let sj = SealedJoin { eph: gachi_proto::to_hex(&eph), pw: pw.is_some(), sealed: gachi_proto::to_hex(&sealed) };
+                let (eph, sealed, answer) =
+                    gachi_net::joinseal::seal(&host_key, pw.as_ref(), &plain)?;
+                let sj = SealedJoin {
+                    eph: gachi_proto::to_hex(&eph),
+                    pw: pw.is_some(),
+                    sealed: gachi_proto::to_hex(&sealed),
+                };
                 Some((sj, answer))
             })
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(host_key_bad)?;
             let _ = tx.send(ToWorker::Join { join: sealed });
-            let welcome = match unless_cancelled(tokio::time::timeout(Duration::from_secs(15), rx.recv()), &cancelled).await? {
+            let welcome = match unless_cancelled(
+                tokio::time::timeout(Duration::from_secs(15), rx.recv()),
+                &cancelled,
+            )
+            .await?
+            {
                 Ok(Some(FromWorker::Welcome { welcome })) => welcome,
-                Ok(Some(FromWorker::Error { kind, message })) => return Err(refused(kind, message)),
+                Ok(Some(FromWorker::Error { kind, message })) => {
+                    return Err(refused(kind, message))
+                }
                 Ok(_) => return Err(server_gone()),
                 Err(_) => return Err(gachi_lang::tr!("room.host_not_answering")),
             };
             drop(tx); // done with the connection server
-            // only the host (who knows the password, if there is one) could seal this
+                      // only the host (who knows the password, if there is one) could seal this
             let welcome: Welcome = gachi_proto::from_hex(&welcome.sealed)
                 .and_then(|b| answer_key.open(&b))
                 .and_then(|b| serde_json::from_slice(&b).ok())
@@ -2047,7 +2539,10 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
                 code: welcome.room.code.clone(),
                 name: clip_room_name(&welcome.room.name),
                 open: true,
-                max_peers: welcome.room.max_peers.clamp(2, gachi_proto::signal::ROOM_MAX),
+                max_peers: welcome
+                    .room
+                    .max_peers
+                    .clamp(2, gachi_proto::signal::ROOM_MAX),
                 password: None,
                 host_key: None,
                 next_id: 0,
@@ -2064,7 +2559,16 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     // 2. UDP and audio (a new room opened them already, while waiting for its code)
     let (net, engine) = match media {
         Some(m) => m,
-        None => tokio::task::block_in_place(|| open_media(&step, gathered.take().expect("gathered once"), me, &settings, candidates_n, peers.len()))?,
+        None => tokio::task::block_in_place(|| {
+            open_media(
+                &step,
+                gathered.take().expect("gathered once"),
+                me,
+                &settings,
+                candidates_n,
+                peers.len(),
+            )
+        })?,
     };
     if let Some(n) = device_note(&settings, &engine.info) {
         notice(&app, n);
@@ -2091,7 +2595,10 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         metronome: None,
         last_tempo: (120.0, 4),
         metronome_volume: settings.metronome_volume,
-        rec_names: Arc::new(Mutex::new(HashMap::from([(SELF_TRACK, track_label(&settings.profile()))]))),
+        rec_names: Arc::new(Mutex::new(HashMap::from([(
+            SELF_TRACK,
+            track_label(&settings.profile()),
+        )]))),
         sample_rate,
         buffer_size,
         packet_frames: settings.packet_size,
@@ -2151,15 +2658,34 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
         tokio::time::sleep(Duration::from_millis(600)).await;
     }
     let views = session.views();
-    let avg = if views.is_empty() { 0.0 } else { views.iter().map(|v| v.total).sum::<f32>() / views.len() as f32 };
-    step("measure", "done", if views.is_empty() { "-".into() } else { gachi_lang::tr!("room.average_avg_ms", avg = format!("{avg:.1}")) });
+    let avg = if views.is_empty() {
+        0.0
+    } else {
+        views.iter().map(|v| v.total).sum::<f32>() / views.len() as f32
+    };
+    step(
+        "measure",
+        "done",
+        if views.is_empty() {
+            "-".into()
+        } else {
+            gachi_lang::tr!("room.average_avg_ms", avg = format!("{avg:.1}"))
+        },
+    );
     if cancelled() {
         return Err(cancel_err());
     }
 
     let view = session.room_view();
-    session.tasks.push(tauri::async_runtime::spawn(ticker(app.clone())));
-    *state.session.lock().await = Some(session);
+    // (the room is put in place with its lock held while its ticker is started: the ticker
+    // ends when it finds no room, and started first it could look before the room was there
+    // and leave a room that never hears of anybody)
+    let mut place = state.session.lock().await;
+    session
+        .tasks
+        .push(tauri::async_runtime::spawn(ticker(app.clone())));
+    *place = Some(session);
+    drop(place);
     Ok(view)
 }
 
@@ -2247,14 +2773,23 @@ struct Reopen {
 /// leaving the room used to wait for it. Returns what became of a recording that was
 /// running, and what to tell of the device (or why it did not open: the room then goes on
 /// without sound of ours).
-pub async fn reopen(app: &AppHandle, settings: Settings, self_ui: SelfUi) -> (Option<Result<RecordingResult, String>>, Result<String, String>) {
+pub async fn reopen(
+    app: &AppHandle,
+    settings: Settings,
+    self_ui: SelfUi,
+) -> (
+    Option<Result<RecordingResult, String>>,
+    Result<String, String>,
+) {
     let state = app.state::<AppState>();
     // one at a time (a driver opened twice at once took the program down), and none under
     // way when a new room opens the device (see `AppState::device_gate`)
     let _gate = state.device_gate.lock().await;
     let (id, taken) = {
         let mut guard = state.session.lock().await;
-        let Some(s) = guard.as_mut() else { return (None, Err(gachi_lang::tr!("room.audio_device_not"))) };
+        let Some(s) = guard.as_mut() else {
+            return (None, Err(gachi_lang::tr!("room.audio_device_not")));
+        };
         (s.id, s.reopen_begin(&settings))
     };
     let opening = settings.clone();
@@ -2278,7 +2813,11 @@ pub async fn reopen(app: &AppHandle, settings: Settings, self_ui: SelfUi) -> (Op
             // what was set while there was no engine to set it on (the mute button, a fader,
             // another input channel) is in what the app keeps: the newest of it goes in
             let self_ui = state.self_ui.lock().map(|u| u.clone()).unwrap_or(self_ui);
-            let input = state.settings.lock().map(|now| crate::settings::parse_input(&now.input_channel)).ok();
+            let input = state
+                .settings
+                .lock()
+                .map(|now| crate::settings::parse_input(&now.input_channel))
+                .ok();
             let said = opened.map(|engine| s.reopen_finish(engine, &settings, &self_ui));
             if let (Ok(_), Some(input), false) = (&said, input, settings.daw_mode()) {
                 s.set_input_live(input);
@@ -2334,7 +2873,9 @@ fn hold_auto(p: &mut PeerEntry, want: f32, now: Instant) {
     if want >= p.auto_ms {
         p.auto_ms = want;
         p.raised_at = now;
-    } else if now.duration_since(p.raised_at) >= HOLD_DOWN && now.duration_since(p.lowered_at) >= STEP_DOWN {
+    } else if now.duration_since(p.raised_at) >= HOLD_DOWN
+        && now.duration_since(p.lowered_at) >= STEP_DOWN
+    {
         // halfway down each step (21 → 4 ms in about 5 s once the hold is over); the last
         // quarter millisecond goes at once
         let next = want + (p.auto_ms - want) / 2.0;
@@ -2362,8 +2903,13 @@ fn open_media(
         upnp: settings.upnp,
         peer_timeout: NetConfig::DEFAULT_PEER_TIMEOUT,
     };
-    let net = Net::start(gathered, net_cfg).map_err(|e| gachi_lang::tr!("room.cant_open_network", e))?;
-    step("exchange", "done", gachi_lang::tr!("room.candidates_n_addresses", candidates_n, members));
+    let net =
+        Net::start(gathered, net_cfg).map_err(|e| gachi_lang::tr!("room.cant_open_network", e))?;
+    step(
+        "exchange",
+        "done",
+        gachi_lang::tr!("room.candidates_n_addresses", candidates_n, members),
+    );
     let engine = start_engine(&net, settings)?;
     Ok((net, engine))
 }
@@ -2371,7 +2917,9 @@ fn open_media(
 /// Our private IPv4 network as "a.b.c" (the /24), for the nearby-rooms list.
 pub fn lan_prefix() -> Option<String> {
     let ip = gachi_net::local_ip_toward("1.1.1.1:53".parse().ok()?)?;
-    let std::net::IpAddr::V4(v4) = ip else { return None };
+    let std::net::IpAddr::V4(v4) = ip else {
+        return None;
+    };
     let [a, b, c, _] = v4.octets();
     v4.is_private().then(|| format!("{a}.{b}.{c}"))
 }
@@ -2382,14 +2930,20 @@ mod tests {
     #[test]
     fn a_recording_is_named_by_date_room_and_code() {
         use chrono::TimeZone;
-        let at = chrono::Local.with_ymd_and_hms(2026, 11, 16, 9, 3, 27).unwrap();
+        let at = chrono::Local
+            .with_ymd_and_hms(2026, 11, 16, 9, 3, 27)
+            .unwrap();
         let (folder, prefix) = super::recording_names("금요일 합주", "2N4FW8", at);
         assert_eq!(folder, "2026-11-16 0903 금요일 합주 [2N4FW8]");
         assert_eq!(prefix, "금요일 합주 0903 - ");
         // a room name with characters a file name cannot have
         let (folder, _) = super::recording_names("A/B: 합주?", "2N4FW8", at);
         assert_eq!(folder, "2026-11-16 0903 A_B_ 합주_ [2N4FW8]");
-        let p = |name: &str, inst: &str| gachi_proto::signal::Profile { name: name.into(), instrument: inst.into(), color: None };
+        let p = |name: &str, inst: &str| gachi_proto::signal::Profile {
+            name: name.into(),
+            instrument: inst.into(),
+            color: None,
+        };
         assert_eq!(super::track_label(&p("지민", "보컬")), "지민 (보컬)");
         assert_eq!(super::track_label(&p("지민", " ")), "지민");
     }
@@ -2403,7 +2957,10 @@ mod tests {
         assert_eq!(key("10.1.2.3"), None);
         assert_eq!(key("100.72.1.9"), None);
         // IPv6: the whole /64 (a device changes the rest by itself)
-        assert_eq!(key("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), Some("2001:db8:1:2::".into()));
+        assert_eq!(
+            key("2001:db8:1:2:aaaa:bbbb:cccc:dddd"),
+            Some("2001:db8:1:2::".into())
+        );
         assert_eq!(key("fe80::1"), None);
     }
 
@@ -2442,21 +2999,50 @@ mod tests {
             password: Some("\"".repeat(super::PASSWORD_MAX)),
             host_key: Some("f".repeat(32)),
             next_id: u16::MAX,
-            banned: (0..super::MAX_BANNED as u16).map(|k| IpAddr::V6(Ipv6Addr::new(0xfedc, 0xba98, 0x7654, k | 0xf000, 0, 0, 0, 0))).collect(),
+            banned: (0..super::MAX_BANNED as u16)
+                .map(|k| {
+                    IpAddr::V6(Ipv6Addr::new(
+                        0xfedc,
+                        0xba98,
+                        0x7654,
+                        k | 0xf000,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ))
+                })
+                .collect(),
             age_ms: Some(super::ROOM_AGE_MAX_MS),
         };
-        let n = PeerMsg::RoomState(super::fitting(state.clone())).to_bytes().len();
-        println!("room state: {} bytes as is, {n} as sent", PeerMsg::RoomState(state).to_bytes().len());
+        let n = PeerMsg::RoomState(super::fitting(state.clone()))
+            .to_bytes()
+            .len();
+        println!(
+            "room state: {} bytes as is, {n} as sent",
+            PeerMsg::RoomState(state).to_bytes().len()
+        );
         assert!(n <= MAX_CONTROL_PAYLOAD, "room state {n} bytes");
         let peer = PeerInfo {
             id: u16::MAX,
-            profile: Profile { name: "🎸".repeat(12), instrument: "🎸".repeat(12), color: Some(15) },
+            profile: Profile {
+                name: "🎸".repeat(12),
+                instrument: "🎸".repeat(12),
+                color: Some(15),
+            },
             is_host: true,
-            candidates: (0..super::MAX_CANDIDATES as u16).map(|k| SocketAddr::new(IpAddr::V6(v6(k | 0xf000)), 65535)).collect(),
+            candidates: (0..super::MAX_CANDIDATES as u16)
+                .map(|k| SocketAddr::new(IpAddr::V6(v6(k | 0xf000)), 65535))
+                .collect(),
             token: u32::MAX,
             key: Some([255; 32]),
             aes: true,
-            audio: Some(AudioInfo { input_ms: 123.456_79, sample_rate: 384_000, link: Link::Wifi, daw: true }),
+            audio: Some(AudioInfo {
+                input_ms: 123.456_79,
+                sample_rate: 384_000,
+                link: Link::Wifi,
+                daw: true,
+            }),
             seats: 16,
             // (the longest kind of network to name)
             nat: Some(gachi_proto::signal::NatKind::Unknown),
@@ -2470,15 +3056,31 @@ mod tests {
     #[test]
     fn the_same_pc_is_known_by_its_addresses() {
         use super::same_pc;
-        let a = |list: &[&str]| -> Vec<SocketAddr> { list.iter().map(|s| s.parse().unwrap()).collect() };
+        let a = |list: &[&str]| -> Vec<SocketAddr> {
+            list.iter().map(|s| s.parse().unwrap()).collect()
+        };
         // behind a VPN: other ports every time, the same addresses
-        let first = a(&["10.8.0.2:62860", "192.168.0.20:62860", "198.51.100.40:31809"]);
-        let again = a(&["10.8.0.2:57453", "192.168.0.20:57453", "198.51.100.40:53060"]);
+        let first = a(&[
+            "10.8.0.2:62860",
+            "192.168.0.20:62860",
+            "198.51.100.40:31809",
+        ]);
+        let again = a(&[
+            "10.8.0.2:57453",
+            "192.168.0.20:57453",
+            "198.51.100.40:53060",
+        ]);
         assert!(same_pc(&first, &again));
         // another PC behind the same router: another home address
-        assert!(!same_pc(&a(&["192.168.0.7:1", "203.0.113.7:1"]), &a(&["192.168.0.8:2", "203.0.113.7:2"])));
+        assert!(!same_pc(
+            &a(&["192.168.0.7:1", "203.0.113.7:1"]),
+            &a(&["192.168.0.8:2", "203.0.113.7:2"])
+        ));
         // the same home address in another home
-        assert!(!same_pc(&a(&["192.168.0.7:1", "203.0.113.7:1"]), &a(&["192.168.0.7:2", "198.51.100.3:2"])));
+        assert!(!same_pc(
+            &a(&["192.168.0.7:1", "203.0.113.7:1"]),
+            &a(&["192.168.0.7:2", "198.51.100.3:2"])
+        ));
         // no home address to tell by: not taken for the same
         assert!(!same_pc(&a(&["203.0.113.7:1"]), &a(&["203.0.113.7:2"])));
         // no public address on either side (no STUN answer), the same home address
@@ -2507,7 +3109,10 @@ mod tests {
         assert_eq!(super::copies_wanted(0.2, None), None);
         assert_eq!(super::copies_wanted(0.2, Some(s(586))), None);
         // 0.2% again within two minutes (Wi-Fi): copies, kept on over the minutes between
-        assert_eq!(super::copies_wanted(0.2, Some(s(51))), Some(super::COPIES_HOLD_REPEATED));
+        assert_eq!(
+            super::copies_wanted(0.2, Some(s(51))),
+            Some(super::COPIES_HOLD_REPEATED)
+        );
         // the next report, 2 s on, may be the same lost packet told again: not a repeat
         assert_eq!(super::copies_wanted(0.2, Some(s(2))), None);
         // no loss to speak of is no reason, however recent the last one
@@ -2527,9 +3132,18 @@ mod tests {
 
     #[test]
     fn only_a_host_left_alone_closes_the_code_on_leaving() {
-        assert!(super::leaving_closes_code(true, 0), "empty room: gone at once");
-        assert!(!super::leaving_closes_code(true, 2), "others stay: the next host takes the code over");
-        assert!(!super::leaving_closes_code(false, 0), "not the host: not ours to close");
+        assert!(
+            super::leaving_closes_code(true, 0),
+            "empty room: gone at once"
+        );
+        assert!(
+            !super::leaving_closes_code(true, 2),
+            "others stay: the next host takes the code over"
+        );
+        assert!(
+            !super::leaving_closes_code(false, 0),
+            "not the host: not ours to close"
+        );
     }
 
     #[tokio::test]
@@ -2537,14 +3151,28 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::time::{Duration, Instant};
         let flag = std::sync::Arc::new(AtomicBool::new(false));
-        let cancelled = { let f = flag.clone(); move || f.load(Ordering::SeqCst) };
+        let cancelled = {
+            let f = flag.clone();
+            move || f.load(Ordering::SeqCst)
+        };
         // a wait like "the host has not answered yet" (15 s)
         let started = Instant::now();
-        let cancel = { let f = flag.clone(); tokio::spawn(async move { tokio::time::sleep(Duration::from_millis(200)).await; f.store(true, Ordering::SeqCst) }) };
-        let r = super::unless_cancelled(tokio::time::sleep(Duration::from_secs(15)), &cancelled).await;
+        let cancel = {
+            let f = flag.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                f.store(true, Ordering::SeqCst)
+            })
+        };
+        let r =
+            super::unless_cancelled(tokio::time::sleep(Duration::from_secs(15)), &cancelled).await;
         cancel.await.unwrap();
         assert_eq!(r, Err("cancelled".to_string()));
-        assert!(started.elapsed() < Duration::from_millis(600), "gave up in {:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_millis(600),
+            "gave up in {:?}",
+            started.elapsed()
+        );
         // not cancelled: the result comes through
         let flag = AtomicBool::new(false);
         let r = super::unless_cancelled(async { 7 }, &|| flag.load(Ordering::SeqCst)).await;
@@ -2554,16 +3182,25 @@ mod tests {
     #[test]
     fn the_target_counts_in_the_senders_packets() {
         let ms = |pf: f32| pf / 48.0; // packet length at 48 kHz
-        // the same network and output buffer: about the same time, whatever packets come
+                                      // the same network and output buffer: about the same time, whatever packets come
         let small = auto_target_ms(2.0, 0.1, ms(16.0), 1.33);
         let big = auto_target_ms(2.0, 0.1, ms(64.0), 1.33);
-        assert!(big > small, "bigger packets need more room ({small} vs {big})");
-        assert!((big - small - MARGIN_PACKETS * (ms(64.0) - ms(16.0))).abs() < 1e-4, "1.6 packets' worth more");
+        assert!(
+            big > small,
+            "bigger packets need more room ({small} vs {big})"
+        );
+        assert!(
+            (big - small - MARGIN_PACKETS * (ms(64.0) - ms(16.0))).abs() < 1e-4,
+            "1.6 packets' worth more"
+        );
         // counted in each sender's own packets, it comes back to the same time (at most a
         // quarter packet more, never less)
         for (t, pf) in [(small, 16.0), (big, 64.0)] {
             let back = to_packets(t, ms(pf)) * ms(pf);
-            assert!(back >= t && back - t < ms(pf) / 4.0 + 1e-4, "{t} ms in {pf}-frame packets → {back} ms");
+            assert!(
+                back >= t && back - t < ms(pf) / 4.0 + 1e-4,
+                "{t} ms in {pf}-frame packets → {back} ms"
+            );
         }
         // never less than one output callback plus a packet; a bad link may go to 40 ms
         assert!(auto_target_ms(0.0, 0.0, ms(32.0), 2.67) >= 2.67 + ms(32.0));
@@ -2578,7 +3215,17 @@ mod tests {
 
     #[test]
     fn the_hosts_room_state_is_kept_within_what_a_room_can_be() {
-        let ours = RoomState { code: "K7MQ2X".into(), name: "합주".into(), open: true, max_peers: 4, password: None, host_key: None, next_id: 3, banned: vec![], age_ms: None };
+        let ours = RoomState {
+            code: "K7MQ2X".into(),
+            name: "합주".into(),
+            open: true,
+            max_peers: 4,
+            password: None,
+            host_key: None,
+            next_id: 3,
+            banned: vec![],
+            age_ms: None,
+        };
         let wild = RoomState {
             code: "<script>".into(),
             name: format!("  {}\u{202E}\n", "가".repeat(500)),
@@ -2587,7 +3234,9 @@ mod tests {
             password: Some("p".repeat(5000)),
             host_key: Some("not a key".into()),
             next_id: 9,
-            banned: (0..200u8).map(|n| std::net::IpAddr::from([203, 0, 113, n])).collect(),
+            banned: (0..200u8)
+                .map(|n| std::net::IpAddr::from([203, 0, 113, n]))
+                .collect(),
             age_ms: Some(u64::MAX),
         };
         let got = clean_room_state(wild, &ours);
@@ -2596,13 +3245,27 @@ mod tests {
         assert_eq!(got.max_peers, gachi_proto::signal::ROOM_MAX);
         assert_eq!((got.password, got.host_key), (None, None));
         assert_eq!(got.banned.len(), MAX_BANNED);
-        assert_eq!(got.banned.last(), Some(&std::net::IpAddr::from([203, 0, 113, 199])), "the latest are kept");
+        assert_eq!(
+            got.banned.last(),
+            Some(&std::net::IpAddr::from([203, 0, 113, 199])),
+            "the latest are kept"
+        );
         assert!(!got.open);
         assert_eq!(got.age_ms, None, "a room older than any is not believed");
         // an ordinary one passes as it is
-        let fine = RoomState { code: "ABCDEF".into(), host_key: Some("0f".repeat(16)), password: Some("pw".into()), max_peers: 16, age_ms: Some(3_600_000), ..ours.clone() };
+        let fine = RoomState {
+            code: "ABCDEF".into(),
+            host_key: Some("0f".repeat(16)),
+            password: Some("pw".into()),
+            max_peers: 16,
+            age_ms: Some(3_600_000),
+            ..ours.clone()
+        };
         assert_eq!(clean_room_state(fine.clone(), &ours), fine);
-        assert_eq!(gachi_lang::with("ko-KR", || clip_room_name("   ")), "새 합주실");
+        assert_eq!(
+            gachi_lang::with("ko-KR", || clip_room_name("   ")),
+            "새 합주실"
+        );
     }
 
     fn entry(now: Instant) -> PeerEntry {
@@ -2611,7 +3274,11 @@ mod tests {
                 seats: 0,
                 nat: None,
                 id: 2,
-                profile: Profile { name: "B".into(), instrument: "기타".into(), color: None },
+                profile: Profile {
+                    name: "B".into(),
+                    instrument: "기타".into(),
+                    color: None,
+                },
                 is_host: false,
                 candidates: vec![],
                 token: 0,
@@ -2660,7 +3327,10 @@ mod tests {
             hold_auto(&mut p, 6.0, at(s));
             seen.push(p.auto_ms);
         }
-        assert_eq!(seen, vec![19.0, 12.5, 9.25, 7.625, 6.8125, 6.40625, 6.0, 6.0]);
+        assert_eq!(
+            seen,
+            vec![19.0, 12.5, 9.25, 7.625, 6.8125, 6.40625, 6.0, 6.0]
+        );
         // needing more again restarts the hold
         hold_auto(&mut p, 10.0, at(14));
         hold_auto(&mut p, 6.0, at(17));

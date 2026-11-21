@@ -6,7 +6,10 @@ use gachi_net::{stun, Gathered};
 use std::time::Instant;
 
 fn main() {
-    let servers: Vec<String> = stun::DEFAULT_SERVERS.iter().map(|s| s.to_string()).collect();
+    let servers: Vec<String> = stun::DEFAULT_SERVERS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     for i in 1..=3 {
         let t = Instant::now();
         let r = stun::resolve(&servers[0]);

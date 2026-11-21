@@ -185,7 +185,9 @@ impl StreamTracker {
     /// The measured seconds, oldest first.
     fn seconds(&self) -> Vec<f32> {
         let start = (self.ring_pos + SLOTS - self.ring_filled) % SLOTS;
-        (0..self.ring_filled).map(|k| self.ring[(start + k) % SLOTS]).collect()
+        (0..self.ring_filled)
+            .map(|k| self.ring[(start + k) % SLOTS])
+            .collect()
     }
 
     fn reset_timing(&mut self) {
@@ -238,7 +240,10 @@ impl StreamTracker {
                     self.highest = Some(seq);
                     self.reset_timing();
                     stats.restarts += 1;
-                } else if self.outage_seqs.is_some_and(|(a, b)| seq.wrapping_sub(a) <= b.wrapping_sub(a)) {
+                } else if self
+                    .outage_seqs
+                    .is_some_and(|(a, b)| seq.wrapping_sub(a) <= b.wrapping_sub(a))
+                {
                     // a late packet from inside a stop: nothing was counted for it
                 } else if self.window_lost > 0 {
                     // a late packet filled a gap we already counted
@@ -298,7 +303,8 @@ impl StreamTracker {
         let total = self.window_recv + self.window_lost;
         if total >= 500 {
             stats.loss_pct = self.window_lost as f32 * 100.0 / total as f32;
-            stats.raw_loss_pct = (self.window_lost + self.window_filled) as f32 * 100.0 / total as f32;
+            stats.raw_loss_pct =
+                (self.window_lost + self.window_filled) as f32 * 100.0 / total as f32;
             self.window_recv = 0;
             self.window_lost = 0;
             self.window_filled = 0;
@@ -338,7 +344,10 @@ pub fn buffer_level(seconds: &[f32], worth_ms: f32) -> Option<f32> {
     // the levels that make a difference: each second's own lateness (covering exactly it),
     // as far as a buffer can go
     // (what every second shows is no moment but the link's floor: always covered)
-    let floor = seconds.iter().fold(f32::MAX, |m, &s| m.min(s)).min(MAX_COVER_MS);
+    let floor = seconds
+        .iter()
+        .fold(f32::MAX, |m, &s| m.min(s))
+        .min(MAX_COVER_MS);
     let mut best = (floor, cost(floor));
     for &l in seconds.iter().filter(|&&l| l <= MAX_COVER_MS) {
         let c = cost(l);
@@ -348,7 +357,11 @@ pub fn buffer_level(seconds: &[f32], worth_ms: f32) -> Option<f32> {
     }
     // the link just got worse and stays so: follow it now, not once enough moments add up
     let recent = seconds.iter().rev().take(WORSE_AFTER_SECONDS);
-    let lately = if seconds.len() >= WORSE_AFTER_SECONDS { recent.fold(f32::MAX, |m, &s| m.min(s)).min(MAX_COVER_MS) } else { 0.0 };
+    let lately = if seconds.len() >= WORSE_AFTER_SECONDS {
+        recent.fold(f32::MAX, |m, &s| m.min(s)).min(MAX_COVER_MS)
+    } else {
+        0.0
+    };
     Some(best.0.max(lately))
 }
 
@@ -402,7 +415,11 @@ mod tests {
             t.on_packet(seq, 32, &mut st);
         }
         assert_eq!((st.lost, st.outages), (0, 1), "{st:?}");
-        assert!(st.last_outage.is_some_and(|(_, ms)| (ms - 700.0).abs() < 1.0), "{st:?}");
+        assert!(
+            st.last_outage
+                .is_some_and(|(_, ms)| (ms - 700.0).abs() < 1.0),
+            "{st:?}"
+        );
         // a late packet from inside the stop fills nothing that was counted
         t.on_packet(1600, 32, &mut st);
         assert_eq!(st.lost, 0);
@@ -425,7 +442,11 @@ mod tests {
         let mut now = 0.0;
         while now < 20_000.0 {
             // seconds 8..9: everything arrives 800 ms late
-            let late = if (8000.0..9000.0).contains(&now) { 800.0 } else { 0.0 };
+            let late = if (8000.0..9000.0).contains(&now) {
+                800.0
+            } else {
+                0.0
+            };
             t.on_arrival(seq, now + pm + 0.2 + late, &mut st);
             seq += 1;
             now += pm;
@@ -477,7 +498,11 @@ mod tests {
         let mut st = PeerNetStats::default();
         let (mut seq, mut now) = (0u32, 0.0f64);
         while now < 30_000.0 {
-            let stall = if (now as u64 / 10).is_multiple_of(1000) && now > 1000.0 { 15.0 } else { 0.0 };
+            let stall = if (now as u64 / 10).is_multiple_of(1000) && now > 1000.0 {
+                15.0
+            } else {
+                0.0
+            };
             for _ in 0..15 {
                 t.on_arrival(seq, now + 10.0 + 1.0 + stall, &mut st);
                 seq += 1;
@@ -507,7 +532,10 @@ mod tests {
         while now < secs * 1000.0 {
             for _ in 0..2 {
                 let mut at = now + 1.333 + 0.3 - jitter * (1.0 - rand()).ln();
-                if let Some(&(s, len)) = stalls.iter().find(|&&(s, len)| at >= s * 1000.0 && at < s * 1000.0 + len) {
+                if let Some(&(s, len)) = stalls
+                    .iter()
+                    .find(|&&(s, len)| at >= s * 1000.0 && at < s * 1000.0 + len)
+                {
                     at = s * 1000.0 + len + 0.1 * rand();
                 }
                 arrivals.push((at, seq));
@@ -531,12 +559,20 @@ mod tests {
     /// One bad moment as the logs show it: not a single stall but a few within ~1.5 s
     /// (Wi-Fi power save or scanning, another program waking up), each `len` ms.
     fn cluster(at: f64, len: f64) -> [(f64, f64); 4] {
-        [(at, len), (at + 0.3, len * 0.6), (at + 0.8, len), (at + 1.4, len * 0.5)]
+        [
+            (at, len),
+            (at + 0.3, len * 0.6),
+            (at + 0.8, len),
+            (at + 1.4, len * 0.5),
+        ]
     }
 
     /// Seconds the measured spread spent above `limit`, and its peak.
     fn time_above(p: &[f32], limit: f32) -> (usize, f32) {
-        (p.iter().filter(|&&v| v > limit).count(), p.iter().fold(0f32, |m, &v| m.max(v)))
+        (
+            p.iter().filter(|&&v| v > limit).count(),
+            p.iter().fold(0f32, |m, &v| m.max(v)),
+        )
     }
 
     #[test]
@@ -546,18 +582,32 @@ mod tests {
         let stalls: Vec<(f64, f64)> = [cluster(25.0, 40.0), cluster(80.0, 35.0)].concat();
         let p = trace(120.0, 0.7, &stalls, 7);
         let (secs, peak) = time_above(&p, 12.0);
-        println!("wifi: {secs} s above 12 ms (peak {peak:.1}), everyday {:.1}", p[20]);
-        assert!(secs <= 2, "sized for the rare stalls for {secs} s (peak {peak:.1})");
+        println!(
+            "wifi: {secs} s above 12 ms (peak {peak:.1}), everyday {:.1}",
+            p[20]
+        );
+        assert!(
+            secs <= 2,
+            "sized for the rare stalls for {secs} s (peak {peak:.1})"
+        );
     }
 
     #[test]
     fn a_busy_receiver_now_and_then() {
         // wired, but another program makes us late by ~15 ms every ~12 s (Spotify)
-        let stalls: Vec<(f64, f64)> = (1..10).flat_map(|k| cluster(k as f64 * 12.0 + 0.4 * k as f64, 15.0)).collect();
+        let stalls: Vec<(f64, f64)> = (1..10)
+            .flat_map(|k| cluster(k as f64 * 12.0 + 0.4 * k as f64, 15.0))
+            .collect();
         let p = trace(120.0, 0.1, &stalls, 11);
         let (secs, peak) = time_above(&p, 6.0);
-        println!("busy receiver: {secs} s above 6 ms (peak {peak:.1}), everyday {:.1}", p[8]);
-        assert!(secs <= 2, "sized for the rare stalls for {secs} s (peak {peak:.1})");
+        println!(
+            "busy receiver: {secs} s above 6 ms (peak {peak:.1}), everyday {:.1}",
+            p[8]
+        );
+        assert!(
+            secs <= 2,
+            "sized for the rare stalls for {secs} s (peak {peak:.1})"
+        );
     }
 
     #[test]
@@ -568,7 +618,11 @@ mod tests {
         let late = &p[30..];
         let covered = late.iter().filter(|&&v| v >= 18.0).count();
         println!("frequent stalls: covered {covered} of {} s", late.len());
-        assert!(covered >= late.len() * 9 / 10, "only {covered} of {} s", late.len());
+        assert!(
+            covered >= late.len() * 9 / 10,
+            "only {covered} of {} s",
+            late.len()
+        );
     }
 
     #[test]
@@ -577,7 +631,10 @@ mod tests {
         let stalls: Vec<(f64, f64)> = (0..160).map(|k| (40.0 + k as f64 * 0.5, 12.0)).collect();
         let p = trace(120.0, 0.1, &stalls, 17);
         assert!(p[35] < 3.0, "before: {}", p[35]);
-        let caught = p[40..].iter().position(|&v| v >= 10.0).expect("never followed");
+        let caught = p[40..]
+            .iter()
+            .position(|&v| v >= 10.0)
+            .expect("never followed");
         println!("worse link: followed after {caught} s");
         assert!(caught <= 6, "took {caught} s");
     }
@@ -604,9 +661,16 @@ mod tests {
         }
         println!("after a pause: {:?}", &seen[8..16]);
         // a few seconds of a big spread right after (one bad moment), then normal again
-        let late: Vec<_> = seen[14..].iter().filter(|(s, p)| *s > 3.0 || *p > 3.0).collect();
+        let late: Vec<_> = seen[14..]
+            .iter()
+            .filter(|(s, p)| *s > 3.0 || *p > 3.0)
+            .collect();
         assert!(late.is_empty(), "still late after the pause: {late:?}");
-        assert!(seen[12].1 < 3.0, "the buffer is never sized for the pause: {:?}", seen[12]);
+        assert!(
+            seen[12].1 < 3.0,
+            "the buffer is never sized for the pause: {:?}",
+            seen[12]
+        );
     }
 
     #[test]

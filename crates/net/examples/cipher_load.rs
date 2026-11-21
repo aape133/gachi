@@ -59,7 +59,10 @@ fn pairs(c: Cipher) -> Vec<(PeerCrypto, PeerCrypto)> {
     (0..PEERS as u16)
         .map(|i| {
             let (a, b) = (Identity::generate(), Identity::generate());
-            (a.session_using(c, 1, 2 + i, &b.public).unwrap(), b.session_using(c, 2 + i, 1, &a.public).unwrap())
+            (
+                a.session_using(c, 1, 2 + i, &b.public).unwrap(),
+                b.session_using(c, 2 + i, 1, &a.public).unwrap(),
+            )
         })
         .collect()
 }
@@ -81,7 +84,12 @@ fn run(c: Cipher, busy: bool, pro: bool) {
             (0..2)
                 .map(|_| {
                     let len = theirs.seal(2, &plain[..n], &mut wire);
-                    let Ok(Packet::Sealed { counter, aad, body, .. }) = audio::decode(&wire[..len]) else { panic!("decode") };
+                    let Ok(Packet::Sealed {
+                        counter, aad, body, ..
+                    }) = audio::decode(&wire[..len])
+                    else {
+                        panic!("decode")
+                    };
                     (counter, aad.to_vec(), body.to_vec())
                 })
                 .collect()

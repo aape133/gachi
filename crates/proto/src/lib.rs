@@ -31,7 +31,11 @@ pub fn from_hex(s: &str) -> Option<Vec<u8>> {
         return None;
     }
     let digit = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
-    s.as_chunks::<2>().0.iter().map(|[h, l]| Some(digit(*h)? << 4 | digit(*l)?)).collect()
+    s.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[h, l]| Some(digit(*h)? << 4 | digit(*l)?))
+        .collect()
 }
 
 /// A 32-byte key from hex.

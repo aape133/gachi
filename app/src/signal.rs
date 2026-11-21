@@ -45,7 +45,11 @@ impl Endpoint {
     }
 
     fn ws(&self, path: &str) -> String {
-        format!("{}://{}{path}", if self.secure { "wss" } else { "ws" }, self.host_port)
+        format!(
+            "{}://{}{path}",
+            if self.secure { "wss" } else { "ws" },
+            self.host_port
+        )
     }
 
     /// Host connection: a new code, or reopen / take over `code`.
@@ -59,7 +63,10 @@ impl Endpoint {
     /// Open rooms on our network (`lan`: our private /24, e.g. "192.168.0"; `gw`: what
     /// devices behind our router have in common, see `gachi_net::router_key`).
     pub fn nearby_url(&self, lan: Option<&str>, gw: Option<&str>) -> String {
-        let query: Vec<String> = [("lan", lan), ("gw", gw)].into_iter().filter_map(|(k, v)| Some(format!("{k}={}", v?))).collect();
+        let query: Vec<String> = [("lan", lan), ("gw", gw)]
+            .into_iter()
+            .filter_map(|(k, v)| Some(format!("{k}={}", v?)))
+            .collect();
         if query.is_empty() {
             self.ws("/ws/nearby")
         } else {
@@ -83,7 +90,10 @@ fn is_this_computer(host_port: &str) -> bool {
         Some(v6) => v6.split(']').next().unwrap_or(""),
         None => host_port.rsplit_once(':').map_or(host_port, |(h, _)| h),
     };
-    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 /// TLS settings for wss://, built once: reading the Windows certificate store on every
@@ -94,7 +104,8 @@ fn tls() -> Option<tokio_tungstenite::Connector> {
 
 /// (also what the update check's HTTPS request uses)
 pub fn tls_config() -> Option<std::sync::Arc<rustls::ClientConfig>> {
-    static CFG: std::sync::OnceLock<Option<std::sync::Arc<rustls::ClientConfig>>> = std::sync::OnceLock::new();
+    static CFG: std::sync::OnceLock<Option<std::sync::Arc<rustls::ClientConfig>>> =
+        std::sync::OnceLock::new();
     CFG.get_or_init(|| {
         let mut roots = rustls::RootCertStore::empty();
         for cert in rustls_native_certs::load_native_certs().certs {
@@ -103,7 +114,9 @@ pub fn tls_config() -> Option<std::sync::Arc<rustls::ClientConfig>> {
         if roots.is_empty() {
             return None; // let tungstenite try on its own
         }
-        let cfg = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+        let cfg = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
         Some(std::sync::Arc::new(cfg))
     })
     .clone()
@@ -118,7 +131,9 @@ pub fn warm_tls() {
 
 /// Opens a WebSocket to `url`, trying once more if the first try fails quickly (a brief
 /// network or DNS hiccup). Dropping the sender closes the connection.
-pub async fn connect(url: &str) -> Result<(UnboundedSender<ToWorker>, UnboundedReceiver<FromWorker>), String> {
+pub async fn connect(
+    url: &str,
+) -> Result<(UnboundedSender<ToWorker>, UnboundedReceiver<FromWorker>), String> {
     let t = std::time::Instant::now();
     match connect_once(url).await {
         Err(e) if t.elapsed() < Duration::from_secs(3) => {
@@ -130,7 +145,9 @@ pub async fn connect(url: &str) -> Result<(UnboundedSender<ToWorker>, UnboundedR
     }
 }
 
-async fn connect_once(url: &str) -> Result<(UnboundedSender<ToWorker>, UnboundedReceiver<FromWorker>), String> {
+async fn connect_once(
+    url: &str,
+) -> Result<(UnboundedSender<ToWorker>, UnboundedReceiver<FromWorker>), String> {
     // no Nagle: our messages are small and each one waits for an answer
     let connecting = tokio_tungstenite::connect_async_tls_with_config(url, None, true, tls());
     let (ws, _) = tokio::time::timeout(Duration::from_secs(8), connecting)
@@ -172,7 +189,9 @@ async fn connect_once(url: &str) -> Result<(UnboundedSender<ToWorker>, Unbounded
 
     tauri::async_runtime::spawn(async move {
         // a dead link (no pong for two keepalive rounds) ends the stream too
-        while let Ok(Some(Ok(msg))) = tokio::time::timeout(KEEPALIVE * 2 + Duration::from_secs(5), stream.next()).await {
+        while let Ok(Some(Ok(msg))) =
+            tokio::time::timeout(KEEPALIVE * 2 + Duration::from_secs(5), stream.next()).await
+        {
             let Message::Text(text) = msg else { continue };
             if text == "pong" {
                 continue;
@@ -189,7 +208,10 @@ async fn connect_once(url: &str) -> Result<(UnboundedSender<ToWorker>, Unbounded
         // nobody is listening any more: stay a moment longer so that the close is answered
         // (ours by the server, or the server's by us) and the connection ends as a closed
         // one, not as a broken one
-        let _ = tokio::time::timeout(CLOSE_WAIT, async { while let Some(Ok(_)) = stream.next().await {} }).await;
+        let _ = tokio::time::timeout(CLOSE_WAIT, async {
+            while let Some(Ok(_)) = stream.next().await {}
+        })
+        .await;
     });
 
     Ok((out_tx, in_rx))
@@ -210,10 +232,18 @@ mod tests {
         tauri::async_runtime::block_on(async move {
             let e = Endpoint::parse(crate::settings::DEFAULT_SERVER);
             let zeros = "0".repeat(32);
-            for url in [e.nearby_url(Some("192.168.0"), Some(&zeros)), e.join_url("ZZZZZZ")] {
+            for url in [
+                e.nearby_url(Some("192.168.0"), Some(&zeros)),
+                e.join_url("ZZZZZZ"),
+            ] {
                 let (tx, mut rx) = connect(&url).await.expect("connects");
-                let answer = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await;
-                println!("{:?}", answer.map(|m| m.map(|m| format!("{m:?}").chars().take(40).collect::<String>())));
+                let answer =
+                    tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await;
+                println!(
+                    "{:?}",
+                    answer
+                        .map(|m| m.map(|m| format!("{m:?}").chars().take(40).collect::<String>()))
+                );
                 drop((tx, rx));
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             }
@@ -234,9 +264,23 @@ mod tests {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 let t2 = std::time::Instant::now();
                 let join_key = gachi_proto::to_hex(&[7; 32]);
-                host.send(ToWorker::HostOpen { code: None, host_key: None, max_peers: 2, members: 1, join_key, locked: false }).unwrap();
-                let Some(FromWorker::Opened { .. }) = rx.recv().await else { panic!("opened") };
-                println!("round {round}: websocket {:>4} ms · code on an open connection {:>4} ms", ws.as_millis(), t2.elapsed().as_millis());
+                host.send(ToWorker::HostOpen {
+                    code: None,
+                    host_key: None,
+                    max_peers: 2,
+                    members: 1,
+                    join_key,
+                    locked: false,
+                })
+                .unwrap();
+                let Some(FromWorker::Opened { .. }) = rx.recv().await else {
+                    panic!("opened")
+                };
+                println!(
+                    "round {round}: websocket {:>4} ms · code on an open connection {:>4} ms",
+                    ws.as_millis(),
+                    t2.elapsed().as_millis()
+                );
                 host.send(ToWorker::Close).unwrap();
             }
         });
@@ -254,42 +298,85 @@ mod tests {
             let host_join = joinseal::JoinKey::generate();
             let (host, mut host_rx) = connect(&e.host_url(None)).await.expect("host connects");
             let join_key = gachi_proto::to_hex(&host_join.public);
-            host.send(ToWorker::HostOpen { code: None, host_key: None, max_peers: 4, members: 1, join_key, locked: true }).unwrap();
-            let Some(FromWorker::Opened { code, host_key }) = host_rx.recv().await else { panic!("opened") };
+            host.send(ToWorker::HostOpen {
+                code: None,
+                host_key: None,
+                max_peers: 4,
+                members: 1,
+                join_key,
+                locked: true,
+            })
+            .unwrap();
+            let Some(FromWorker::Opened { code, host_key }) = host_rx.recv().await else {
+                panic!("opened")
+            };
             assert_eq!(code.len(), 6);
             assert_eq!(host_key.len(), 32);
 
             // the newcomer gets the host's key, seals its request with the password in the key
-            let (joiner, mut joiner_rx) = connect(&e.join_url(&code)).await.expect("joiner connects");
-            let Some(FromWorker::Host { join_key, locked: true }) = joiner_rx.recv().await else { panic!("host key") };
+            let (joiner, mut joiner_rx) =
+                connect(&e.join_url(&code)).await.expect("joiner connects");
+            let Some(FromWorker::Host {
+                join_key,
+                locked: true,
+            }) = joiner_rx.recv().await
+            else {
+                panic!("host key")
+            };
             let host_pub = gachi_proto::key_from_hex(&join_key).unwrap();
             let join = JoinRequest {
                 seats: 0,
                 nat: None,
-                profile: Profile { name: "B".into(), instrument: "건반".into(), color: None },
+                profile: Profile {
+                    name: "B".into(),
+                    instrument: "건반".into(),
+                    color: None,
+                },
                 candidates: vec!["192.168.0.7:5555".parse().unwrap()],
                 token: 42,
                 key: [9; 32],
                 aes: true,
             };
             let pw = joinseal::password_key(&code, "pw");
-            let (eph, sealed, answer_key) = joinseal::seal(&host_pub, Some(&pw), &serde_json::to_vec(&join).unwrap()).unwrap();
-            let sj = SealedJoin { eph: gachi_proto::to_hex(&eph), pw: true, sealed: gachi_proto::to_hex(&sealed) };
+            let (eph, sealed, answer_key) =
+                joinseal::seal(&host_pub, Some(&pw), &serde_json::to_vec(&join).unwrap()).unwrap();
+            let sj = SealedJoin {
+                eph: gachi_proto::to_hex(&eph),
+                pw: true,
+                sealed: gachi_proto::to_hex(&sealed),
+            };
             joiner.send(ToWorker::Join { join: sj.clone() }).unwrap();
-            let Some(FromWorker::JoinRequest { req, join: got }) = host_rx.recv().await else { panic!("join request") };
+            let Some(FromWorker::JoinRequest { req, join: got }) = host_rx.recv().await else {
+                panic!("join request")
+            };
             assert_eq!(got, sj, "the sealed request reaches the host unchanged");
             let eph = gachi_proto::key_from_hex(&got.eph).unwrap();
-            let (plain, reply) = host_join.open(&eph, Some(&pw), &gachi_proto::from_hex(&got.sealed).unwrap()).expect("host opens it");
+            let (plain, reply) = host_join
+                .open(
+                    &eph,
+                    Some(&pw),
+                    &gachi_proto::from_hex(&got.sealed).unwrap(),
+                )
+                .expect("host opens it");
             assert_eq!(serde_json::from_slice::<JoinRequest>(&plain).unwrap(), join);
 
             let welcome = Welcome {
                 you: 2,
-                room: RoomInfo { code: code.clone(), name: "r".into(), max_peers: 4, has_password: true },
+                room: RoomInfo {
+                    code: code.clone(),
+                    name: "r".into(),
+                    max_peers: 4,
+                    has_password: true,
+                },
                 peers: vec![PeerInfo {
                     seats: 0,
                     nat: None,
                     id: 1,
-                    profile: Profile { name: "A".into(), instrument: "기타".into(), color: None },
+                    profile: Profile {
+                        name: "A".into(),
+                        instrument: "기타".into(),
+                        color: None,
+                    },
                     is_host: true,
                     candidates: vec!["192.168.0.6:4444".parse().unwrap()],
                     token: 7,
@@ -298,10 +385,20 @@ mod tests {
                     audio: None,
                 }],
             };
-            let sealed = SealedWelcome { sealed: gachi_proto::to_hex(&reply.seal(&serde_json::to_vec(&welcome).unwrap())) };
-            host.send(ToWorker::Admit { req, admission: Admission::Accept { welcome: sealed } }).unwrap();
-            let Some(FromWorker::Welcome { welcome: got }) = joiner_rx.recv().await else { panic!("welcome") };
-            let opened = answer_key.open(&gachi_proto::from_hex(&got.sealed).unwrap()).expect("only the host could seal this");
+            let sealed = SealedWelcome {
+                sealed: gachi_proto::to_hex(&reply.seal(&serde_json::to_vec(&welcome).unwrap())),
+            };
+            host.send(ToWorker::Admit {
+                req,
+                admission: Admission::Accept { welcome: sealed },
+            })
+            .unwrap();
+            let Some(FromWorker::Welcome { welcome: got }) = joiner_rx.recv().await else {
+                panic!("welcome")
+            };
+            let opened = answer_key
+                .open(&gachi_proto::from_hex(&got.sealed).unwrap())
+                .expect("only the host could seal this");
             assert_eq!(serde_json::from_slice::<Welcome>(&opened).unwrap(), welcome);
             host.send(ToWorker::Close).unwrap();
         });
@@ -312,15 +409,27 @@ mod tests {
         let e = Endpoint::parse("gachi.me.workers.dev");
         assert!(e.secure);
         assert_eq!(e.host_url(None), "wss://gachi.me.workers.dev/ws/host");
-        assert_eq!(e.join_url("K7MQ2X"), "wss://gachi.me.workers.dev/ws/join/K7MQ2X");
-        assert_eq!(e.host_url(Some("K7MQ2X")), "wss://gachi.me.workers.dev/ws/host?code=K7MQ2X");
+        assert_eq!(
+            e.join_url("K7MQ2X"),
+            "wss://gachi.me.workers.dev/ws/join/K7MQ2X"
+        );
+        assert_eq!(
+            e.host_url(Some("K7MQ2X")),
+            "wss://gachi.me.workers.dev/ws/host?code=K7MQ2X"
+        );
         assert!(!Endpoint::parse("127.0.0.1:8787").secure);
         assert!(!Endpoint::parse("localhost:8787").secure);
         assert!(!Endpoint::parse("[::1]:8787").secure);
-        assert!(Endpoint::parse("192.168.0.10:8787").secure, "LAN servers need a scheme to go plain");
+        assert!(
+            Endpoint::parse("192.168.0.10:8787").secure,
+            "LAN servers need a scheme to go plain"
+        );
         let e = Endpoint::parse("ws://192.168.0.10:8787");
         assert!(!e.secure && e.insecure_remote());
         let e = Endpoint::parse("https://gachi.me.workers.dev/");
-        assert_eq!((e.host_port.as_str(), e.secure), ("gachi.me.workers.dev", true));
+        assert_eq!(
+            (e.host_port.as_str(), e.secure),
+            ("gachi.me.workers.dev", true)
+        );
     }
 }

@@ -91,7 +91,11 @@ fn two_peers_punch_and_stream_audio() {
     assert!(a.stats(2).unwrap().rtt_ms.is_some());
 
     // same process, same clock: the measured offset is about zero
-    let off = a.stats(2).unwrap().clock_offset_us.expect("offset measured");
+    let off = a
+        .stats(2)
+        .unwrap()
+        .clock_offset_us
+        .expect("offset measured");
     assert!(off.abs() < 2_000, "offset {off} µs");
 }
 
@@ -116,7 +120,9 @@ fn room_messages_arrive_in_order_and_bye_is_heard() {
     }
     let mut got = Vec::new();
     while got.len() < 50 {
-        if let NetEvent::Control { id, data } = wait_event(&b, |e| matches!(e, NetEvent::Control { .. })) {
+        if let NetEvent::Control { id, data } =
+            wait_event(&b, |e| matches!(e, NetEvent::Control { .. }))
+        {
             assert_eq!(id, 1);
             got.push(String::from_utf8(data).unwrap());
         }
@@ -125,13 +131,19 @@ fn room_messages_arrive_in_order_and_bye_is_heard() {
 
     // a leaves on purpose: b hears about it right away
     drop(a);
-    assert!(matches!(wait_event(&b, |e| matches!(e, NetEvent::PeerLeft { .. })), NetEvent::PeerLeft { id: 1 }));
+    assert!(matches!(
+        wait_event(&b, |e| matches!(e, NetEvent::PeerLeft { .. })),
+        NetEvent::PeerLeft { id: 1 }
+    ));
 }
 
 #[test]
 fn silent_peer_is_reported_lost() {
     let stun = spawn_stun();
-    let quick = |id| NetConfig { peer_timeout: Duration::from_millis(400), ..cfg(id) };
+    let quick = |id| NetConfig {
+        peer_timeout: Duration::from_millis(400),
+        ..cfg(id)
+    };
     let a = start_with(&stun, quick(1));
     let b = start_with(&stun, quick(2));
     let (a_tx, _) = rtrb::RingBuffer::<Frame>::new(8);
@@ -148,7 +160,10 @@ fn silent_peer_is_reported_lost() {
     }
     // b goes quiet without a goodbye (it simply stops talking to a)
     b.remove_peer(1);
-    assert!(matches!(wait_event(&a, |e| matches!(e, NetEvent::PeerLost { .. })), NetEvent::PeerLost { id: 2, .. }));
+    assert!(matches!(
+        wait_event(&a, |e| matches!(e, NetEvent::PeerLost { .. })),
+        NetEvent::PeerLost { id: 2, .. }
+    ));
 }
 
 /// Connects a and b directly; returns b's ring for audio from a.
@@ -175,10 +190,17 @@ fn connected_pair(stun: &str) -> (Net, Net, rtrb::Consumer<Frame>) {
 #[test]
 #[ignore]
 fn memory_levels_off_while_people_come_and_go() {
-    let secs: u64 = std::env::var("GACHI_SOAK_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(40);
+    let secs: u64 = std::env::var("GACHI_SOAK_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(40);
     let (a, b, mut b_rx) = connected_pair(&spawn_stun());
     let mut sender = a.sender();
-    let mut f = Frame { channels: 2, frames: 32, ..Frame::EMPTY };
+    let mut f = Frame {
+        channels: 2,
+        frames: 32,
+        ..Frame::EMPTY
+    };
     let start = Instant::now();
     let (mut seq, mut next_id, mut churned) = (0u32, 100u16, 0u32);
     let mut last_churn = Instant::now();
@@ -209,7 +231,10 @@ fn memory_levels_off_while_people_come_and_go() {
                 next_id = next_id.wrapping_add(1).max(100);
                 let (tx, _) = rtrb::RingBuffer::<Frame>::new(64);
                 b.add_peer(id, tx);
-                let key = crypto::PeerKey { public: crypto::Identity::generate().public, aes: false };
+                let key = crypto::PeerKey {
+                    public: crypto::Identity::generate().public,
+                    aes: false,
+                };
                 b.set_candidates(id, a.candidates.clone(), rand::random(), key);
                 b.send_control(id, vec![1u8; 100]);
                 visitor = Some(id);
@@ -218,16 +243,27 @@ fn memory_levels_off_while_people_come_and_go() {
         if start.elapsed() >= next_sample {
             next_sample += Duration::from_secs(5);
             let live = alloc_guard::live_bytes();
-            println!("{:>4} s: {:>9} bytes held, {churned} came and went", start.elapsed().as_secs(), live);
+            println!(
+                "{:>4} s: {:>9} bytes held, {churned} came and went",
+                start.elapsed().as_secs(),
+                live
+            );
             samples.push(live);
         }
         thread::sleep(Duration::from_millis(2));
     }
     // from 10 s on (everything warmed up) to the end
     let (first, last) = (samples[1], *samples.last().unwrap());
-    let per_visit = (last - first) as f64 / (churned as f64 * (samples.len() - 2) as f64 / samples.len() as f64).max(1.0);
-    println!("grew {} bytes after warm-up ({per_visit:.0} per one who came and went)", last - first);
-    assert!(last - first < 64 * 1024, "held {first} at 10 s, {last} at the end: grows");
+    let per_visit = (last - first) as f64
+        / (churned as f64 * (samples.len() - 2) as f64 / samples.len() as f64).max(1.0);
+    println!(
+        "grew {} bytes after warm-up ({per_visit:.0} per one who came and went)",
+        last - first
+    );
+    assert!(
+        last - first < 64 * 1024,
+        "held {first} at 10 s, {last} at the end: grows"
+    );
 }
 
 #[test]
@@ -239,7 +275,9 @@ fn drops_unencrypted_and_wrongly_keyed_audio() {
     let mut plain = [0u8; audio::MAX_PACKET];
     let n = audio::encode_audio(&mut plain, 1, 99, 1, SampleFormat::Pcm16, &[0.9; 32]);
     a.socket.send_to(&plain[..n], b_addr).unwrap();
-    let stranger = crypto::Identity::generate().session_with(1, 2, &b.peer_key()).unwrap();
+    let stranger = crypto::Identity::generate()
+        .session_with(1, 2, &b.peer_key())
+        .unwrap();
     let mut wire = [0u8; audio::MAX_SEALED];
     let len = stranger.seal(1, &plain[..n], &mut wire);
     a.socket.send_to(&wire[..len], b_addr).unwrap();
@@ -258,8 +296,16 @@ fn drops_unencrypted_and_wrongly_keyed_audio() {
 
 fn send_and_check(from: &Net, to_rx: &mut rtrb::Consumer<Frame>) {
     let mut sender = from.sender();
-    let mut f = Frame { seq: 7, channels: 2, frames: 32, ..Frame::EMPTY };
-    f.data[..64].iter_mut().enumerate().for_each(|(i, s)| *s = i as f32 / 100.0);
+    let mut f = Frame {
+        seq: 7,
+        channels: 2,
+        frames: 32,
+        ..Frame::EMPTY
+    };
+    f.data[..64]
+        .iter_mut()
+        .enumerate()
+        .for_each(|(i, s)| *s = i as f32 / 100.0);
     // (sent again every 100 ms until it is there: what is checked is that the connection
     // carries audio, and one datagram can be lost on a busy machine, the tests running side
     // by side. It failed once that way. The receiver keeps one copy of a sequence number)
@@ -283,15 +329,29 @@ fn send_and_check(from: &Net, to_rx: &mut rtrb::Consumer<Frame>) {
 #[test]
 fn unreachable_peer_is_reported_not_relayed() {
     let stun = spawn_stun();
-    let quick = |id| NetConfig { punch_timeout: Duration::from_millis(300), ..cfg(id) };
+    let quick = |id| NetConfig {
+        punch_timeout: Duration::from_millis(300),
+        ..cfg(id)
+    };
     let a = start_with(&stun, quick(1));
     let b = start_with(&stun, quick(2));
     let (a_tx, _) = rtrb::RingBuffer::<Frame>::new(8);
     a.add_peer(2, a_tx);
     // addresses nobody listens on: punching cannot get through
-    a.set_candidates(2, vec!["127.0.0.1:9".parse().unwrap()], b.token, b.peer_key());
-    assert!(matches!(wait_event(&a, |e| matches!(e, NetEvent::PunchFailed { .. })), NetEvent::PunchFailed { id: 2 }));
-    assert!(a.routes.load().is_empty(), "no route, nothing is sent anywhere");
+    a.set_candidates(
+        2,
+        vec!["127.0.0.1:9".parse().unwrap()],
+        b.token,
+        b.peer_key(),
+    );
+    assert!(matches!(
+        wait_event(&a, |e| matches!(e, NetEvent::PunchFailed { .. })),
+        NetEvent::PunchFailed { id: 2 }
+    ));
+    assert!(
+        a.routes.load().is_empty(),
+        "no route, nothing is sent anywhere"
+    );
 }
 
 #[test]
@@ -304,7 +364,12 @@ fn ignores_punch_with_wrong_token() {
     a.add_peer(2, a_tx);
     b.add_peer(1, b_tx);
     // b expects a wrong token from a, and a never punches toward b
-    b.set_candidates(1, a.candidates.clone(), a.token.wrapping_add(1), a.peer_key());
+    b.set_candidates(
+        1,
+        a.candidates.clone(),
+        a.token.wrapping_add(1),
+        a.peer_key(),
+    );
     thread::sleep(Duration::from_millis(400));
     assert!(a.try_event().is_none());
 }
@@ -319,7 +384,12 @@ fn connects_over_ipv6() {
         return;
     }
     // offer only IPv6 loopback addresses, so the route can only be IPv6
-    let v6 = |n: &Net| vec![SocketAddr::new(std::net::Ipv6Addr::LOCALHOST.into(), n.socket.port())];
+    let v6 = |n: &Net| {
+        vec![SocketAddr::new(
+            std::net::Ipv6Addr::LOCALHOST.into(),
+            n.socket.port(),
+        )]
+    };
     let (a_tx, _) = rtrb::RingBuffer::<Frame>::new(64);
     let (b_tx, mut b_rx) = rtrb::RingBuffer::<Frame>::new(64);
     a.add_peer(2, a_tx);
@@ -331,7 +401,6 @@ fn connects_over_ipv6() {
     send_and_check(&a, &mut b_rx);
 }
 
-
 #[test]
 fn copies_on_a_lossy_link_arrive_once() {
     let (a, b, mut b_rx) = connected_pair(&spawn_stun());
@@ -339,7 +408,12 @@ fn copies_on_a_lossy_link_arrive_once() {
     thread::sleep(Duration::from_millis(50)); // the routes are republished
     let mut sender = a.sender();
     for seq in 0..20u32 {
-        let mut f = Frame { seq, channels: 2, frames: 32, ..Frame::EMPTY };
+        let mut f = Frame {
+            seq,
+            channels: 2,
+            frames: 32,
+            ..Frame::EMPTY
+        };
         f.data[0] = seq as f32;
         sender.send(&f);
         thread::sleep(Duration::from_millis(1));
@@ -370,18 +444,34 @@ fn junk(rng: &mut impl rand::Rng) -> Vec<u8> {
 fn parsers_survive_random_input() {
     use rand::{Rng, SeedableRng};
     let mut rng = rand::rngs::StdRng::seed_from_u64(0x9ac41);
-    let keys = crypto::Identity::generate().session_with(1, 2, &crypto::PeerKey { public: crypto::Identity::generate().public, aes: true }).unwrap();
+    let keys = crypto::Identity::generate()
+        .session_with(
+            1,
+            2,
+            &crypto::PeerKey {
+                public: crypto::Identity::generate().public,
+                aes: true,
+            },
+        )
+        .unwrap();
     let join = joinseal::JoinKey::generate();
     let mut out = [0u8; audio::MAX_PACKET];
     let mut samples = [0f32; audio::MAX_FRAMES * audio::MAX_CHANNELS];
     for i in 0..50_000 {
         let b = junk(&mut rng);
         match audio::decode(&b) {
-            Ok(audio::Packet::Audio { header, payload, .. }) => {
+            Ok(audio::Packet::Audio {
+                header, payload, ..
+            }) => {
                 audio::decode_samples(&header, payload, &mut samples);
             }
-            Ok(audio::Packet::Sealed { counter, aad, body, .. }) => {
-                assert!(keys.open(counter, aad, body, &mut out).is_none(), "random bytes never authenticate");
+            Ok(audio::Packet::Sealed {
+                counter, aad, body, ..
+            }) => {
+                assert!(
+                    keys.open(counter, aad, body, &mut out).is_none(),
+                    "random bytes never authenticate"
+                );
             }
             _ => {}
         }
@@ -393,8 +483,18 @@ fn parsers_survive_random_input() {
         }
     }
     // JSON-shaped junk for the room messages
-    for s in ["{}", r#"{"t":"chat"}"#, r#"{"t":"chat","text":1}"#, r#"{"t":"link_report","raw_loss":"x"}"#, "[", "null"] {
-        assert!(gachi_proto::peer::PeerMsg::from_bytes(s.as_bytes()).is_none(), "{s}");
+    for s in [
+        "{}",
+        r#"{"t":"chat"}"#,
+        r#"{"t":"chat","text":1}"#,
+        r#"{"t":"link_report","raw_loss":"x"}"#,
+        "[",
+        "null",
+    ] {
+        assert!(
+            gachi_proto::peer::PeerMsg::from_bytes(s.as_bytes()).is_none(),
+            "{s}"
+        );
     }
     let _ = rng.gen::<u8>();
 }
@@ -422,9 +522,17 @@ fn junk_packets_do_not_disturb_a_connection() {
     thread::sleep(Duration::from_millis(200));
     while b_rx.pop().is_ok() {}
     send_and_check(&a, &mut b_rx);
-    assert_eq!(a.routes.load().first().map(|r| r.1), route_before, "junk never moves a route");
+    assert_eq!(
+        a.routes.load().first().map(|r| r.1),
+        route_before,
+        "junk never moves a route"
+    );
     let b_route = b.routes.load().first().map(|r| r.1);
-    assert_ne!(b_route, Some(attacker.local_addr().unwrap()), "unauthenticated packets never move a route");
+    assert_ne!(
+        b_route,
+        Some(attacker.local_addr().unwrap()),
+        "unauthenticated packets never move a route"
+    );
 }
 
 #[test]
@@ -449,7 +557,10 @@ fn a_peer_back_with_the_same_key_keeps_its_counter() {
     a.set_candidates(2, b.candidates.clone(), b.token, b.peer_key());
     wait_connected(&a, 2);
     // the same keys (send counter going on), not new ones starting again at 0
-    assert!(Arc::ptr_eq(&before, &keys(&a)), "keys were derived anew: nonces would repeat");
+    assert!(
+        Arc::ptr_eq(&before, &keys(&a)),
+        "keys were derived anew: nonces would repeat"
+    );
 }
 
 #[test]
@@ -500,7 +611,9 @@ fn a_roundabout_first_path_moves_to_a_more_direct_one() {
     b.set_candidates(1, vec![v6(&a), v4(&a)], a.token, a.peer_key());
     let route = |n: &Net| n.routes.load().first().map(|r| r.1);
     let t = Instant::now();
-    while (route(&a) != Some(v4(&b)) || route(&b) != Some(v4(&a))) && t.elapsed() < Duration::from_secs(4) {
+    while (route(&a) != Some(v4(&b)) || route(&b) != Some(v4(&a)))
+        && t.elapsed() < Duration::from_secs(4)
+    {
         thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(route(&a), Some(v4(&b)), "a moved to the direct path");
@@ -513,7 +626,11 @@ fn a_roundabout_first_path_moves_to_a_more_direct_one() {
 fn sending_does_not_allocate() {
     let (a, _b, _b_rx) = connected_pair(&spawn_stun());
     let mut sender = a.sender();
-    let mut frame = Frame { channels: 2, frames: 32, ..Frame::EMPTY };
+    let mut frame = Frame {
+        channels: 2,
+        frames: 32,
+        ..Frame::EMPTY
+    };
     frame.data[..64].fill(0.25);
     for doubled in [false, true] {
         a.set_redundancy(2, doubled);
@@ -528,7 +645,10 @@ fn sending_does_not_allocate() {
                 sender.send(&frame);
             }
         });
-        assert_eq!(calls, 0, "send (doubled: {doubled}) asked the allocator {calls} times");
+        assert_eq!(
+            calls, 0,
+            "send (doubled: {doubled}) asked the allocator {calls} times"
+        );
     }
 }
 
@@ -541,7 +661,11 @@ fn audio_reaches_the_mixer_ring_at_once() {
     thread::sleep(Duration::from_millis(300));
     while b_rx.pop().is_ok() {}
     let mut sender = a.sender();
-    let mut f = Frame { channels: 2, frames: 32, ..Frame::EMPTY };
+    let mut f = Frame {
+        channels: 2,
+        frames: 32,
+        ..Frame::EMPTY
+    };
     let mut took = Vec::new();
     for seq in 0..300u32 {
         f.seq = seq;
@@ -559,7 +683,13 @@ fn audio_reaches_the_mixer_ring_at_once() {
     }
     took.sort_unstable();
     let at = |q: f64| took[((took.len() - 1) as f64 * q) as usize];
-    println!("arrival µs: p50 {} p90 {} p99 {} max {}", at(0.5), at(0.9), at(0.99), at(1.0));
+    println!(
+        "arrival µs: p50 {} p90 {} p99 {} max {}",
+        at(0.5),
+        at(0.9),
+        at(0.99),
+        at(1.0)
+    );
     assert!(at(0.5) < 2_000, "half the packets took over 2 ms: {took:?}");
     assert!(at(0.99) < 20_000, "p99 {} µs", at(0.99));
 }
@@ -573,8 +703,15 @@ fn the_socket_never_waits() {
     let mut buf = [0u8; 64];
     let t = Instant::now();
     let r = a.socket.recv_from(&mut buf);
-    assert!(matches!(&r, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock), "{r:?}");
-    assert!(t.elapsed() < Duration::from_millis(3), "a read waited {:?}", t.elapsed());
+    assert!(
+        matches!(&r, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+        "{r:?}"
+    );
+    assert!(
+        t.elapsed() < Duration::from_millis(3),
+        "a read waited {:?}",
+        t.elapsed()
+    );
 }
 
 /// With nothing to read the receive thread waits on the socket: it must not spin (the
@@ -588,10 +725,16 @@ fn an_idle_receive_thread_does_not_spin() {
     let a = start(&spawn_stun(), 1);
     let handle = a.thread.as_ref().unwrap().as_raw_handle();
     let cpu = || {
-        let z = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let z = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
         let (mut c, mut e, mut k, mut u) = (z, z, z, z);
         // SAFETY: the handle of a thread that lives as long as `a`; four valid out-pointers
-        assert_ne!(unsafe { GetThreadTimes(handle as _, &mut c, &mut e, &mut k, &mut u) }, 0);
+        assert_ne!(
+            unsafe { GetThreadTimes(handle as _, &mut c, &mut e, &mut k, &mut u) },
+            0
+        );
         let t = |f: FILETIME| ((f.dwHighDateTime as u64) << 32 | f.dwLowDateTime as u64) / 10; // µs
         t(k) + t(u)
     };
@@ -599,7 +742,10 @@ fn an_idle_receive_thread_does_not_spin() {
     let before = cpu();
     thread::sleep(Duration::from_secs(1));
     let used = cpu() - before;
-    assert!(used < 100_000, "the idle receive thread used {used} µs of CPU in a second");
+    assert!(
+        used < 100_000,
+        "the idle receive thread used {used} µs of CPU in a second"
+    );
 }
 
 /* ───────────── behind routers (see `nat_sim`) ───────────── */
@@ -679,12 +825,18 @@ mod behind_routers {
 
     #[test]
     fn open_router_to_home_router() {
-        connects(Nat::new(lo(22), Mapping::Independent, Filter::Open), home(23));
+        connects(
+            Nat::new(lo(22), Mapping::Independent, Filter::Open),
+            home(23),
+        );
     }
 
     #[test]
     fn address_restricted_router_to_home_router() {
-        connects(Nat::new(lo(24), Mapping::Independent, Filter::Address), home(25));
+        connects(
+            Nat::new(lo(24), Mapping::Independent, Filter::Address),
+            home(25),
+        );
     }
 
     /// A phone's hotspot (a carrier that changes ports per destination, in order) to a
@@ -701,9 +853,16 @@ mod behind_routers {
     fn unguessable_hotspot_needs_the_home_side_open() {
         let random = || Nat::new(lo(30), Mapping::PerDestinationRandom, Filter::AddressPort);
         let (a, b, _) = pair(&random(), &home(31));
-        assert_eq!((outcome(&a), outcome(&b)), (None, None), "port restricted home: no way in");
+        assert_eq!(
+            (outcome(&a), outcome(&b)),
+            (None, None),
+            "port restricted home: no way in"
+        );
         drop((a, b));
-        connects(random(), Nat::new(lo(32), Mapping::Independent, Filter::Address));
+        connects(
+            random(),
+            Nat::new(lo(32), Mapping::Independent, Filter::Address),
+        );
     }
 
     /// The router forgets its mappings mid-session (restarted, or a carrier NAT moved us):
@@ -729,7 +888,11 @@ mod behind_routers {
             }
             thread::sleep(Duration::from_millis(5));
         }
-        assert_eq!(a_lost, Some(false), "a's address moved: its own silence (as if offline)");
+        assert_eq!(
+            a_lost,
+            Some(false),
+            "a's address moved: its own silence (as if offline)"
+        );
         assert_eq!(b_lost, Some(true), "b's internet is fine: a went away");
     }
 
@@ -799,8 +962,18 @@ mod behind_routers {
         b.add_peer(1, b_tx);
         // (as announced: the address the first server saw, then the guesses)
         let first_guess = |c: Vec<SocketAddr>| c.into_iter().skip(1).take(1).collect::<Vec<_>>();
-        a.set_candidates(2, first_guess(reachable(&b.candidates, &nb, &na)), b.token, b.peer_key());
-        b.set_candidates(1, first_guess(reachable(&a.candidates, &na, &nb)), a.token, a.peer_key());
+        a.set_candidates(
+            2,
+            first_guess(reachable(&b.candidates, &nb, &na)),
+            b.token,
+            b.peer_key(),
+        );
+        b.set_candidates(
+            1,
+            first_guess(reachable(&a.candidates, &na, &nb)),
+            a.token,
+            a.peer_key(),
+        );
         assert!(outcome(&a).is_some(), "a did not get through");
         assert!(outcome(&b).is_some(), "b did not get through");
     }

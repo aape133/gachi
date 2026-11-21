@@ -40,10 +40,45 @@ pub(crate) fn host(choice: HostChoice) -> cpal::Host {
 /// Whether this build can talk to ASIO drivers.
 pub const ASIO_AVAILABLE: bool = cfg!(all(windows, feature = "asio"));
 
+/// What the last listing of the ASIO drivers found (and the first driver's input channels):
+/// given out again while an engine of ours has a driver open, when no driver may be loaded
+/// to ask (see `host_thread::Kept::busy`; listing loads every driver in turn).
+static LISTED: std::sync::Mutex<Option<(Vec<DeviceInfo>, u16)>> = std::sync::Mutex::new(None);
+
+/// The ASIO drivers and the first one's input channels, on the ASIO thread: asked anew
+/// while no engine runs, else as last found. `None`: an engine runs and nothing was found
+/// before (the program just started and is reading its device): to be asked again shortly.
+fn asio_listing() -> Option<(Vec<DeviceInfo>, u16)> {
+    crate::host_thread::run(crate::host_thread::SLOW, |kept| {
+        let mut listed = LISTED.lock().unwrap_or_else(|e| e.into_inner());
+        if !kept.busy() {
+            let first = host(HostChoice::Asio)
+                .default_input_device()
+                .map(|d| input_channels(&d))
+                .unwrap_or(0);
+            *listed = Some((list_on_this_thread(HostChoice::Asio), first));
+        }
+        listed.clone()
+    })
+    .flatten()
+}
+
+/// (waits out an engine that is open for a moment: the home screen's reading of the device
+/// at start lasts under 2 s)
+fn asio_listing_soon() -> (Vec<DeviceInfo>, u16) {
+    for _ in 0..15 {
+        if let Some(l) = asio_listing() {
+            return l;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    Default::default()
+}
+
 pub fn list_devices(choice: HostChoice) -> Vec<DeviceInfo> {
     // ASIO drivers belong to the thread that loads them: always use the ASIO thread
     if choice == HostChoice::Asio && ASIO_AVAILABLE {
-        return crate::host_thread::run(crate::host_thread::SLOW, move |_| list_on_this_thread(choice)).unwrap_or_default();
+        return asio_listing_soon().0;
     }
     list_on_this_thread(choice)
 }
@@ -60,7 +95,14 @@ fn list_on_this_thread(choice: HostChoice) -> Vec<DeviceInfo> {
                 d.input_names = input_names;
             }
         } else {
-            out.push(DeviceInfo { label: name.clone(), id: name, has_input: input, has_output: !input, inputs, input_names });
+            out.push(DeviceInfo {
+                label: name.clone(),
+                id: name,
+                has_input: input,
+                has_output: !input,
+                inputs,
+                input_names,
+            });
         }
     };
     if let Ok(devs) = host.input_devices() {
@@ -68,24 +110,38 @@ fn list_on_this_thread(choice: HostChoice) -> Vec<DeviceInfo> {
             if let Ok(n) = d.name() {
                 let inputs = input_channels(&d);
                 // cpal has just loaded this device's driver: ask it for the channel names
-                let names = if choice == HostChoice::Asio { asio_input_names(inputs) } else { Vec::new() };
+                let names = if choice == HostChoice::Asio {
+                    asio_input_names(inputs)
+                } else {
+                    Vec::new()
+                };
                 add(n, true, inputs, names);
             }
         }
     }
     if let Ok(devs) = host.output_devices() {
-        devs.filter_map(|d| d.name().ok()).for_each(|n| add(n, false, 0, Vec::new()));
+        devs.filter_map(|d| d.name().ok())
+            .for_each(|n| add(n, false, 0, Vec::new()));
     }
     out
 }
 
 /// Input channels of the host's default input device (what "system default" means).
 pub fn default_input_channels(choice: HostChoice) -> u16 {
-    let get = move || host(choice).default_input_device().map(|d| input_channels(&d)).unwrap_or(0);
     if choice == HostChoice::Asio && ASIO_AVAILABLE {
-        return crate::host_thread::run(crate::host_thread::SLOW, move |_| get()).unwrap_or(0);
+        // (as the last listing found it: asked for right after one, and every driver is
+        // loaded once then, not twice)
+        let listed = LISTED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|l| l.1);
+        return listed.unwrap_or_else(|| asio_listing_soon().1);
     }
-    get()
+    host(choice)
+        .default_input_device()
+        .map(|d| input_channels(&d))
+        .unwrap_or(0)
 }
 
 /// Names of the loaded ASIO driver's input channels (call on the ASIO thread, right after
@@ -95,14 +151,26 @@ fn asio_input_names(n: u16) -> Vec<String> {
     use asio_sys::bindings::asio_import as ai;
     let mut names = Vec::with_capacity(n as usize);
     for ch in 0..n as i32 {
-        let mut info = ai::ASIOChannelInfo { channel: ch, isInput: 1, isActive: 0, channelGroup: 0, type_: 0, name: [0; 32] };
+        let mut info = ai::ASIOChannelInfo {
+            channel: ch,
+            isInput: 1,
+            isActive: 0,
+            channelGroup: 0,
+            type_: 0,
+            name: [0; 32],
+        };
         // SAFETY: plain C call on the thread that owns the loaded driver; `info` is a valid,
         // initialized struct it fills in (the name is NUL-terminated within its 32 bytes).
         let ok = unsafe { ai::ASIOGetChannelInfo(&mut info) } == 0;
         if !ok {
             return Vec::new();
         }
-        let bytes: Vec<u8> = info.name.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+        let bytes: Vec<u8> = info
+            .name
+            .iter()
+            .take_while(|&&c| c != 0)
+            .map(|&c| c as u8)
+            .collect();
         names.push(driver_text(&bytes, CP_SYSTEM).trim().to_string());
     }
     names
@@ -205,11 +273,16 @@ pub(crate) fn asio_driver_now() -> Result<Option<DriverNow>, ()> {
         // SAFETY: plain queries to the loaded driver, on the thread that owns it; all
         // pointers are to locals that outlive the calls.
         let ok = unsafe {
-            ai::get_sample_rate(&mut rate) == 0 && ai::ASIOGetBufferSize(&mut min, &mut max, &mut pref, &mut gran) == 0
+            ai::get_sample_rate(&mut rate) == 0
+                && ai::ASIOGetBufferSize(&mut min, &mut max, &mut pref, &mut gran) == 0
         };
         // the latency can change without the buffer (a "safe mode" in the panel), and some
         // drivers report more right after starting than once settled: read it every time
-        ok.then(|| DriverNow { rate: rate.round() as u32, pref: pref.max(0) as u32, latency: asio_latencies() })
+        ok.then(|| DriverNow {
+            rate: rate.round() as u32,
+            pref: pref.max(0) as u32,
+            latency: asio_latencies(),
+        })
     })
     .ok_or(())
 }
@@ -220,21 +293,40 @@ pub(crate) fn asio_driver_now() -> Result<Option<DriverNow>, ()> {
 }
 
 fn input_channels(d: &cpal::Device) -> u16 {
-    let max = d.supported_input_configs().ok().and_then(|it| it.map(|c| c.channels()).max()).unwrap_or(0);
+    let max = d
+        .supported_input_configs()
+        .ok()
+        .and_then(|it| it.map(|c| c.channels()).max())
+        .unwrap_or(0);
     max.max(d.default_input_config().map(|c| c.channels()).unwrap_or(0))
 }
 
-pub(crate) fn find_device(host: &cpal::Host, name: Option<&str>, input: bool) -> Option<cpal::Device> {
+pub(crate) fn find_device(
+    host: &cpal::Host,
+    name: Option<&str>,
+    input: bool,
+) -> Option<cpal::Device> {
     if let Some(name) = name.filter(|n| !n.is_empty()) {
-        let found = if input { host.input_devices() } else { host.output_devices() }
-            .ok()
-            .and_then(|mut it| it.find(|d| d.name().map(|n| n == name).unwrap_or(false)));
+        let found = if input {
+            host.input_devices()
+        } else {
+            host.output_devices()
+        }
+        .ok()
+        .and_then(|mut it| it.find(|d| d.name().map(|n| n == name).unwrap_or(false)));
         if found.is_some() {
             return found;
         }
-        tracing::warn!("device {name:?} not found for {}, using default", if input { "input" } else { "output" });
+        tracing::warn!(
+            "device {name:?} not found for {}, using default",
+            if input { "input" } else { "output" }
+        );
     }
-    if input { host.default_input_device() } else { host.default_output_device() }
+    if input {
+        host.default_input_device()
+    } else {
+        host.default_output_device()
+    }
 }
 
 /// The system's own code page (`CP_ACP`): what a driver writes its names in.
@@ -255,7 +347,16 @@ fn driver_text(bytes: &[u8], code_page: u32) -> String {
     let mut wide = vec![0u16; bytes.len()];
     // SAFETY: both buffers are ours, with the lengths given; a character never takes more
     // UTF-16 units than it took bytes
-    let n = unsafe { MultiByteToWideChar(code_page, 0, bytes.as_ptr(), bytes.len() as i32, wide.as_mut_ptr(), wide.len() as i32) };
+    let n = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr(),
+            bytes.len() as i32,
+            wide.as_mut_ptr(),
+            wide.len() as i32,
+        )
+    };
     if n <= 0 {
         return String::from_utf8_lossy(bytes).into_owned();
     }
@@ -276,8 +377,14 @@ mod name_tests {
     fn a_drivers_names_are_read_in_its_code_page() {
         assert_eq!(driver_text(b"Analogue 1", 0), "Analogue 1");
         // "마이크 1" in code page 949 (Korean), "マイク 1" in 932 (Japanese)
-        assert_eq!(driver_text(&[0xB8, 0xB6, 0xC0, 0xCC, 0xC5, 0xA9, b' ', b'1'], 949), "마이크 1");
-        assert_eq!(driver_text(&[0x83, 0x7D, 0x83, 0x43, 0x83, 0x4E, b' ', b'1'], 932), "マイク 1");
+        assert_eq!(
+            driver_text(&[0xB8, 0xB6, 0xC0, 0xCC, 0xC5, 0xA9, b' ', b'1'], 949),
+            "마이크 1"
+        );
+        assert_eq!(
+            driver_text(&[0x83, 0x7D, 0x83, 0x43, 0x83, 0x4E, b' ', b'1'], 932),
+            "マイク 1"
+        );
         // a driver that writes UTF-8 after all
         assert_eq!(driver_text("마이크".as_bytes(), 949), "마이크");
     }

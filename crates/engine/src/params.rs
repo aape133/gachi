@@ -33,9 +33,18 @@ impl AtomicF32 {
     }
 }
 
-/// UI fader value (dB) → linear gain. -40 dB and below is treated as off.
+/// The bottom of every fader in the UI (dB): there it is off. The meters share the scale.
+pub const FADER_MIN_DB: f32 = -60.0;
+/// The top of every fader.
+pub const FADER_MAX_DB: f32 = 6.0;
+
+/// UI fader value (dB) → linear gain. The fader's bottom and below is treated as off.
 pub fn db_to_gain(db: f32) -> f32 {
-    if db <= -40.0 { 0.0 } else { 10f32.powf(db / 20.0) }
+    if db <= FADER_MIN_DB {
+        0.0
+    } else {
+        10f32.powf(db / 20.0)
+    }
 }
 
 pub struct PeerParams {

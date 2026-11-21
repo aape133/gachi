@@ -87,12 +87,19 @@ impl Nat {
     /// A router whose public address is `ip` (a loopback address of its own).
     pub fn new(ip: Ipv4Addr, mapping: Mapping, filter: Filter) -> Self {
         // per-destination ports are handed out in order from a free spot
-        let base = UdpSocket::bind((ip, 0)).and_then(|s| s.local_addr()).map(|a| a.port()).unwrap_or(40_000);
+        let base = UdpSocket::bind((ip, 0))
+            .and_then(|s| s.local_addr())
+            .map(|a| a.port())
+            .unwrap_or(40_000);
         Nat(Arc::new(Inner {
             ip,
             mapping,
             filter,
-            state: Mutex::new(State { views: HashMap::new(), maps: Vec::new(), next_port: base }),
+            state: Mutex::new(State {
+                views: HashMap::new(),
+                maps: Vec::new(),
+                next_port: base,
+            }),
             stop: Arc::new(AtomicBool::new(false)),
             hairpin: AtomicBool::new(true),
             filtered: AtomicU64::new(0),
@@ -145,12 +152,16 @@ impl Nat {
     fn outbound(&self, host: SocketAddr, dest: SocketAddr, data: &[u8]) {
         let public = {
             let mut st = self.0.state.lock().unwrap();
-            let key = |m: &Map| m.host == host && (self.0.mapping == Mapping::Independent || m.dest == Some(dest));
+            let key = |m: &Map| {
+                m.host == host && (self.0.mapping == Mapping::Independent || m.dest == Some(dest))
+            };
             let i = match st.maps.iter().position(key) {
                 Some(i) => i,
                 None => {
                     let public = match self.0.mapping {
-                        Mapping::Independent | Mapping::PerDestinationRandom => bind(IpAddr::V4(self.0.ip), 0),
+                        Mapping::Independent | Mapping::PerDestinationRandom => {
+                            bind(IpAddr::V4(self.0.ip), 0)
+                        }
                         // the next free port in order
                         Mapping::PerDestination => loop {
                             st.next_port = st.next_port.wrapping_add(1).max(1024);
@@ -161,7 +172,12 @@ impl Nat {
                     }
                     .expect("a public socket");
                     self.listen(public.clone());
-                    st.maps.push(Map { host, dest: Some(dest), public, sent_to: Vec::new() });
+                    st.maps.push(Map {
+                        host,
+                        dest: Some(dest),
+                        public,
+                        sent_to: Vec::new(),
+                    });
                     st.maps.len() - 1
                 }
             };
@@ -197,7 +213,13 @@ impl Nat {
         let host = {
             let st = self.0.state.lock().unwrap();
             // (a mapping the router forgot lets nothing in)
-            let Some(m) = st.maps.iter().find(|m| m.public.local_addr().ok() == Some(public)) else { return };
+            let Some(m) = st
+                .maps
+                .iter()
+                .find(|m| m.public.local_addr().ok() == Some(public))
+            else {
+                return;
+            };
             let allowed = match self.0.filter {
                 Filter::Open => true,
                 Filter::Address => m.sent_to.iter().any(|d| d.ip() == from.ip()),
@@ -211,7 +233,15 @@ impl Nat {
         };
         // in from the router's socket for the sender
         let via = self.view(from);
-        let sock = self.0.state.lock().unwrap().views.values().find(|s| s.local_addr().ok() == Some(via)).cloned();
+        let sock = self
+            .0
+            .state
+            .lock()
+            .unwrap()
+            .views
+            .values()
+            .find(|s| s.local_addr().ok() == Some(via))
+            .cloned();
         if let Some(s) = sock {
             let _ = s.send_to(data, host);
         }
@@ -221,8 +251,16 @@ impl Nat {
 /// Of a peer's candidate addresses, the ones the rest of the internet can reach: those on
 /// its router's public address (the LAN address, the PC's other adapters and its IPv6 are
 /// not reachable from another home here), each as the other side's router shows it.
-pub fn reachable(candidates: &[SocketAddr], their_router: &Nat, our_router: &Nat) -> Vec<SocketAddr> {
-    candidates.iter().filter(|a| a.ip() == IpAddr::V4(their_router.ip())).map(|a| our_router.view(*a)).collect()
+pub fn reachable(
+    candidates: &[SocketAddr],
+    their_router: &Nat,
+    our_router: &Nat,
+) -> Vec<SocketAddr> {
+    candidates
+        .iter()
+        .filter(|a| a.ip() == IpAddr::V4(their_router.ip()))
+        .map(|a| our_router.view(*a))
+        .collect()
 }
 
 /// A STUN server of our own on `ip`: answers with the address the request came from.

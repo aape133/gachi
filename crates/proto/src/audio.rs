@@ -23,7 +23,6 @@
 
 use crate::PeerId;
 
-
 pub const MAGIC: u8 = 0xA7;
 pub const COMMON_HEADER: usize = 4;
 pub const AUDIO_HEADER: usize = COMMON_HEADER + 8;
@@ -124,17 +123,50 @@ impl AudioHeader {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Packet<'a> {
-    Audio { sender: PeerId, header: AudioHeader, payload: &'a [u8] },
-    Ping { sender: PeerId, nonce: u32, sent_us: u64 },
+    Audio {
+        sender: PeerId,
+        header: AudioHeader,
+        payload: &'a [u8],
+    },
+    Ping {
+        sender: PeerId,
+        nonce: u32,
+        sent_us: u64,
+    },
     /// `their_us`: the responder's clock when it answered (for clock offset estimates)
-    Pong { sender: PeerId, nonce: u32, sent_us: u64, their_us: u64 },
-    Punch { sender: PeerId, token: u32 },
-    PunchAck { sender: PeerId, token: u32 },
+    Pong {
+        sender: PeerId,
+        nonce: u32,
+        sent_us: u64,
+        their_us: u64,
+    },
+    Punch {
+        sender: PeerId,
+        token: u32,
+    },
+    PunchAck {
+        sender: PeerId,
+        token: u32,
+    },
     /// `aad` = the 12 header bytes, `body` = ciphertext followed by the tag.
-    Sealed { sender: PeerId, counter: u64, aad: &'a [u8], body: &'a [u8] },
-    Control { sender: PeerId, seq: u32, payload: &'a [u8] },
-    ControlAck { sender: PeerId, seq: u32 },
-    Bye { sender: PeerId },
+    Sealed {
+        sender: PeerId,
+        counter: u64,
+        aad: &'a [u8],
+        body: &'a [u8],
+    },
+    Control {
+        sender: PeerId,
+        seq: u32,
+        payload: &'a [u8],
+    },
+    ControlAck {
+        sender: PeerId,
+        seq: u32,
+    },
+    Bye {
+        sender: PeerId,
+    },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -174,7 +206,13 @@ pub fn decode(buf: &[u8]) -> Result<Packet<'_>, DecodeError> {
     let kind = Kind::from_u8(buf[1]).ok_or(UnknownKind(buf[1]))?;
     let sender = u16_at(buf, 2);
     let body = &buf[COMMON_HEADER..];
-    let need = |n: usize| if body.len() < n { Err(TooShort) } else { Ok(()) };
+    let need = |n: usize| {
+        if body.len() < n {
+            Err(TooShort)
+        } else {
+            Ok(())
+        }
+    };
 
     Ok(match kind {
         Kind::Audio => {
@@ -197,15 +235,28 @@ pub fn decode(buf: &[u8]) -> Result<Packet<'_>, DecodeError> {
             if !ok {
                 return Err(LengthMismatch);
             }
-            Packet::Audio { sender, header, payload }
+            Packet::Audio {
+                sender,
+                header,
+                payload,
+            }
         }
         Kind::Ping => {
             need(12)?;
-            Packet::Ping { sender, nonce: u32_at(body, 0), sent_us: u64_at(body, 4) }
+            Packet::Ping {
+                sender,
+                nonce: u32_at(body, 0),
+                sent_us: u64_at(body, 4),
+            }
         }
         Kind::Pong => {
             need(20)?;
-            Packet::Pong { sender, nonce: u32_at(body, 0), sent_us: u64_at(body, 4), their_us: u64_at(body, 12) }
+            Packet::Pong {
+                sender,
+                nonce: u32_at(body, 0),
+                sent_us: u64_at(body, 4),
+                their_us: u64_at(body, 12),
+            }
         }
         Kind::Control => {
             need(4)?;
@@ -213,11 +264,18 @@ pub fn decode(buf: &[u8]) -> Result<Packet<'_>, DecodeError> {
             if payload.len() > MAX_CONTROL_PAYLOAD {
                 return Err(TooLong);
             }
-            Packet::Control { sender, seq: u32_at(body, 0), payload }
+            Packet::Control {
+                sender,
+                seq: u32_at(body, 0),
+                payload,
+            }
         }
         Kind::ControlAck => {
             need(4)?;
-            Packet::ControlAck { sender, seq: u32_at(body, 0) }
+            Packet::ControlAck {
+                sender,
+                seq: u32_at(body, 0),
+            }
         }
         Kind::Bye => Packet::Bye { sender },
         Kind::Punch | Kind::PunchAck => {
@@ -234,7 +292,12 @@ pub fn decode(buf: &[u8]) -> Result<Packet<'_>, DecodeError> {
             if buf.len() > MAX_SEALED {
                 return Err(TooLong);
             }
-            Packet::Sealed { sender, counter: u64_at(body, 0), aad: &buf[..SEALED_HEADER], body: &buf[SEALED_HEADER..] }
+            Packet::Sealed {
+                sender,
+                counter: u64_at(body, 0),
+                aad: &buf[..SEALED_HEADER],
+                body: &buf[SEALED_HEADER..],
+            }
         }
     })
 }
@@ -314,7 +377,8 @@ pub fn encode_audio(
         match format {
             SampleFormat::Pcm16 => {
                 let noise = if dither { tpdf(stream, k as u32) } else { 0.0 };
-                out[i..i + 2].copy_from_slice(&((s * 32767.0 + noise).round() as i16).to_le_bytes());
+                out[i..i + 2]
+                    .copy_from_slice(&((s * 32767.0 + noise).round() as i16).to_le_bytes());
                 i += 2;
             }
             SampleFormat::Pcm24 => {
@@ -353,7 +417,13 @@ pub fn encode_ping(out: &mut [u8], sender: PeerId, nonce: u32, sent_us: u64) -> 
     16
 }
 
-pub fn encode_pong(out: &mut [u8], sender: PeerId, nonce: u32, sent_us: u64, their_us: u64) -> usize {
+pub fn encode_pong(
+    out: &mut [u8],
+    sender: PeerId,
+    nonce: u32,
+    sent_us: u64,
+    their_us: u64,
+) -> usize {
     put_common(out, Kind::Pong, sender);
     out[4..8].copy_from_slice(&nonce.to_le_bytes());
     out[8..16].copy_from_slice(&sent_us.to_le_bytes());
@@ -406,10 +476,18 @@ mod tests {
         let samples: Vec<f32> = (0..64).map(|i| ((i as f32) * 0.1).sin() * 0.9).collect();
         let mut buf = [0u8; MAX_PACKET];
         let n = encode_audio(&mut buf, 3, 42, 2, format, &samples);
-        let Packet::Audio { sender, header, payload } = decode(&buf[..n]).unwrap() else {
+        let Packet::Audio {
+            sender,
+            header,
+            payload,
+        } = decode(&buf[..n]).unwrap()
+        else {
             panic!("not audio")
         };
-        assert_eq!((sender, header.seq, header.frames, header.channels), (3, 42, 32, 2));
+        assert_eq!(
+            (sender, header.seq, header.frames, header.channels),
+            (3, 42, 32, 2)
+        );
         let mut out = [0f32; 64];
         assert_eq!(decode_samples(&header, payload, &mut out), 64);
         for (a, b) in samples.iter().zip(out.iter()) {
@@ -431,9 +509,18 @@ mod tests {
         let mut buf = [0u8; MAX_PACKET];
         let mut out = [0f32; 64];
         for seq in 0..3000u32 {
-            let tone: Vec<f32> = (0..64).map(|k| amp * (std::f32::consts::TAU * (seq as usize * 64 + k) as f32 / 48.0).sin()).collect();
+            let tone: Vec<f32> = (0..64)
+                .map(|k| {
+                    amp * (std::f32::consts::TAU * (seq as usize * 64 + k) as f32 / 48.0).sin()
+                })
+                .collect();
             let n = encode_audio(&mut buf, 1, seq, 1, SampleFormat::Pcm16, &tone);
-            let Ok(Packet::Audio { header, payload, .. }) = decode(&buf[..n]) else { panic!() };
+            let Ok(Packet::Audio {
+                header, payload, ..
+            }) = decode(&buf[..n])
+            else {
+                panic!()
+            };
             decode_samples(&header, payload, &mut out);
             for (o, t) in out.iter().zip(&tone) {
                 sum += (*o * *t) as f64;
@@ -442,7 +529,10 @@ mod tests {
         }
         // what arrived correlates with the tone at about its own power
         let power = 3000.0 * 64.0 * (amp as f64).powi(2) / 2.0;
-        assert!(!all_zero && sum > 0.7 * power && sum < 1.3 * power, "{sum:e} vs {power:e}");
+        assert!(
+            !all_zero && sum > 0.7 * power && sum < 1.3 * power,
+            "{sum:e} vs {power:e}"
+        );
         // and silence stays silence
         let n = encode_audio(&mut buf, 1, 7, 1, SampleFormat::Pcm16, &[0.0; 64]);
         assert!(buf[AUDIO_HEADER..n].iter().all(|&b| b == 0));
@@ -457,7 +547,12 @@ mod tests {
     fn pcm24_negative_full_scale() {
         let mut buf = [0u8; MAX_PACKET];
         let n = encode_audio(&mut buf, 1, 0, 1, SampleFormat::Pcm24, &[-1.0]);
-        let Packet::Audio { header, payload, .. } = decode(&buf[..n]).unwrap() else { panic!() };
+        let Packet::Audio {
+            header, payload, ..
+        } = decode(&buf[..n]).unwrap()
+        else {
+            panic!()
+        };
         let mut out = [0f32; 1];
         decode_samples(&header, payload, &mut out);
         assert!((out[0] + 1.0).abs() < 1e-6);
@@ -472,7 +567,10 @@ mod tests {
         assert_eq!(decode(&buf[..n]), Err(DecodeError::BadAudioHeader));
         assert_eq!(decode(&[MAGIC, 1]), Err(DecodeError::TooShort));
         assert_eq!(decode(&[0, 1, 0, 0]), Err(DecodeError::BadMagic));
-        assert_eq!(decode(&[MAGIC, 99, 0, 0]), Err(DecodeError::UnknownKind(99)));
+        assert_eq!(
+            decode(&[MAGIC, 99, 0, 0]),
+            Err(DecodeError::UnknownKind(99))
+        );
     }
 
     #[test]
@@ -480,29 +578,74 @@ mod tests {
         let mut buf = [0u8; 64];
         encode_sealed_header(&mut buf, 3, 0x0102_0304_0506_0708);
         let n = SEALED_HEADER + 20 + TAG_LEN;
-        let Packet::Sealed { sender, counter, aad, body } = decode(&buf[..n]).unwrap() else { panic!() };
-        assert_eq!((sender, counter, aad.len(), body.len()), (3, 0x0102_0304_0506_0708, 12, 36));
-        assert_eq!(decode(&buf[..SEALED_HEADER + TAG_LEN]), Err(DecodeError::TooShort));
+        let Packet::Sealed {
+            sender,
+            counter,
+            aad,
+            body,
+        } = decode(&buf[..n]).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            (sender, counter, aad.len(), body.len()),
+            (3, 0x0102_0304_0506_0708, 12, 36)
+        );
+        assert_eq!(
+            decode(&buf[..SEALED_HEADER + TAG_LEN]),
+            Err(DecodeError::TooShort)
+        );
     }
 
     #[test]
     fn control_roundtrip() {
         let mut buf = [0u8; 32];
         let n = encode_pong(&mut buf, 5, 9, 123_456, 777);
-        assert_eq!(decode(&buf[..n]), Ok(Packet::Pong { sender: 5, nonce: 9, sent_us: 123_456, their_us: 777 }));
+        assert_eq!(
+            decode(&buf[..n]),
+            Ok(Packet::Pong {
+                sender: 5,
+                nonce: 9,
+                sent_us: 123_456,
+                their_us: 777
+            })
+        );
         let n = encode_ping(&mut buf, 5, 9, 1);
-        assert_eq!(decode(&buf[..n]), Ok(Packet::Ping { sender: 5, nonce: 9, sent_us: 1 }));
+        assert_eq!(
+            decode(&buf[..n]),
+            Ok(Packet::Ping {
+                sender: 5,
+                nonce: 9,
+                sent_us: 1
+            })
+        );
         let n = encode_bye(&mut buf, 5);
         assert_eq!(decode(&buf[..n]), Ok(Packet::Bye { sender: 5 }));
         let n = encode_control_ack(&mut buf, 5, 41);
-        assert_eq!(decode(&buf[..n]), Ok(Packet::ControlAck { sender: 5, seq: 41 }));
+        assert_eq!(
+            decode(&buf[..n]),
+            Ok(Packet::ControlAck { sender: 5, seq: 41 })
+        );
         let mut big = [0u8; MAX_INNER];
         let n = encode_control(&mut big, 5, 40, b"{\"t\":\"chat\"}");
-        assert_eq!(decode(&big[..n]), Ok(Packet::Control { sender: 5, seq: 40, payload: b"{\"t\":\"chat\"}" }));
+        assert_eq!(
+            decode(&big[..n]),
+            Ok(Packet::Control {
+                sender: 5,
+                seq: 40,
+                payload: b"{\"t\":\"chat\"}"
+            })
+        );
         let n = encode_control(&mut big, 5, 40, &[b'x'; MAX_CONTROL_PAYLOAD]);
         assert!(decode(&big[..n]).is_ok());
         assert_eq!(n, MAX_INNER.min(CONTROL_HEADER + MAX_CONTROL_PAYLOAD));
         let n = encode_punch(&mut buf, false, 5, 77);
-        assert_eq!(decode(&buf[..n]), Ok(Packet::Punch { sender: 5, token: 77 }));
+        assert_eq!(
+            decode(&buf[..n]),
+            Ok(Packet::Punch {
+                sender: 5,
+                token: 77
+            })
+        );
     }
 }

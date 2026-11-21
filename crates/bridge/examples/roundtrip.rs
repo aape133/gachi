@@ -26,7 +26,9 @@ fn main() {
 mod imp {
     use gachi_bridge::{AppEnd, PluginEnd, CHANNELS};
     use std::time::Duration;
-    use windows_sys::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
+    use windows_sys::Win32::System::Performance::{
+        QueryPerformanceCounter, QueryPerformanceFrequency,
+    };
 
     fn qpc() -> i64 {
         let mut t = 0i64;
@@ -75,7 +77,10 @@ mod imp {
         let block: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(64);
         let name = format!("gachi-bridge-roundtrip-{}", std::process::id());
         let app = AppEnd::create(&name).expect("create bridge");
-        println!("block {block} frames ({:.2} ms at 48 kHz), {secs} s", block as f64 / 48.0);
+        println!(
+            "block {block} frames ({:.2} ms at 48 kHz), {secs} s",
+            block as f64 / 48.0
+        );
 
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--plugin", &name, &secs.to_string(), &block.to_string()])
@@ -162,6 +167,9 @@ mod imp {
         while end.read_down(&mut down) > 0 {}
         round.drain(..round.len().min(100));
         report("round trip", round);
-        println!("answers later than one block: {late} of {blocks}; frames dropped: {}", end.overruns);
+        println!(
+            "answers later than one block: {late} of {blocks}; frames dropped: {}",
+            end.overruns
+        );
     }
 }

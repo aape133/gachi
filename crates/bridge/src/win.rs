@@ -5,15 +5,17 @@ use std::cell::UnsafeCell;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, HANDLE,
+    INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::System::Memory::{
-    CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS,
-    PAGE_READWRITE,
+    CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_ALL_ACCESS,
+    MEMORY_MAPPED_VIEW_ADDRESS, PAGE_READWRITE,
 };
 use windows_sys::Win32::System::SystemInformation::GetTickCount64;
 use windows_sys::Win32::System::Threading::{
-    CreateEventW, GetCurrentProcessId, OpenEventW, SetEvent, WaitForSingleObject, EVENT_MODIFY_STATE, SYNCHRONIZATION_SYNCHRONIZE,
+    CreateEventW, GetCurrentProcessId, OpenEventW, SetEvent, WaitForSingleObject,
+    EVENT_MODIFY_STATE, SYNCHRONIZATION_SYNCHRONIZE,
 };
 
 const SAMPLES: usize = RING_FRAMES * CHANNELS;
@@ -94,7 +96,10 @@ impl Mapping {
             unsafe { CloseHandle(handle) };
             return Err(Error::Os(e));
         }
-        Ok(Self { handle, view: view.Value as *const Shared })
+        Ok(Self {
+            handle,
+            view: view.Value as *const Shared,
+        })
     }
 
     /// The layout check both sides make before using the region.
@@ -105,7 +110,10 @@ impl Mapping {
         }
         let theirs = s.version.load(Ordering::Relaxed);
         if theirs != VERSION {
-            return Err(Error::Version { theirs, ours: VERSION });
+            return Err(Error::Version {
+                theirs,
+                ours: VERSION,
+            });
         }
         Ok(())
     }
@@ -124,7 +132,9 @@ impl Drop for Mapping {
         // SAFETY: the view and handle came from MapViewOfFile / Create/OpenFileMappingW and are
         // released exactly once.
         unsafe {
-            UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: self.view as *mut c_void });
+            UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
+                Value: self.view as *mut c_void,
+            });
             CloseHandle(self.handle);
         }
     }
@@ -158,7 +168,10 @@ impl Drop for Event {
 }
 
 fn names(name: &str) -> (Vec<u16>, Vec<u16>) {
-    (wide(&format!("Local\\{name}")), wide(&format!("Local\\{name}-up")))
+    (
+        wide(&format!("Local\\{name}")),
+        wide(&format!("Local\\{name}-up")),
+    )
 }
 
 /// Copies interleaved frames into `ring` from frame number `at` (wrapping at the end).
@@ -170,7 +183,11 @@ unsafe fn copy_in(ring: *mut f32, at: u64, src: &[f32]) {
     let frames = src.len() / CHANNELS;
     let (start, first) = ring::slot(at, frames);
     std::ptr::copy_nonoverlapping(src.as_ptr(), ring.add(start * CHANNELS), first * CHANNELS);
-    std::ptr::copy_nonoverlapping(src.as_ptr().add(first * CHANNELS), ring, (frames - first) * CHANNELS);
+    std::ptr::copy_nonoverlapping(
+        src.as_ptr().add(first * CHANNELS),
+        ring,
+        (frames - first) * CHANNELS,
+    );
 }
 
 /// Copies interleaved frames out of `ring` from frame number `at`.
@@ -180,8 +197,16 @@ unsafe fn copy_in(ring: *mut f32, at: u64, src: &[f32]) {
 unsafe fn copy_out(ring: *const f32, at: u64, dst: &mut [f32]) {
     let frames = dst.len() / CHANNELS;
     let (start, first) = ring::slot(at, frames);
-    std::ptr::copy_nonoverlapping(ring.add(start * CHANNELS), dst.as_mut_ptr(), first * CHANNELS);
-    std::ptr::copy_nonoverlapping(ring, dst.as_mut_ptr().add(first * CHANNELS), (frames - first) * CHANNELS);
+    std::ptr::copy_nonoverlapping(
+        ring.add(start * CHANNELS),
+        dst.as_mut_ptr(),
+        first * CHANNELS,
+    );
+    std::ptr::copy_nonoverlapping(
+        ring,
+        dst.as_mut_ptr().add(first * CHANNELS),
+        (frames - first) * CHANNELS,
+    );
 }
 
 /// Writes as many whole frames of `src` as fit; returns the frames written.
@@ -241,7 +266,14 @@ impl AppEnd {
         let (region, event_name) = names(name);
         // SAFETY: a pagefile-backed mapping of SIZE bytes with a NUL-terminated name.
         let handle = unsafe {
-            CreateFileMappingW(INVALID_HANDLE_VALUE, std::ptr::null(), PAGE_READWRITE, 0, SIZE as u32, region.as_ptr())
+            CreateFileMappingW(
+                INVALID_HANDLE_VALUE,
+                std::ptr::null(),
+                PAGE_READWRITE,
+                0,
+                SIZE as u32,
+                region.as_ptr(),
+            )
         };
         if handle.is_null() {
             return Err(Error::Os(last_error()));
@@ -257,7 +289,8 @@ impl AppEnd {
             s.magic.store(MAGIC, Ordering::Release);
         }
         // SAFETY: GetCurrentProcessId takes no arguments.
-        s.app_pid.store(unsafe { GetCurrentProcessId() }, Ordering::Relaxed);
+        s.app_pid
+            .store(unsafe { GetCurrentProcessId() }, Ordering::Relaxed);
         // whatever the plugin sent while we were away is stale
         let w = s.up_write.0.load(Ordering::Acquire);
         s.up_read.0.store(w, Ordering::Release);
@@ -268,7 +301,10 @@ impl AppEnd {
         if ev.is_null() {
             return Err(Error::Os(last_error()));
         }
-        Ok(Self { map, event: Event(ev) })
+        Ok(Self {
+            map,
+            event: Event(ev),
+        })
     }
 
     /// Waits up to `timeout_ms` for the plugin to hand over a block. Also counts as our
@@ -280,13 +316,20 @@ impl AppEnd {
 
     /// Marks the app as alive (call at least every few hundred ms).
     pub fn beat(&self) {
-        self.map.shared().app_beat_ms.store(now_ms(), Ordering::Release);
+        self.map
+            .shared()
+            .app_beat_ms
+            .store(now_ms(), Ordering::Release);
     }
 
     /// Frames the plugin has handed over and we have not read yet.
     pub fn up_available(&self) -> usize {
         let s = self.map.shared();
-        ring::readable(s.up_write.0.load(Ordering::Acquire), s.up_read.0.load(Ordering::Relaxed)).unwrap_or(0)
+        ring::readable(
+            s.up_write.0.load(Ordering::Acquire),
+            s.up_read.0.load(Ordering::Relaxed),
+        )
+        .unwrap_or(0)
     }
 
     /// Reads the plugin's sound (interleaved stereo); returns the frames read.
@@ -303,7 +346,9 @@ impl AppEnd {
         let r = s.up_read.0.load(Ordering::Relaxed);
         let avail = ring::readable(w, r).unwrap_or(RING_FRAMES);
         let drop = avail.saturating_sub(keep);
-        s.up_read.0.store(w - (avail - drop) as u64, Ordering::Release);
+        s.up_read
+            .0
+            .store(w - (avail - drop) as u64, Ordering::Release);
         drop
     }
 
@@ -316,7 +361,11 @@ impl AppEnd {
     /// Frames we sent that the plugin has not taken yet.
     pub fn down_queued(&self) -> usize {
         let s = self.map.shared();
-        ring::readable(s.down_write.0.load(Ordering::Relaxed), s.down_read.0.load(Ordering::Acquire)).unwrap_or(0)
+        ring::readable(
+            s.down_write.0.load(Ordering::Relaxed),
+            s.down_read.0.load(Ordering::Acquire),
+        )
+        .unwrap_or(0)
     }
 
     /// Another gachi plugin instance (a second track) asked for the bridge within
@@ -329,19 +378,30 @@ impl AppEnd {
     /// A plugin owns the bridge and processed a block within `STALE_MS`.
     pub fn plugin_alive(&self) -> bool {
         let s = self.map.shared();
-        s.owner.load(Ordering::Acquire) != 0 && now_ms().saturating_sub(s.plugin_beat_ms.load(Ordering::Acquire)) <= STALE_MS
+        s.owner.load(Ordering::Acquire) != 0
+            && now_ms().saturating_sub(s.plugin_beat_ms.load(Ordering::Acquire)) <= STALE_MS
     }
 
     /// How loud the plugin passes the player's own sound through (0 = not at all).
     pub fn set_own_gain(&self, gain: f32) {
-        let g = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 0.0 };
-        self.map.shared().own_gain.store(g.to_bits(), Ordering::Release);
+        let g = if gain.is_finite() {
+            gain.clamp(0.0, 4.0)
+        } else {
+            0.0
+        };
+        self.map
+            .shared()
+            .own_gain
+            .store(g.to_bits(), Ordering::Release);
     }
 
     /// The DAW's sample rate and block size as the plugin last reported them (0 = unknown).
     pub fn format(&self) -> (u32, u32) {
         let s = self.map.shared();
-        (s.sample_rate.load(Ordering::Acquire), s.block_frames.load(Ordering::Acquire))
+        (
+            s.sample_rate.load(Ordering::Acquire),
+            s.block_frames.load(Ordering::Acquire),
+        )
     }
 }
 
@@ -365,7 +425,11 @@ impl PluginEnd {
         let handle = unsafe { OpenFileMappingW(FILE_MAP_ALL_ACCESS, 0, region.as_ptr()) };
         if handle.is_null() {
             let e = last_error();
-            return Err(if e == ERROR_FILE_NOT_FOUND { Error::NotRunning } else { Error::Os(e) });
+            return Err(if e == ERROR_FILE_NOT_FOUND {
+                Error::NotRunning
+            } else {
+                Error::Os(e)
+            });
         }
         let map = Mapping::map(handle)?;
         map.check()?;
@@ -373,13 +437,17 @@ impl PluginEnd {
         // claim it: free, ours already, or the owner went quiet
         loop {
             let cur = s.owner.load(Ordering::Acquire);
-            let stale = now_ms().saturating_sub(s.plugin_beat_ms.load(Ordering::Acquire)) > STALE_MS;
+            let stale =
+                now_ms().saturating_sub(s.plugin_beat_ms.load(Ordering::Acquire)) > STALE_MS;
             if cur != 0 && cur != id && !stale {
                 // let the app know: the player may think this track is sent too
                 s.waiting_ms.store(now_ms(), Ordering::Release);
                 return Err(Error::Busy);
             }
-            if s.owner.compare_exchange(cur, id, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+            if s.owner
+                .compare_exchange(cur, id, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
                 break;
             }
         }
@@ -388,13 +456,24 @@ impl PluginEnd {
         let w = s.down_write.0.load(Ordering::Acquire);
         s.down_read.0.store(w, Ordering::Release);
         // SAFETY: NUL-terminated name; rights to signal it.
-        let ev = unsafe { OpenEventW(EVENT_MODIFY_STATE | SYNCHRONIZATION_SYNCHRONIZE, 0, event_name.as_ptr()) };
+        let ev = unsafe {
+            OpenEventW(
+                EVENT_MODIFY_STATE | SYNCHRONIZATION_SYNCHRONIZE,
+                0,
+                event_name.as_ptr(),
+            )
+        };
         if ev.is_null() {
             let e = last_error();
             s.owner.store(0, Ordering::Release);
             return Err(Error::Os(e));
         }
-        Ok(Self { map, event: Event(ev), id, overruns: 0 })
+        Ok(Self {
+            map,
+            event: Event(ev),
+            id,
+            overruns: 0,
+        })
     }
 
     /// Tells the app the DAW's sample rate and block size (call when they change).
@@ -439,7 +518,11 @@ impl PluginEnd {
     /// Frames of the app's mix waiting for us.
     pub fn down_available(&self) -> usize {
         let s = self.map.shared();
-        ring::readable(s.down_write.0.load(Ordering::Acquire), s.down_read.0.load(Ordering::Relaxed)).unwrap_or(0)
+        ring::readable(
+            s.down_write.0.load(Ordering::Acquire),
+            s.down_read.0.load(Ordering::Relaxed),
+        )
+        .unwrap_or(0)
     }
 
     /// How loud to pass the player's own sound through, as the app asks (see
@@ -447,7 +530,11 @@ impl PluginEnd {
     /// region is anyone's on this desktop to write.
     pub fn own_gain(&self) -> f32 {
         let g = f32::from_bits(self.map.shared().own_gain.load(Ordering::Acquire));
-        if g.is_finite() { g.clamp(0.0, 4.0) } else { 0.0 }
+        if g.is_finite() {
+            g.clamp(0.0, 4.0)
+        } else {
+            0.0
+        }
     }
 
     /// The app is running and looked in within `STALE_MS`.
@@ -460,7 +547,12 @@ impl PluginEnd {
 impl Drop for PluginEnd {
     fn drop(&mut self) {
         // give the bridge back (if still ours) so another instance can take it at once
-        let _ = self.map.shared().owner.compare_exchange(self.id, 0, Ordering::AcqRel, Ordering::Relaxed);
+        let _ = self.map.shared().owner.compare_exchange(
+            self.id,
+            0,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        );
     }
 }
 
@@ -472,7 +564,11 @@ mod tests {
     /// A name no other test (or a running gachi) uses.
     fn unique() -> String {
         static N: AtomicUsize = AtomicUsize::new(0);
-        format!("gachi-bridge-test-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed))
+        format!(
+            "gachi-bridge-test-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        )
     }
 
     #[test]
@@ -526,16 +622,21 @@ mod tests {
             }
         };
         for b in 0..BLOCKS {
-            let block: Vec<f32> = (0..64).flat_map(|i| {
-                let v = (b * 64 + i) as f32;
-                [v, -v]
-            }).collect();
+            let block: Vec<f32> = (0..64)
+                .flat_map(|i| {
+                    let v = (b * 64 + i) as f32;
+                    [v, -v]
+                })
+                .collect();
             // a real app keeps pace; here the app thread may be descheduled for a while, so
             // keep at most half a ring in flight (neither way can then fill) instead of
             // counting overruns. Fail rather than hang if the app side gave up.
             while (b * 64 - back) as usize > RING_FRAMES / 2 {
                 take_back(&mut plugin, &mut back);
-                assert!(!app_thread.is_finished(), "the app side stopped at block {b}");
+                assert!(
+                    !app_thread.is_finished(),
+                    "the app side stopped at block {b}"
+                );
                 std::thread::yield_now();
             }
             assert_eq!(plugin.write_up(&block), 64);
@@ -559,13 +660,18 @@ mod tests {
         let name = unique();
         let _app = AppEnd::create(&name).unwrap();
         let first = PluginEnd::open(&name, 1).unwrap();
-        assert_eq!(PluginEnd::open(&name, 2).err(), Some(Error::Busy), "the first is alive");
+        assert_eq!(
+            PluginEnd::open(&name, 2).err(),
+            Some(Error::Busy),
+            "the first is alive"
+        );
         drop(first);
         let second = PluginEnd::open(&name, 2).expect("free again once the first is gone");
         // the owner crashed (never dropped): its claim lapses with its heartbeat
         std::mem::forget(second);
         let s = _app.map.shared();
-        s.plugin_beat_ms.store(now_ms() - STALE_MS - 1, Ordering::Release);
+        s.plugin_beat_ms
+            .store(now_ms() - STALE_MS - 1, Ordering::Release);
         assert!(!_app.plugin_alive());
         PluginEnd::open(&name, 3).expect("a stale owner is taken over");
     }
@@ -579,7 +685,10 @@ mod tests {
         assert_eq!(PluginEnd::open(&name, 2).err(), Some(Error::Busy));
         assert!(app.plugin_waiting(), "the app can tell the player");
         // the first one is bypassed for a while: the second takes over
-        app.map.shared().plugin_beat_ms.store(now_ms() - STALE_MS - 1, Ordering::Release);
+        app.map
+            .shared()
+            .plugin_beat_ms
+            .store(now_ms() - STALE_MS - 1, Ordering::Release);
         let mut second = PluginEnd::open(&name, 2).unwrap();
         assert!(!first.owns() && second.owns());
         // the first comes back from bypass: it must not send into the second's stream
@@ -608,8 +717,17 @@ mod tests {
     fn another_layout_version_is_refused() {
         let name = unique();
         let app = AppEnd::create(&name).unwrap();
-        app.map.shared().version.store(VERSION + 1, Ordering::Relaxed);
-        assert_eq!(PluginEnd::open(&name, 1).err(), Some(Error::Version { theirs: VERSION + 1, ours: VERSION }));
+        app.map
+            .shared()
+            .version
+            .store(VERSION + 1, Ordering::Relaxed);
+        assert_eq!(
+            PluginEnd::open(&name, 1).err(),
+            Some(Error::Version {
+                theirs: VERSION + 1,
+                ours: VERSION
+            })
+        );
     }
 
     #[test]

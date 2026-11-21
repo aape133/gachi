@@ -29,7 +29,11 @@ impl Rng {
 /// Sample `n` of one of the test sounds.
 fn signal(kind: usize, n: usize, noise: &mut Rng) -> f32 {
     let t = n as f64 / FS;
-    let saw = |f: f64, h: usize| -> f64 { (1..=h).map(|k| (std::f64::consts::TAU * f * k as f64 * t).sin() / k as f64).sum::<f64>() };
+    let saw = |f: f64, h: usize| -> f64 {
+        (1..=h)
+            .map(|k| (std::f64::consts::TAU * f * k as f64 * t).sin() / k as f64)
+            .sum::<f64>()
+    };
     (match kind {
         // bass / guitar string: 110 Hz, ten harmonics
         0 => 0.3 * saw(110.0, 10),
@@ -37,17 +41,28 @@ fn signal(kind: usize, n: usize, noise: &mut Rng) -> f32 {
         1 => 0.12 * (saw(261.63, 5) + saw(329.63, 5) + saw(392.0, 5)),
         // voice / violin: 220 Hz with 5 Hz vibrato
         2 => {
-            let phase = std::f64::consts::TAU * (220.0 * t - 220.0 * 0.01 / (std::f64::consts::TAU * 5.0) * (std::f64::consts::TAU * 5.0 * t).cos());
-            0.3 * (1..=6).map(|k| (phase * k as f64).sin() / k as f64).sum::<f64>()
+            let phase = std::f64::consts::TAU
+                * (220.0 * t
+                    - 220.0 * 0.01 / (std::f64::consts::TAU * 5.0)
+                        * (std::f64::consts::TAU * 5.0 * t).cos());
+            0.3 * (1..=6)
+                .map(|k| (phase * k as f64).sin() / k as f64)
+                .sum::<f64>()
         }
         // cymbals / noise
         3 => 0.3 * (noise.next() * 2.0 - 1.0),
         // a sung or bowed note as played: 196 Hz whose pitch wanders a little (a slow
         // random wobble, not a regular vibrato), harmonics that fade with height, some breath
         4 => {
-            let wobble = 0.004 * ((std::f64::consts::TAU * 2.3 * t).sin() + 0.6 * (std::f64::consts::TAU * 3.7 * t + 1.0).sin() + 0.4 * (std::f64::consts::TAU * 7.9 * t + 2.0).sin());
-            let phase = std::f64::consts::TAU * 196.0 * (t + wobble / (std::f64::consts::TAU * 2.3));
-            let tone: f64 = (1..=8).map(|k| (phase * k as f64).sin() * 0.8f64.powi(k)).sum();
+            let wobble = 0.004
+                * ((std::f64::consts::TAU * 2.3 * t).sin()
+                    + 0.6 * (std::f64::consts::TAU * 3.7 * t + 1.0).sin()
+                    + 0.4 * (std::f64::consts::TAU * 7.9 * t + 2.0).sin());
+            let phase =
+                std::f64::consts::TAU * 196.0 * (t + wobble / (std::f64::consts::TAU * 2.3));
+            let tone: f64 = (1..=8)
+                .map(|k| (phase * k as f64).sin() * 0.8f64.powi(k))
+                .sum();
             0.25 * tone + 0.03 * (noise.next() * 2.0 - 1.0)
         }
         // a ramp: each sample says where it came from (to measure the buffer's delay)
@@ -55,20 +70,35 @@ fn signal(kind: usize, n: usize, noise: &mut Rng) -> f32 {
     }) as f32
 }
 
-const KINDS: [&str; 5] = ["bass 110 Hz", "chord C-E-G", "vibrato 220 Hz", "noise", "voice, breathy"];
+const KINDS: [&str; 5] = [
+    "bass 110 Hz",
+    "chord C-E-G",
+    "vibrato 220 Hz",
+    "noise",
+    "voice, breathy",
+];
 /// the ramp (`signal`): each sample is its own index
 const RAMP: usize = 99;
 
 /// Plays `secs` of sound `kind` through a jitter buffer (target 3 packets, reads of 64);
 /// `arrival(seq)` = the read index at which packet `seq` arrives (`None` = lost).
-fn play(kind: usize, pitch: bool, secs: f64, arrival: &dyn Fn(u32) -> Option<u64>) -> (Vec<f32>, Vec<f32>) {
+fn play(
+    kind: usize,
+    pitch: bool,
+    secs: f64,
+    arrival: &dyn Fn(u32) -> Option<u64>,
+) -> (Vec<f32>, Vec<f32>) {
     let mut jb = JitterBuffer::new(3);
     jb.set_drift_correction(false);
     jb.set_concealment(pitch);
     let mut noise = Rng(0x1234_5678_9ABC_DEF1);
     let total_packets = (secs * FS / PF as f64) as u32;
-    let original: Vec<f32> = (0..total_packets as usize * PF).map(|n| signal(kind, n, &mut noise)).collect();
-    let mut pending: Vec<(u64, u32)> = (0..total_packets).filter_map(|s| arrival(s).map(|a| (a, s))).collect();
+    let original: Vec<f32> = (0..total_packets as usize * PF)
+        .map(|n| signal(kind, n, &mut noise))
+        .collect();
+    let mut pending: Vec<(u64, u32)> = (0..total_packets)
+        .filter_map(|s| arrival(s).map(|a| (a, s)))
+        .collect();
     pending.sort();
     let mut out = Vec::new();
     let mut buf = vec![0f32; READ * 2];
@@ -77,7 +107,12 @@ fn play(kind: usize, pitch: bool, secs: f64, arrival: &dyn Fn(u32) -> Option<u64
     for r in 0..reads {
         while p < pending.len() && pending[p].0 <= r {
             let s = pending[p].1;
-            let mut f = Frame { seq: s, channels: 1, frames: PF as u16, ..Frame::EMPTY };
+            let mut f = Frame {
+                seq: s,
+                channels: 1,
+                frames: PF as u16,
+                ..Frame::EMPTY
+            };
             f.data[..PF].copy_from_slice(&original[s as usize * PF..(s as usize + 1) * PF]);
             jb.push(f);
             p += 1;
@@ -107,7 +142,10 @@ fn main() {
             let lost: Vec<bool> = (0..20_000).map(|_| rng.next() < 0.02).collect();
             // steady arrivals two packets per read, one read ahead
             // two packets per read, as they are due; the lost ones never come
-            let arrival = |s: u32| (!lost.get(s as usize).copied().unwrap_or(false) || s < 20).then_some((s as u64 * PF as u64) / READ as u64);
+            let arrival = |s: u32| {
+                (!lost.get(s as usize).copied().unwrap_or(false) || s < 20)
+                    .then_some((s as u64 * PF as u64) / READ as u64)
+            };
             let (orig, out) = play(kind, pitch, 10.0, &arrival);
             let d = delay(&arrival);
             let (mut sig, mut err) = (0f64, 0f64);
@@ -127,7 +165,10 @@ fn main() {
     }
 
     println!("\nbursts: every 3 s no packet arrives for 15 ms, then all at once (10 s):");
-    println!("{:<16} {:>18} {:>18}", "sound", "old: quiet ms / jump", "pitch: quiet ms / jump");
+    println!(
+        "{:<16} {:>18} {:>18}",
+        "sound", "old: quiet ms / jump", "pitch: quiet ms / jump"
+    );
     for (kind, name) in KINDS.iter().enumerate() {
         let mut row = Vec::new();
         for pitch in [false, true] {
@@ -137,20 +178,37 @@ fn main() {
                 let due = (s as u64 * PF as u64) / READ as u64;
                 let phase = (due as f64) % every;
                 // packets due inside the stall arrive together at its end
-                Some(if due as f64 > every && phase < stall { due + (stall - phase).ceil() as u64 } else { due })
+                Some(if due as f64 > every && phase < stall {
+                    due + (stall - phase).ceil() as u64
+                } else {
+                    due
+                })
             };
             let (orig, out) = play(kind, pitch, 10.0, &arrival);
             // level of the signal, then 1 ms windows of what played
-            let level = (orig.iter().map(|x| (x * x) as f64).sum::<f64>() / orig.len() as f64).sqrt();
+            let level =
+                (orig.iter().map(|x| (x * x) as f64).sum::<f64>() / orig.len() as f64).sqrt();
             let quiet = out[4800..]
                 .chunks(48)
-                .filter(|w| (w.iter().map(|x| (x * x) as f64).sum::<f64>() / w.len() as f64).sqrt() < 0.1 * level)
+                .filter(|w| {
+                    (w.iter().map(|x| (x * x) as f64).sum::<f64>() / w.len() as f64).sqrt()
+                        < 0.1 * level
+                })
                 .count();
-            let own_jump = orig.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
-            let jump = out[4800..].windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
+            let own_jump = orig
+                .windows(2)
+                .map(|w| (w[1] - w[0]).abs())
+                .fold(0f32, f32::max);
+            let jump = out[4800..]
+                .windows(2)
+                .map(|w| (w[1] - w[0]).abs())
+                .fold(0f32, f32::max);
             row.push((quiet, jump / own_jump));
         }
-        println!("{:<16} {:>8} ms / {:>4.2}× {:>11} ms / {:>4.2}×", name, row[0].0, row[0].1, row[1].0, row[1].1);
+        println!(
+            "{:<16} {:>8} ms / {:>4.2}× {:>11} ms / {:>4.2}×",
+            name, row[0].0, row[0].1, row[1].0, row[1].1
+        );
     }
 
     long_gaps();
@@ -163,7 +221,12 @@ fn main() {
     let mut worst = std::time::Duration::ZERO;
     let mut s = 0u32;
     let mut push = |jb: &mut JitterBuffer, s: u32| {
-        let mut f = Frame { seq: s, channels: 1, frames: PF as u16, ..Frame::EMPTY };
+        let mut f = Frame {
+            seq: s,
+            channels: 1,
+            frames: PF as u16,
+            ..Frame::EMPTY
+        };
         for i in 0..PF {
             f.data[i] = signal(0, s as usize * PF + i, &mut noise);
         }
@@ -215,11 +278,18 @@ fn long_gaps() {
     const GAP_MS: usize = 40;
     let gap = GAP_MS * FS as usize / 1000 / PF; // packets
     let every = 2 * FS as usize / PF;
-    println!("
-long gaps: every 2 s, {GAP_MS} ms lost; made-up sound from 10 ms on, how much it");
-    println!("varies from one repeat to the next (1 - best self-similarity, dB: real sound varies;");
+    println!(
+        "
+long gaps: every 2 s, {GAP_MS} ms lost; made-up sound from 10 ms on, how much it"
+    );
+    println!(
+        "varies from one repeat to the next (1 - best self-similarity, dB: real sound varies;"
+    );
     println!("one period copied over and over does not, a steady beep):");
-    println!("{:<16} {:>14} {:>16} {:>14}", "sound", "real varies", "made up varies", "level 10-37 ms");
+    println!(
+        "{:<16} {:>14} {:>16} {:>14}",
+        "sound", "real varies", "made up varies", "level 10-37 ms"
+    );
     for (kind, name) in KINDS.iter().enumerate() {
         let lost = |s: u32| s as usize > every && (s as usize) % every < gap;
         let arrival = |s: u32| (!lost(s)).then_some((s as u64 * PF as u64) / READ as u64);
@@ -235,10 +305,17 @@ long gaps: every 2 s, {GAP_MS} ms lost; made-up sound from 10 ms on, how much it
             let varies = |c: f64| 10.0 * (1.0 - c).max(1e-9).log10();
             real += varies(tonality(&orig, at, win, 40, 800));
             made += varies(tonality(&out, at + d, win, 40, 800));
-            let rms = |x: &[f32]| (x.iter().map(|v| (v * v) as f64).sum::<f64>() / x.len() as f64).sqrt();
+            let rms =
+                |x: &[f32]| (x.iter().map(|v| (v * v) as f64).sum::<f64>() / x.len() as f64).sqrt();
             lvl += rms(&out[at + d..at + d + 1300]) / rms(&orig[at..at + 1300]).max(1e-9);
             n += 1.0;
         }
-        println!("{:<16} {:>11.1} dB {:>13.1} dB {:>13.0}%", name, real / n, made / n, 100.0 * lvl / n);
+        println!(
+            "{:<16} {:>11.1} dB {:>13.1} dB {:>13.0}%",
+            name,
+            real / n,
+            made / n,
+            100.0 * lvl / n
+        );
     }
 }

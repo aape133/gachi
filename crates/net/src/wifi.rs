@@ -38,17 +38,35 @@ impl QuietWifi {
         let mut quiet = Self { handle, cards: 0 };
         let mut list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
         // SAFETY: the handle is open; the list is freed below
-        if unsafe { WlanEnumInterfaces(handle, std::ptr::null(), &mut list) } != 0 || list.is_null() {
+        if unsafe { WlanEnumInterfaces(handle, std::ptr::null(), &mut list) } != 0 || list.is_null()
+        {
             return None; // drop closes the handle
         }
         let mut cards = 0;
         // SAFETY: the list holds dwNumberOfItems entries
-        let items = unsafe { std::slice::from_raw_parts((*list).InterfaceInfo.as_ptr(), (*list).dwNumberOfItems as usize) };
-        for i in items.iter().filter(|i| i.isState == wlan_interface_state_connected) {
+        let items = unsafe {
+            std::slice::from_raw_parts(
+                (*list).InterfaceInfo.as_ptr(),
+                (*list).dwNumberOfItems as usize,
+            )
+        };
+        for i in items
+            .iter()
+            .filter(|i| i.isState == wlan_interface_state_connected)
+        {
             let set = |opcode, on: bool| {
                 let v = on as i32;
                 // SAFETY: a BOOL-sized value for a BOOL opcode, on an interface of this handle
-                unsafe { WlanSetInterface(handle, &i.InterfaceGuid, opcode, 4, &v as *const i32 as *const _, std::ptr::null()) == 0 }
+                unsafe {
+                    WlanSetInterface(
+                        handle,
+                        &i.InterfaceGuid,
+                        opcode,
+                        4,
+                        &v as *const i32 as *const _,
+                        std::ptr::null(),
+                    ) == 0
+                }
             };
             let scan_off = set(wlan_intf_opcode_background_scan_enabled, false);
             let streaming = set(wlan_intf_opcode_media_streaming_mode, true);
@@ -76,7 +94,10 @@ impl Drop for QuietWifi {
         #[cfg(windows)]
         // SAFETY: opened in `start`, closed once; Windows restores both settings
         unsafe {
-            windows_sys::Win32::NetworkManagement::WiFi::WlanCloseHandle(self.handle, std::ptr::null());
+            windows_sys::Win32::NetworkManagement::WiFi::WlanCloseHandle(
+                self.handle,
+                std::ptr::null(),
+            );
         }
     }
 }
@@ -105,10 +126,24 @@ mod tests {
             let mut list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
             let mut out = None;
             if WlanEnumInterfaces(h, std::ptr::null(), &mut list) == 0 && !list.is_null() {
-                let items = std::slice::from_raw_parts((*list).InterfaceInfo.as_ptr(), (*list).dwNumberOfItems as usize);
-                if let Some(i) = items.iter().find(|i| i.isState == wlan_interface_state_connected) {
+                let items = std::slice::from_raw_parts(
+                    (*list).InterfaceInfo.as_ptr(),
+                    (*list).dwNumberOfItems as usize,
+                );
+                if let Some(i) = items
+                    .iter()
+                    .find(|i| i.isState == wlan_interface_state_connected)
+                {
                     let (mut size, mut data) = (0u32, std::ptr::null_mut());
-                    let r = WlanQueryInterface(h, &i.InterfaceGuid, wlan_intf_opcode_background_scan_enabled, std::ptr::null(), &mut size, &mut data, std::ptr::null_mut());
+                    let r = WlanQueryInterface(
+                        h,
+                        &i.InterfaceGuid,
+                        wlan_intf_opcode_background_scan_enabled,
+                        std::ptr::null(),
+                        &mut size,
+                        &mut data,
+                        std::ptr::null_mut(),
+                    );
                     if r == 0 && !data.is_null() {
                         out = Some(*(data as *const i32) != 0);
                         WlanFreeMemory(data);
@@ -132,7 +167,11 @@ mod tests {
             return;
         };
         assert!(q.cards >= 1);
-        assert_eq!(scan_on(Some(&q)), Some(false), "background scan off while held");
+        assert_eq!(
+            scan_on(Some(&q)),
+            Some(false),
+            "background scan off while held"
+        );
         drop(q);
         assert_eq!(scan_on(None), before, "back as before once let go");
     }

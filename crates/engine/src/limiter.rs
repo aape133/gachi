@@ -35,7 +35,13 @@ pub struct Limiter {
 impl Limiter {
     pub fn new(sample_rate: u32) -> Self {
         let sr = sample_rate.max(1) as f32;
-        Self { gain: 1.0, release: 1.0 - (-1.0 / (RELEASE * sr)).exp(), hold_frames: (HOLD * sr) as u32, hold: 0, limited: 0 }
+        Self {
+            gain: 1.0,
+            release: 1.0 - (-1.0 / (RELEASE * sr)).exp(),
+            hold_frames: (HOLD * sr) as u32,
+            hold: 0,
+            limited: 0,
+        }
     }
 
     /// Interleaved stereo, in place.
@@ -122,7 +128,9 @@ mod tests {
         l.process(&mut out);
         // after the first cycles: the same tone, scaled
         let k = CEILING / 2.0;
-        let worst = (9600..48_000).map(|i| (out[i * 2] - tone(i) * k).abs()).fold(0f32, f32::max);
+        let worst = (9600..48_000)
+            .map(|i| (out[i * 2] - tone(i) * k).abs())
+            .fold(0f32, f32::max);
         assert!(worst < 0.002, "distorted: off by {worst}");
     }
 

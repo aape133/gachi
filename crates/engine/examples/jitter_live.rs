@@ -104,7 +104,8 @@ impl Tracker {
     }
 
     fn spread_p(&self) -> f64 {
-        self.everyday.unwrap_or(self.spread_now.max(self.spread_prev))
+        self.everyday
+            .unwrap_or(self.spread_now.max(self.spread_prev))
     }
 
     fn settled(&self) -> bool {
@@ -138,7 +139,16 @@ fn everyday(seconds: &[f64]) -> Option<f64> {
             level = l;
         }
     }
-    let lately = if seconds.len() >= 4 { seconds.iter().rev().take(4).fold(f64::MAX, |m, &s| m.min(s)).min(40.0) } else { 0.0 };
+    let lately = if seconds.len() >= 4 {
+        seconds
+            .iter()
+            .rev()
+            .take(4)
+            .fold(f64::MAX, |m, &s| m.min(s))
+            .min(40.0)
+    } else {
+        0.0
+    };
     Some(level.max(lately))
 }
 
@@ -148,7 +158,10 @@ fn auto_target_ms(spread: f64, jitter: f64, pm: f64, out_ms: f64, use_jitter: bo
     let by_spread = spread + 1.6 * pm + 0.25 * out_ms + 0.15;
     let by_jitter = if use_jitter { jitter * 2.5 } else { 0.0 };
     let by_output = out_ms + pm;
-    by_spread.max(by_jitter).max(by_output).clamp(pm, 40f64.max(out_ms + 4.0 * pm))
+    by_spread
+        .max(by_jitter)
+        .max(by_output)
+        .clamp(pm, 40f64.max(out_ms + 4.0 * pm))
 }
 
 fn to_packets(ms: f64, pm: f64) -> f64 {
@@ -215,7 +228,12 @@ fn run(c: &Case, use_jitter: bool, seed: u64) -> Result {
     let (mut seq, mut next_send) = (0u32, 0.0f64);
     let mut jb = JitterBuffer::new(1);
     let mut tracker = Tracker::new(pm);
-    let mut hold = Hold { auto_ms: 10.7, raised_at: 0.0, lowered_at: 0.0, settled: false };
+    let mut hold = Hold {
+        auto_ms: 10.7,
+        raised_at: 0.0,
+        lowered_at: 0.0,
+        settled: false,
+    };
     jb.set_target_f(to_packets(10.7, pm));
     let mut out = vec![0f32; br * 2];
     let mut all: Vec<f64> = Vec::new();
@@ -231,7 +249,11 @@ fn run(c: &Case, use_jitter: bool, seed: u64) -> Result {
             let t = next_send + rng.next() * 0.15;
             for _ in 0..bs / pf {
                 let mut at = t + 0.1 + rng.exp(c.jitter);
-                if let Some(&(s, len)) = c.stalls.iter().find(|&&(s, len)| at >= s * 1000.0 && at < s * 1000.0 + len) {
+                if let Some(&(s, len)) = c
+                    .stalls
+                    .iter()
+                    .find(|&&(s, len)| at >= s * 1000.0 && at < s * 1000.0 + len)
+                {
                     at = s * 1000.0 + len + 0.05 * rng.next();
                 }
                 flight.push((at, seq));
@@ -242,7 +264,12 @@ fn run(c: &Case, use_jitter: bool, seed: u64) -> Result {
         flight.sort_by(|a, b| a.0.total_cmp(&b.0));
         let n = flight.iter().take_while(|p| p.0 <= now).count();
         for (arr, s) in flight.drain(..n) {
-            let mut f = Frame { seq: s, channels: 1, frames: pf as u16, ..Frame::EMPTY };
+            let mut f = Frame {
+                seq: s,
+                channels: 1,
+                frames: pf as u16,
+                ..Frame::EMPTY
+            };
             for i in 0..pf {
                 f.data[i] = (s as usize * pf + i) as f32;
             }
@@ -276,7 +303,12 @@ fn run(c: &Case, use_jitter: bool, seed: u64) -> Result {
         if now >= next_sec {
             sec.sort_by(|a, b| a.total_cmp(b));
             let st = jb.stats();
-            per_sec.push((hold.auto_ms, sec.get(sec.len() / 2).copied().unwrap_or(f64::NAN), st.drift_ppm as f64, st.depth as f64));
+            per_sec.push((
+                hold.auto_ms,
+                sec.get(sec.len() / 2).copied().unwrap_or(f64::NAN),
+                st.drift_ppm as f64,
+                st.depth as f64,
+            ));
             sec.clear();
             next_sec += 1000.0;
         }
@@ -296,13 +328,23 @@ fn run(c: &Case, use_jitter: bool, seed: u64) -> Result {
 
 /// A bad moment as the logs show it: a few stalls within ~1.5 s.
 fn cluster(at: f64, len: f64) -> Vec<Stall> {
-    vec![(at, len), (at + 0.3, len * 0.6), (at + 0.8, len), (at + 1.4, len * 0.5)]
+    vec![
+        (at, len),
+        (at + 0.3, len * 0.6),
+        (at + 0.8, len),
+        (at + 1.4, len * 0.5),
+    ]
 }
 
 fn main() {
     let use_jitter = !std::env::args().any(|a| a == "--no-jitter-term");
     let cases = [
-        Case { name: "wired, clean", secs: 90.0, jitter: 0.03, stalls: vec![] },
+        Case {
+            name: "wired, clean",
+            secs: 90.0,
+            jitter: 0.03,
+            stalls: vec![],
+        },
         Case {
             name: "Wi-Fi, a 40 ms stall twice a minute",
             secs: 120.0,
@@ -313,7 +355,9 @@ fn main() {
             name: "wired, busy receiver (15 ms every ~12 s)",
             secs: 120.0,
             jitter: 0.05,
-            stalls: (1..10).flat_map(|k| cluster(k as f64 * 12.0 + 0.4 * k as f64, 15.0)).collect(),
+            stalls: (1..10)
+                .flat_map(|k| cluster(k as f64 * 12.0 + 0.4 * k as f64, 15.0))
+                .collect(),
         },
         Case {
             name: "wired, bad 30-40 s (12 ms every 0.5 s), then fine",

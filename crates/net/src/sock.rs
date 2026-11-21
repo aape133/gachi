@@ -32,7 +32,10 @@ impl Sock {
                 let inner = UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)))?;
                 let s = Socket::from(inner);
                 tune(&s, false);
-                Ok(Self { inner: s.into(), v6: false })
+                Ok(Self {
+                    inner: s.into(),
+                    v6: false,
+                })
             }
         }
     }
@@ -42,7 +45,10 @@ impl Sock {
         s.set_only_v6(false)?;
         s.bind(&SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)).into())?;
         tune(&s, true);
-        Ok(Self { inner: s.into(), v6: true })
+        Ok(Self {
+            inner: s.into(),
+            v6: true,
+        })
     }
 
     pub fn is_dual_stack(&self) -> bool {
@@ -55,9 +61,14 @@ impl Sock {
 
     pub fn send_to(&self, buf: &[u8], addr: SocketAddr) -> io::Result<usize> {
         let to = match (self.v6, addr) {
-            (true, SocketAddr::V4(a)) => SocketAddr::V6(SocketAddrV6::new(a.ip().to_ipv6_mapped(), a.port(), 0, 0)),
+            (true, SocketAddr::V4(a)) => {
+                SocketAddr::V6(SocketAddrV6::new(a.ip().to_ipv6_mapped(), a.port(), 0, 0))
+            }
             (false, SocketAddr::V6(_)) => {
-                return Err(io::Error::new(io::ErrorKind::Unsupported, "IPv6 address on an IPv4 socket"));
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "IPv6 address on an IPv4 socket",
+                ));
             }
             (_, a) => a,
         };
@@ -92,7 +103,11 @@ impl Sock {
     pub fn wait_readable(&self, timeout: Duration) -> bool {
         use std::os::windows::io::AsRawSocket;
         use windows_sys::Win32::Networking::WinSock::{WSAPoll, POLLRDNORM, WSAPOLLFD};
-        let mut fd = WSAPOLLFD { fd: self.inner.as_raw_socket() as _, events: POLLRDNORM, revents: 0 };
+        let mut fd = WSAPOLLFD {
+            fd: self.inner.as_raw_socket() as _,
+            events: POLLRDNORM,
+            revents: 0,
+        };
         let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
         // SAFETY: one descriptor of our open socket, valid for the call
         let ready = unsafe { WSAPoll(&mut fd, 1, ms) };
@@ -131,7 +146,15 @@ fn tune(s: &Socket, v6: bool) {
             use windows_sys::Win32::Networking::WinSock::{setsockopt, IPPROTO_IPV6, IPV6_TCLASS};
             let v = DSCP_EF as i32;
             // SAFETY: our open socket; a 4-byte int option value that outlives the call
-            unsafe { setsockopt(s.as_raw_socket() as _, IPPROTO_IPV6, IPV6_TCLASS, &v as *const i32 as *const u8, 4) };
+            unsafe {
+                setsockopt(
+                    s.as_raw_socket() as _,
+                    IPPROTO_IPV6,
+                    IPV6_TCLASS,
+                    &v as *const i32 as *const u8,
+                    4,
+                )
+            };
         }
     }
 }
@@ -159,7 +182,12 @@ pub fn other_ipv4s(main: Option<IpAddr>) -> Vec<Ipv4Addr> {
         }
         for n in &i.ipv4 {
             let ip = n.addr();
-            if ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || Some(IpAddr::V4(ip)) == main || out.contains(&ip) {
+            if ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || Some(IpAddr::V4(ip)) == main
+                || out.contains(&ip)
+            {
                 continue;
             }
             out.push(ip);
@@ -177,7 +205,9 @@ pub const MAX_OTHER: usize = 2;
 pub fn global_ipv6() -> Option<Ipv6Addr> {
     let probe = UdpSocket::bind("[::]:0").ok()?;
     probe.connect("[2001:4860:4860::8888]:53").ok()?;
-    let SocketAddr::V6(local) = probe.local_addr().ok()? else { return None };
+    let SocketAddr::V6(local) = probe.local_addr().ok()? else {
+        return None;
+    };
     let ip = *local.ip();
     let seg0 = ip.segments()[0];
     // global unicast is 2000::/3 (excludes link-local fe80::/10, ULA fc00::/7, loopback)
@@ -202,13 +232,20 @@ mod tests {
         b.send_to(b"yo", from).unwrap();
         a.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
         let (_, back) = a.recv_from(&mut buf).unwrap();
-        assert_eq!(back, b.local_addr().unwrap(), "seen as plain IPv4, not ::ffff:…");
+        assert_eq!(
+            back,
+            b.local_addr().unwrap(),
+            "seen as plain IPv4, not ::ffff:…"
+        );
     }
 
     #[test]
     fn canonical_unmaps() {
         let mapped: SocketAddr = "[::ffff:10.0.0.1]:5000".parse().unwrap();
-        assert_eq!(canonical(mapped), "10.0.0.1:5000".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            canonical(mapped),
+            "10.0.0.1:5000".parse::<SocketAddr>().unwrap()
+        );
         let v6: SocketAddr = "[2001:db8::1]:5000".parse().unwrap();
         assert_eq!(canonical(v6), v6);
     }
@@ -235,19 +272,34 @@ mod tests {
         let to_a = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), a.port());
         let mut buf = [0u8; 64];
         let t = Instant::now();
-        assert_eq!(a.recv_from(&mut buf).unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(
+            a.recv_from(&mut buf).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
         // (far below the 100 ms wait below; 5 ms failed now and then on a busy PC)
-        assert!(t.elapsed() < Duration::from_millis(50), "reading waited {:?}", t.elapsed());
+        assert!(
+            t.elapsed() < Duration::from_millis(50),
+            "reading waited {:?}",
+            t.elapsed()
+        );
         let t = Instant::now();
         assert!(!a.wait_readable(Duration::from_millis(100)));
-        assert!(t.elapsed() >= Duration::from_millis(80), "woke after {:?} with nothing there", t.elapsed());
+        assert!(
+            t.elapsed() >= Duration::from_millis(80),
+            "woke after {:?} with nothing there",
+            t.elapsed()
+        );
         let sender = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(30));
             b.send_to(b"hi", to_a).unwrap();
         });
         let t = Instant::now();
         assert!(a.wait_readable(Duration::from_secs(2)));
-        assert!(t.elapsed() < Duration::from_millis(500), "woke {:?} after the datagram", t.elapsed());
+        assert!(
+            t.elapsed() < Duration::from_millis(500),
+            "woke {:?} after the datagram",
+            t.elapsed()
+        );
         assert_eq!(a.recv_from(&mut buf).unwrap().0, 2);
         sender.join().unwrap();
     }

@@ -11,7 +11,6 @@ pub const DEFAULT_SERVER: &str = "gachi.band";
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// ASIO driver name, "" = the first ASIO driver
-
     pub device: String,
     pub sample_rate: u32,
     pub buffer_size: u32,
@@ -215,7 +214,9 @@ impl Settings {
         // a colour of one's own from the first run on (kept: written back at once)
         let n = gachi_proto::signal::COLOR_HUES.len();
         if s.color.is_none_or(|c| c as usize >= n) {
-            let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos());
             s.color = Some((nanos as usize % n) as u8);
             let _ = s.save(path);
         }
@@ -226,8 +227,16 @@ impl Settings {
     pub fn profile(&self) -> gachi_proto::signal::Profile {
         // (the home screen lets nobody in without a name; were one to get by, the others
         // would still see somebody)
-        let name = if self.name.trim().is_empty() { gachi_lang::tr!("settings.default_name") } else { self.name.clone() };
-        gachi_proto::signal::Profile { name, instrument: self.instrument.clone(), color: self.color }
+        let name = if self.name.trim().is_empty() {
+            gachi_lang::tr!("settings.default_name")
+        } else {
+            self.name.clone()
+        };
+        gachi_proto::signal::Profile {
+            name,
+            instrument: self.instrument.clone(),
+            color: self.color,
+        }
     }
 
     /// Writes the settings (atomically: a crash mid-write cannot leave a broken file).
@@ -242,7 +251,10 @@ impl Settings {
             std::fs::create_dir_all(dir)?;
         }
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(&v).map_err(std::io::Error::other)?)?;
+        std::fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(&v).map_err(std::io::Error::other)?,
+        )?;
         std::fs::rename(tmp, path)
     }
 
@@ -258,7 +270,8 @@ impl Settings {
                 }
             }
         }
-        *self = serde_json::from_value(v).map_err(|e| gachi_lang::tr!("settings.invalid_setting_e", e))?;
+        *self = serde_json::from_value(v)
+            .map_err(|e| gachi_lang::tr!("settings.invalid_setting_e", e))?;
         gachi_lang::choose(&self.language);
         Ok(())
     }
@@ -276,7 +289,11 @@ impl Settings {
     pub fn engine_config(&self) -> EngineConfig {
         let device = (!self.device.is_empty()).then(|| self.device.clone());
         EngineConfig {
-            host: if self.daw_mode() { HostChoice::Daw } else { HostChoice::Asio },
+            host: if self.daw_mode() {
+                HostChoice::Daw
+            } else {
+                HostChoice::Asio
+            },
             input_device: device.clone(),
             output_device: device,
             sample_rate: self.sample_rate,
@@ -290,13 +307,21 @@ impl Settings {
 /// Input routing from the UI's value (1-based channel numbers):
 /// `"3"` mono, `"3-4"` stereo pair, `"1+5-6"` channel 1 (mic, centered) plus pair 5/6.
 pub fn parse_input(s: &str) -> InputChannels {
-    let ch = |t: &str| t.trim().parse::<usize>().ok().filter(|&n| n >= 1).map(|n| n - 1);
+    let ch = |t: &str| {
+        t.trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|&n| n >= 1)
+            .map(|n| n - 1)
+    };
     let pair = |t: &str| {
         let (a, b) = t.split_once('-')?;
         Some((ch(a)?, ch(b)?))
     };
     let parsed = match s.split_once('+') {
-        Some((m, p)) => ch(m).zip(pair(p)).map(|(mono, pair)| InputChannels::Mix { mono, pair }),
+        Some((m, p)) => ch(m)
+            .zip(pair(p))
+            .map(|(mono, pair)| InputChannels::Mix { mono, pair }),
         None if s.contains('-') => pair(s).map(|(a, b)| InputChannels::Stereo(a, b)),
         None => ch(s).map(InputChannels::Mono),
     };
@@ -324,7 +349,11 @@ mod tests {
         assert_eq!((back.name.as_str(), back.theme.as_str()), ("민지", "light"));
         assert_eq!(back.server, Settings::default().server);
         std::fs::write(&path, "{ broken").unwrap();
-        assert_eq!(Settings::load(&path).name, Settings::default().name, "broken file → defaults");
+        assert_eq!(
+            Settings::load(&path).name,
+            Settings::default().name,
+            "broken file → defaults"
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -336,10 +365,21 @@ mod tests {
         assert_eq!(Settings::default().name, "", "a first run has no name");
         // a file from before: the stand-in of any language is no name, a real one is kept
         for (saved, kept) in [("나", ""), ("Me", ""), ("민지", "민지")] {
-            std::fs::write(&path, serde_json::json!({ "name": saved, "theme": "light" }).to_string()).unwrap();
+            std::fs::write(
+                &path,
+                serde_json::json!({ "name": saved, "theme": "light" }).to_string(),
+            )
+            .unwrap();
             let s = Settings::load(&path);
-            assert_eq!((s.name.as_str(), s.theme.as_str()), (kept, "light"), "{saved}");
-            assert!(std::fs::read_to_string(&path).unwrap().contains("ownName"), "written back");
+            assert_eq!(
+                (s.name.as_str(), s.theme.as_str()),
+                (kept, "light"),
+                "{saved}"
+            );
+            assert!(
+                std::fs::read_to_string(&path).unwrap().contains("ownName"),
+                "written back"
+            );
         }
         // typed in since: one's own, whatever the word
         let mut s = Settings::load(&path);
@@ -355,7 +395,8 @@ mod tests {
     fn the_connection_mode_picks_the_engine_host() {
         let mut s = Settings::default();
         assert_eq!(s.engine_config().host, HostChoice::Asio);
-        s.apply_patch(&serde_json::json!({ "connection": "daw" })).unwrap();
+        s.apply_patch(&serde_json::json!({ "connection": "daw" }))
+            .unwrap();
         assert!(s.daw_mode());
         assert_eq!(s.engine_config().host, HostChoice::Daw);
     }
@@ -363,7 +404,8 @@ mod tests {
     #[test]
     fn the_ui_cannot_change_the_server() {
         let mut s = Settings::default();
-        s.apply_patch(&serde_json::json!({ "server": "evil.example:1", "name": "민지" })).unwrap();
+        s.apply_patch(&serde_json::json!({ "server": "evil.example:1", "name": "민지" }))
+            .unwrap();
         assert_eq!(s.server, Settings::default().server);
         assert_eq!(s.name, "민지", "other keys still apply");
     }
@@ -373,7 +415,13 @@ mod tests {
         assert_eq!(parse_input("2"), InputChannels::Mono(1));
         assert_eq!(parse_input("1-2"), InputChannels::Stereo(0, 1));
         assert_eq!(parse_input("5-6"), InputChannels::Stereo(4, 5));
-        assert_eq!(parse_input("1+5-6"), InputChannels::Mix { mono: 0, pair: (4, 5) });
+        assert_eq!(
+            parse_input("1+5-6"),
+            InputChannels::Mix {
+                mono: 0,
+                pair: (4, 5)
+            }
+        );
         assert_eq!(parse_input("0"), InputChannels::Stereo(0, 1), "1-based");
         assert_eq!(parse_input("x"), InputChannels::Stereo(0, 1));
     }
@@ -381,8 +429,11 @@ mod tests {
     #[test]
     fn patch_merges_known_keys_only() {
         let mut s = Settings::default();
-        s.apply_patch(&serde_json::json!({ "bufferSize": 32, "name": "지민", "bogus": 1 })).unwrap();
+        s.apply_patch(&serde_json::json!({ "bufferSize": 32, "name": "지민", "bogus": 1 }))
+            .unwrap();
         assert_eq!((s.buffer_size, s.name.as_str()), (32, "지민"));
-        assert!(s.apply_patch(&serde_json::json!({ "bufferSize": "big" })).is_err());
+        assert!(s
+            .apply_patch(&serde_json::json!({ "bufferSize": "big" }))
+            .is_err());
     }
 }

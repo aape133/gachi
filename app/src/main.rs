@@ -1,11 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+#[cfg(windows)]
+mod crashlog;
 mod deeplink;
 mod diagnose;
-mod refusal;
 mod gate;
 mod link;
+mod refusal;
 mod session;
 mod settings;
 mod signal;
@@ -47,7 +49,9 @@ impl AppState {
     }
 
     pub fn save_settings(&self) {
-        let (Some(path), Ok(s)) = (self.settings_path.get(), self.settings.lock()) else { return };
+        let (Some(path), Ok(s)) = (self.settings_path.get(), self.settings.lock()) else {
+            return;
+        };
         if let Err(e) = s.save(path) {
             tracing::warn!("could not save settings: {e}");
         }
@@ -56,7 +60,11 @@ impl AppState {
 
 /// Where the log files are.
 pub fn log_dir() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("APPDATA")?).join("app.gachi.desktop").join("logs"))
+    Some(
+        PathBuf::from(std::env::var_os("APPDATA")?)
+            .join("app.gachi.desktop")
+            .join("logs"),
+    )
 }
 
 /// A log file that stops growing at `LOG_MAX` bytes (an app left running for days, or a
@@ -75,7 +83,9 @@ impl std::io::Write for Capped {
         }
         if buf.len() > self.left {
             self.left = 0;
-            let _ = self.file.write_all(b"(log full: nothing more is written to this file)\n");
+            let _ = self
+                .file
+                .write_all(b"(log full: nothing more is written to this file)\n");
             return Ok(buf.len());
         }
         self.left -= buf.len();
@@ -103,7 +113,10 @@ fn log_file() -> Option<Capped> {
         let _ = std::fs::remove_file(p);
     }
     let name = format!("gachi-{}.log", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-    Some(Capped { file: std::fs::File::create(dir.join(name)).ok()?, left: LOG_MAX })
+    Some(Capped {
+        file: std::fs::File::create(dir.join(name)).ok()?,
+        left: LOG_MAX,
+    })
 }
 
 /// WebView2 options. wry's defaults first (it drops them when given its own), then: keep
@@ -139,7 +152,11 @@ fn main_window(app: &tauri::AppHandle, gpu: bool, language: &str) -> tauri::Resu
         .visible(false);
     #[cfg(windows)]
     let builder = {
-        let args = if gpu { BROWSER_ARGS.to_string() } else { format!("{BROWSER_ARGS} --disable-gpu --disable-gpu-compositing") };
+        let args = if gpu {
+            BROWSER_ARGS.to_string()
+        } else {
+            format!("{BROWSER_ARGS} --disable-gpu --disable-gpu-compositing")
+        };
         builder.additional_browser_args(&args)
     };
     #[cfg(not(windows))]
@@ -157,26 +174,40 @@ fn main_window(app: &tauri::AppHandle, gpu: bool, language: &str) -> tauri::Resu
 fn main() {
     use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriterExt};
     use tracing_subscriber::prelude::*;
-    let writer = match log_file() {
+    let log = log_file();
+    // (the same file through a handle of its own, for the line a crash leaves: see crashlog)
+    #[cfg(windows)]
+    let crash_log = log.as_ref().and_then(|f| f.file.try_clone().ok());
+    let writer = match log {
         Some(f) => BoxMakeWriter::new(std::io::stderr.and(Mutex::new(f))),
         None => BoxMakeWriter::new(std::io::stderr),
     };
-    let layer = tracing_subscriber::fmt::layer().with_ansi(false).with_writer(writer);
+    let layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(writer);
     match tracing_subscriber::EnvFilter::try_from_default_env() {
         // a developer's own filter (RUST_LOG)
-        Ok(filter) => tracing_subscriber::registry().with(layer.with_filter(filter)).init(),
+        Ok(filter) => tracing_subscriber::registry()
+            .with(layer.with_filter(filter))
+            .init(),
         // what happened (info and up); the developer's detail only when the settings ask
         // for the full log, looked up at every event so the switch works at once
         Err(_) => {
             let filter = tracing_subscriber::filter::dynamic_filter_fn(|meta, _| {
                 let level = *meta.level();
                 level <= tracing::Level::INFO
-                    || (level <= tracing::Level::DEBUG && meta.target().starts_with("gachi") && settings::VERBOSE_LOG.load(std::sync::atomic::Ordering::Relaxed))
+                    || (level <= tracing::Level::DEBUG
+                        && meta.target().starts_with("gachi")
+                        && settings::VERBOSE_LOG.load(std::sync::atomic::Ordering::Relaxed))
             });
-            tracing_subscriber::registry().with(layer.with_filter(filter)).init();
+            tracing_subscriber::registry()
+                .with(layer.with_filter(filter))
+                .init();
         }
     }
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "gachi starting");
+    #[cfg(windows)]
+    crashlog::install(crash_log);
     // live audio: no Windows power throttling, even with the window in the background
     // (forced on, it slowed sending and receiving by ~40% on a desktop PC; laptops with
     // efficiency cores lose more). Only this process; the plugin never does this to a DAW.
@@ -204,12 +235,17 @@ fn main() {
                 let path = dir.join("settings.json");
                 let state = tauri::Manager::state::<AppState>(app);
                 let loaded = settings::Settings::load(&path);
-                settings::VERBOSE_LOG.store(loaded.verbose_log, std::sync::atomic::Ordering::Relaxed);
+                settings::VERBOSE_LOG
+                    .store(loaded.verbose_log, std::sync::atomic::Ordering::Relaxed);
                 *state.settings.lock().unwrap() = loaded;
                 let _ = state.settings_path.set(path);
             }
             let (gpu, language) = {
-                let s = tauri::Manager::state::<AppState>(app).settings.lock().unwrap().clone();
+                let s = tauri::Manager::state::<AppState>(app)
+                    .settings
+                    .lock()
+                    .unwrap()
+                    .clone();
                 (s.gpu, s.language)
             };
             main_window(app.handle(), gpu, &language)?;
@@ -281,14 +317,19 @@ fn main() {
                 // left on purpose (so the next host takes over right away) and the host's
                 // connection to the connection server closes
                 let state = tauri::Manager::state::<AppState>(app);
-                let session = tauri::async_runtime::block_on(async { state.session.lock().await.take() });
+                let session =
+                    tauri::async_runtime::block_on(async { state.session.lock().await.take() });
                 let to_server = session.as_ref().is_some_and(|s| s.gate.is_some());
                 drop(session);
-                drop(tauri::async_runtime::block_on(async { state.preview.lock().await.take() }));
+                drop(tauri::async_runtime::block_on(async {
+                    state.preview.lock().await.take()
+                }));
                 // the process ends right after this: give the host's connection the moment
                 // it needs to say it is closing (the window is hidden already)
                 if to_server {
-                    tauri::async_runtime::block_on(tokio::time::sleep(std::time::Duration::from_millis(250)));
+                    tauri::async_runtime::block_on(tokio::time::sleep(
+                        std::time::Duration::from_millis(250),
+                    ));
                 }
             }
         });

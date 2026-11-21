@@ -28,8 +28,11 @@ pub struct Update {
 /// The newer version, if there is one. `Ok(None)`: this is the latest (or there is no
 /// release to compare with).
 pub async fn check() -> Result<Option<Update>, String> {
-    let reply = tokio::time::timeout(TIMEOUT, fetch()).await.map_err(|_| gachi_lang::tr!("update.no_answer"))??;
-    let (status, body) = split(&reply).ok_or_else(|| gachi_lang::tr!("update.unexpected_answer"))?;
+    let reply = tokio::time::timeout(TIMEOUT, fetch())
+        .await
+        .map_err(|_| gachi_lang::tr!("update.no_answer"))??;
+    let (status, body) =
+        split(&reply).ok_or_else(|| gachi_lang::tr!("update.unexpected_answer"))?;
     match status {
         200 => Ok(newer_in(&body, env!("CARGO_PKG_VERSION"))),
         // no release yet (or the repository is not public)
@@ -39,14 +42,22 @@ pub async fn check() -> Result<Option<Update>, String> {
 }
 
 async fn fetch() -> Result<Vec<u8>, String> {
-    let cfg = crate::signal::tls_config().ok_or_else(|| gachi_lang::tr!("update.couldnt_read_certificates"))?;
-    let tcp = tokio::net::TcpStream::connect((HOST, 443)).await.map_err(|e| e.to_string())?;
+    let cfg = crate::signal::tls_config()
+        .ok_or_else(|| gachi_lang::tr!("update.couldnt_read_certificates"))?;
+    let tcp = tokio::net::TcpStream::connect((HOST, 443))
+        .await
+        .map_err(|e| e.to_string())?;
     let name = rustls::pki_types::ServerName::try_from(HOST).map_err(|e| e.to_string())?;
-    let mut tls = tokio_rustls::TlsConnector::from(cfg).connect(name, tcp).await.map_err(|e| e.to_string())?;
+    let mut tls = tokio_rustls::TlsConnector::from(cfg)
+        .connect(name, tcp)
+        .await
+        .map_err(|e| e.to_string())?;
     let req = format!(
         "GET {PATH} HTTP/1.1\r\nHost: {HOST}\r\nUser-Agent: gachi\r\nAccept: application/vnd.github+json\r\nConnection: close\r\n\r\n"
     );
-    tls.write_all(req.as_bytes()).await.map_err(|e| e.to_string())?;
+    tls.write_all(req.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     let mut buf = [0u8; 8192];
     loop {
@@ -74,9 +85,19 @@ fn split(reply: &[u8]) -> Option<(u16, Vec<u8>)> {
     let mut lines = head.split("\r\n");
     let status = lines.next()?.split(' ').nth(1)?.parse().ok()?;
     let chunked = lines.any(|l| {
-        l.split_once(':').is_some_and(|(k, v)| k.trim().eq_ignore_ascii_case("transfer-encoding") && v.to_ascii_lowercase().contains("chunked"))
+        l.split_once(':').is_some_and(|(k, v)| {
+            k.trim().eq_ignore_ascii_case("transfer-encoding")
+                && v.to_ascii_lowercase().contains("chunked")
+        })
     });
-    Some((status, if chunked { dechunk(body)? } else { body.to_vec() }))
+    Some((
+        status,
+        if chunked {
+            dechunk(body)?
+        } else {
+            body.to_vec()
+        },
+    ))
 }
 
 fn dechunk(mut b: &[u8]) -> Option<Vec<u8>> {
@@ -114,7 +135,11 @@ fn newer_in(json: &[u8], current: &str) -> Option<Update> {
         return None;
     }
     // (written out again from the numbers: the tag's own text is never shown)
-    let version = theirs.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(".");
+    let version = theirs
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(".");
     Some(Update { version })
 }
 
@@ -141,14 +166,26 @@ mod tests {
 
     #[test]
     fn only_a_newer_release_is_reported() {
-        let rel = |tag: &str| format!(r#"{{"tag_name":"{tag}","body":"- 고친 것\r\n- 새 기능\u0007","draft":false,"prerelease":false}}"#);
+        let rel = |tag: &str| {
+            format!(
+                r#"{{"tag_name":"{tag}","body":"- 고친 것\r\n- 새 기능\u0007","draft":false,"prerelease":false}}"#
+            )
+        };
         assert_eq!(newer_in(rel("v0.1.0").as_bytes(), "0.1.0"), None);
         assert_eq!(newer_in(rel("v0.0.9").as_bytes(), "0.1.0"), None);
         let u = newer_in(rel("v0.1.1").as_bytes(), "0.1.0").unwrap();
         assert_eq!(u.version, "0.1.1");
-        assert_eq!(newer_in(br#"{"tag_name":"v9.0.0","prerelease":true}"#, "0.1.0"), None);
+        assert_eq!(
+            newer_in(br#"{"tag_name":"v9.0.0","prerelease":true}"#, "0.1.0"),
+            None
+        );
         // a build between releases: its own release is newer, the one before it is not
-        assert_eq!(newer_in(rel("v0.7.0").as_bytes(), "0.7.0-dev").unwrap().version, "0.7.0");
+        assert_eq!(
+            newer_in(rel("v0.7.0").as_bytes(), "0.7.0-dev")
+                .unwrap()
+                .version,
+            "0.7.0"
+        );
         assert_eq!(newer_in(rel("v0.6.1").as_bytes(), "0.7.0-dev"), None);
         assert_eq!(newer_in(b"<html>", "0.1.0"), None);
         assert_eq!(newer_in(br#"{"message":"Not Found"}"#, "0.1.0"), None);
@@ -160,8 +197,14 @@ mod tests {
         assert_eq!(split(plain), Some((200, b"{}".to_vec())));
         let chunked = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n{\"a\r\n4;x=1\r\n\":1}\r\n0\r\n\r\n";
         assert_eq!(split(chunked), Some((200, b"{\"a\":1}".to_vec())));
-        assert_eq!(split(b"HTTP/1.1 404 Not Found\r\n\r\n").map(|r| r.0), Some(404));
-        assert_eq!(split(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nff\r\nshort"), None);
+        assert_eq!(
+            split(b"HTTP/1.1 404 Not Found\r\n\r\n").map(|r| r.0),
+            Some(404)
+        );
+        assert_eq!(
+            split(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nff\r\nshort"),
+            None
+        );
         assert_eq!(split(b"garbage"), None);
     }
 }

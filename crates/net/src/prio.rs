@@ -7,7 +7,8 @@ pub fn pro_audio() {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{
-            AvSetMmThreadCharacteristicsW, GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+            AvSetMmThreadCharacteristicsW, GetCurrentThread, SetThreadPriority,
+            THREAD_PRIORITY_TIME_CRITICAL,
         };
         let task: Vec<u16> = "Pro Audio".encode_utf16().chain(Some(0)).collect();
         let mut index = 0u32;
@@ -17,8 +18,12 @@ pub fn pro_audio() {
         if handle.is_null() {
             // MMCSS service off: at least ask for a high priority
             // SAFETY: the pseudo-handle of the current thread is always valid.
-            let ok = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) };
-            tracing::info!(ok = ok != 0, "MMCSS unavailable; raised thread priority instead");
+            let ok =
+                unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) };
+            tracing::info!(
+                ok = ok != 0,
+                "MMCSS unavailable; raised thread priority instead"
+            );
         } else {
             tracing::debug!("receiver thread joined MMCSS Pro Audio");
         }
@@ -34,11 +39,12 @@ pub fn power_throttling(throttle: Option<bool>) -> bool {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{
-            GetCurrentProcess, ProcessPowerThrottling, SetProcessInformation, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-            PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION,
-            PROCESS_POWER_THROTTLING_STATE,
+            GetCurrentProcess, ProcessPowerThrottling, SetProcessInformation,
+            PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+            PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION, PROCESS_POWER_THROTTLING_STATE,
         };
-        let both = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+        let both = PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+            | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
         let state = PROCESS_POWER_THROTTLING_STATE {
             Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
             ControlMask: if throttle.is_some() { both } else { 0 },

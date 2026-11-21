@@ -32,7 +32,10 @@ fn fit(x: &[f64], w: f64) -> (f64, f64) {
         sig += m * m;
         err += (v - m) * (v - m);
     }
-    ((a * a + b * b).sqrt(), 10.0 * (sig / err.max(1e-300)).log10())
+    (
+        (a * a + b * b).sqrt(),
+        10.0 * (sig / err.max(1e-300)).log10(),
+    )
 }
 
 /// A tone at `f` Hz sampled at `src` through the jitter buffer read at `ratio`.
@@ -47,7 +50,12 @@ fn resampled(f: f64, src: f64, ratio: f64, out_frames: usize) -> Vec<f64> {
     while out.len() < out_frames {
         // keep it fed: as many source frames as this block reads
         while (n as f64) < (out.len() + 64) as f64 * ratio + 6.0 * pf as f64 {
-            let mut fr = Frame { seq, channels: 1, frames: pf as u16, ..Frame::EMPTY };
+            let mut fr = Frame {
+                seq,
+                channels: 1,
+                frames: pf as u16,
+                ..Frame::EMPTY
+            };
             for k in 0..pf {
                 fr.data[k] = (0.5 * (TAU * f * (n + k) as f64 / src).sin()) as f32;
             }
@@ -59,13 +67,20 @@ fn resampled(f: f64, src: f64, ratio: f64, out_frames: usize) -> Vec<f64> {
         out.extend(buf.iter().step_by(2).map(|&s| s as f64));
     }
     let st = jb.stats();
-    assert_eq!(st.underruns + st.concealed + st.skipped + st.scaled, 0, "{st:?}");
+    assert_eq!(
+        st.underruns + st.concealed + st.skipped + st.scaled,
+        0,
+        "{st:?}"
+    );
     out.split_off(4800)
 }
 
 fn main() {
     println!("1. resampler (tone at -6 dBFS): signal/error dB, level wobble dB");
-    println!("   {:<22} {:>14} {:>14} {:>14} {:>14} {:>14}", "", "1 kHz", "5 kHz", "10 kHz", "15 kHz", "18 kHz");
+    println!(
+        "   {:<22} {:>14} {:>14} {:>14} {:>14} {:>14}",
+        "", "1 kHz", "5 kHz", "10 kHz", "15 kHz", "18 kHz"
+    );
     for (name, src, dst, ratio) in [
         ("drift +50 ppm", 48_000.0, 48_000.0, 1.00005),
         ("drift -200 ppm", 48_000.0, 48_000.0, 0.9998),
@@ -97,12 +112,22 @@ fn main() {
         for f in [60.0, 220.0, 1000.0, 5000.0] {
             let mut lim = Limiter::new(48_000);
             let amp = 10f64.powf(over_db / 20.0);
-            let mut x: Vec<f32> = (0..48_000 * 2).flat_map(|k| [(amp * (TAU * f * k as f64 / 48_000.0).sin()) as f32; 2]).collect();
+            let mut x: Vec<f32> = (0..48_000 * 2)
+                .flat_map(|k| [(amp * (TAU * f * k as f64 / 48_000.0).sin()) as f32; 2])
+                .collect();
             lim.process(&mut x);
-            let y: Vec<f64> = x.iter().step_by(2).skip(48_000).map(|&s| s as f64).collect();
+            let y: Vec<f64> = x
+                .iter()
+                .step_by(2)
+                .skip(48_000)
+                .map(|&s| s as f64)
+                .collect();
             let (a, snr) = fit(&y, TAU * f / 48_000.0);
             let peak = y.iter().fold(0f64, |m, v| m.max(v.abs()));
-            print!("  {f:>5.0} Hz {snr:>5.1} (level {:>5.2}, peak {peak:.3})", 20.0 * a.log10());
+            print!(
+                "  {f:>5.0} Hz {snr:>5.1} (level {:>5.2}, peak {peak:.3})",
+                20.0 * a.log10()
+            );
         }
         println!();
     }
@@ -112,7 +137,9 @@ fn main() {
         let amp = 10f64.powf(level_db / 20.0);
         let n = 48_000 * 4;
         let w = TAU * 1000.0 / 48_000.0;
-        let y: Vec<f64> = (0..n).map(|k| (amp * (w * k as f64).sin() * 32767.0).round() / 32768.0).collect();
+        let y: Vec<f64> = (0..n)
+            .map(|k| (amp * (w * k as f64).sin() * 32767.0).round() / 32768.0)
+            .collect();
         let (_, snr) = fit(&y, w);
         // harmonics 2..9 of the tone in the error
         let mut worst = f64::MIN;

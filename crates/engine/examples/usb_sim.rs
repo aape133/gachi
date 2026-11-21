@@ -119,7 +119,12 @@ fn run(c: Case, target: f64, seed: u64) -> Outcome {
         flight.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let n = flight.iter().take_while(|p| p.0 <= now).count();
         for (arr, s) in flight.drain(..n) {
-            let mut f = Frame { seq: s, channels: 1, frames: c.pkt as u16, ..Frame::EMPTY };
+            let mut f = Frame {
+                seq: s,
+                channels: 1,
+                frames: c.pkt as u16,
+                ..Frame::EMPTY
+            };
             for i in 0..c.pkt {
                 f.data[i] = (s as usize * c.pkt + i) as f32;
             }
@@ -179,18 +184,32 @@ fn everyday(seconds: &[f64]) -> f64 {
             level = l;
         }
     }
-    let lately = if seconds.len() >= 4 { seconds.iter().rev().take(4).fold(f64::MAX, |m, &s| m.min(s)).min(40.0) } else { 0.0 };
+    let lately = if seconds.len() >= 4 {
+        seconds
+            .iter()
+            .rev()
+            .take(4)
+            .fold(f64::MAX, |m, &s| m.min(s))
+            .min(40.0)
+    } else {
+        0.0
+    };
     level.max(lately)
 }
 
 /// The app's pick (app/src/session.rs `auto_target_ms` + `to_packets`, wired: no jitter term).
 fn app_target(spread: f64, pkt_ms: f64, out_ms: f64) -> f64 {
-    let want = (spread + 1.6 * pkt_ms + 0.25 * out_ms + 0.15).max(out_ms + pkt_ms).min(40f64.max(out_ms + 4.0 * pkt_ms));
+    let want = (spread + 1.6 * pkt_ms + 0.25 * out_ms + 0.15)
+        .max(out_ms + pkt_ms)
+        .min(40f64.max(out_ms + 4.0 * pkt_ms));
     ((want / pkt_ms * 4.0).ceil() / 4.0).min(128.0)
 }
 
 fn main() {
-    let n_seeds: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(5);
+    let n_seeds: usize = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5);
     let mut seeds = Vec::new();
     let mut g = Rng(0x9E37_79B9_7F4A_7C15);
     for _ in 0..n_seeds {
@@ -214,8 +233,12 @@ fn main() {
         (Bus::Even, 48, 16),
         (Bus::Even, 32, 32),
     ];
-    println!("{n_seeds} seeds × {SECONDS:.0} s, wired network; ms = what gachi adds end to end (median)");
-    println!("bus   buf pkt | clean from        latency | spread  app picks         latency  clean");
+    println!(
+        "{n_seeds} seeds × {SECONDS:.0} s, wired network; ms = what gachi adds end to end (median)"
+    );
+    println!(
+        "bus   buf pkt | clean from        latency | spread  app picks         latency  clean"
+    );
     for (bus, buf, pkt) in cases {
         let c = Case { bus, buf, pkt };
         let pkt_ms = pkt as f64 / FS * 1000.0;

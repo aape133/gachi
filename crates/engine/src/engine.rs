@@ -1,5 +1,8 @@
 use crate::device::{find_device, host, HostChoice};
-use crate::extras::{Metronome, MetronomeParams, RecOptions, RecTap, Recorder, RecordingResult, ToneGen, MIX_TRACK, SELF_TRACK};
+use crate::extras::{
+    Metronome, MetronomeParams, RecOptions, RecTap, Recorder, RecordingResult, ToneGen, MIX_TRACK,
+    SELF_TRACK,
+};
 use crate::frame::Frame;
 use crate::jitter::JitterBuffer;
 use crate::meter::{ChannelMeters, Meter, MAX_INPUT_METERS};
@@ -67,7 +70,10 @@ impl InputChannels {
         match v >> 56 {
             1 => Some(Self::Mono(f(0))),
             2 => Some(Self::Stereo(f(0), f(16))),
-            3 => Some(Self::Mix { mono: f(0), pair: (f(16), f(32)) }),
+            3 => Some(Self::Mix {
+                mono: f(0),
+                pair: (f(16), f(32)),
+            }),
             _ => None,
         }
     }
@@ -103,9 +109,16 @@ pub fn auto_packet_frames(block: usize) -> usize {
     }
     if block <= AUTO_PACKET_MAX {
         // (tiny blocks: several to a packet)
-        return if block >= MIN { block } else { block * MIN.div_ceil(block) };
+        return if block >= MIN {
+            block
+        } else {
+            block * MIN.div_ceil(block)
+        };
     }
-    match (MIN * 2..=AUTO_PACKET_MAX).rev().find(|d| block.is_multiple_of(*d)) {
+    match (MIN * 2..=AUTO_PACKET_MAX)
+        .rev()
+        .find(|d| block.is_multiple_of(*d))
+    {
         Some(d) => d,
         None => AUTO_PACKET_MAX,
     }
@@ -140,6 +153,9 @@ pub enum EngineError {
     Play(#[from] cpal::PlayStreamError),
     #[error("audio thread failed: {0}")]
     Thread(String),
+    /// an engine of this program has the ASIO driver open (see `host_thread::Kept::busy`)
+    #[error("the audio device is still open here: try again in a moment")]
+    Busy,
 }
 
 /// Handle to a peer's slot in the mixer.
@@ -277,12 +293,19 @@ fn unpack_latency(v: u64) -> Option<(u32, u32)> {
 /// Where the cpal streams live (they cannot move between threads).
 enum Owner {
     /// our own small thread, parked until the engine is dropped
-    Thread { stop_tx: mpsc::Sender<()>, thread: Option<thread::JoinHandle<()>> },
+    Thread {
+        stop_tx: mpsc::Sender<()>,
+        thread: Option<thread::JoinHandle<()>>,
+    },
     /// the shared ASIO thread (see `host_thread`), by stream id
     Asio(u64),
     /// DAW mode: our bridge thread, woken by each block the plugin hands over
     #[cfg(windows)]
-    Bridge { stop: Arc<AtomicBool>, thread: Option<thread::JoinHandle<()>>, end: Arc<gachi_bridge::AppEnd> },
+    Bridge {
+        stop: Arc<AtomicBool>,
+        thread: Option<thread::JoinHandle<()>>,
+        end: Arc<gachi_bridge::AppEnd>,
+    },
 }
 
 pub struct Engine {
@@ -364,7 +387,14 @@ impl Engine {
             start_bridge(&cfg, sink, cmd_rx, garbage_tx, shared)?
         } else if cfg.host == HostChoice::Asio && crate::device::ASIO_AVAILABLE {
             let opened = crate::host_thread::run(crate::host_thread::SLOW, move |kept| {
-                open_streams(&cfg, sink, cmd_rx, garbage_tx, shared).map(|(i, o, info)| (kept.keep(vec![i, o]), info))
+                // (whoever opens one closes the other first; this is for the case that
+                // slipped through: an error to show, where it was a crash)
+                if kept.busy() {
+                    tracing::warn!("an engine was asked for while another has the ASIO driver");
+                    return Err(EngineError::Busy);
+                }
+                open_streams(&cfg, sink, cmd_rx, garbage_tx, shared)
+                    .map(|(i, o, info)| (kept.keep(vec![i, o]), info))
             })
             .ok_or_else(|| EngineError::Thread(gachi_lang::tr!("audio.asio_driver_not")))??;
             (Owner::Asio(opened.0), opened.1)
@@ -373,26 +403,39 @@ impl Engine {
             let (stop_tx, stop_rx) = mpsc::channel::<()>();
             let thread = thread::Builder::new()
                 .name("gachi-audio-owner".into())
-                .spawn(move || match open_streams(&cfg, sink, cmd_rx, garbage_tx, shared) {
-                    Ok((input, output, info)) => {
-                        let _ = ready_tx.send(Ok(info));
-                        let _ = stop_rx.recv(); // park until Engine is dropped
-                        drop(input);
-                        drop(output);
-                    }
-                    Err(e) => {
-                        let _ = ready_tx.send(Err(e));
-                    }
-                })
+                .spawn(
+                    move || match open_streams(&cfg, sink, cmd_rx, garbage_tx, shared) {
+                        Ok((input, output, info)) => {
+                            let _ = ready_tx.send(Ok(info));
+                            let _ = stop_rx.recv(); // park until Engine is dropped
+                            drop(input);
+                            drop(output);
+                        }
+                        Err(e) => {
+                            let _ = ready_tx.send(Err(e));
+                        }
+                    },
+                )
                 .map_err(|e| EngineError::Thread(e.to_string()))?;
-            let info = ready_rx.recv().map_err(|e| EngineError::Thread(e.to_string()))??;
-            (Owner::Thread { stop_tx, thread: Some(thread) }, info)
+            let info = ready_rx
+                .recv()
+                .map_err(|e| EngineError::Thread(e.to_string()))??;
+            (
+                Owner::Thread {
+                    stop_tx,
+                    thread: Some(thread),
+                },
+                info,
+            )
         };
         // the first callbacks tell the real buffer size (the driver's own): wait for them
         // briefly, so what we report right after opening is not a guess
         // (DAW mode: the plugin may not be there yet, and it reports its block size itself)
         let t = Instant::now();
-        while !daw && output_cb.count.load(Relaxed) <= WARMUP_CALLBACKS + 1 && t.elapsed() < std::time::Duration::from_millis(300) {
+        while !daw
+            && output_cb.count.load(Relaxed) <= WARMUP_CALLBACKS + 1
+            && t.elapsed() < std::time::Duration::from_millis(300)
+        {
             thread::sleep(std::time::Duration::from_millis(5));
         }
         let mut info = info;
@@ -400,7 +443,8 @@ impl Engine {
             info.buffer_size = output_cb.range().map(|(_, max)| max);
         }
         tracing::info!(?info, "audio engine started");
-        let driver_latency_now = std::sync::atomic::AtomicU64::new(pack_latency(info.driver_latency));
+        let driver_latency_now =
+            std::sync::atomic::AtomicU64::new(pack_latency(info.driver_latency));
         let engine = Self {
             driver_latency_now,
             cmd_tx,
@@ -445,7 +489,14 @@ impl Engine {
             meter: Arc::new(Meter::default()),
             stats: Arc::new(SharedJitterStats::default()),
         };
-        let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle: handle.clone(), gains: (f32::NAN, f32::NAN), channels: 2 });
+        let slot = Box::new(PeerSlot {
+            id,
+            rx,
+            jitter: JitterBuffer::new(3),
+            handle: handle.clone(),
+            gains: (f32::NAN, f32::NAN),
+            channels: 2,
+        });
         if self.cmd_tx.push(Cmd::AddPeer(slot)).is_err() {
             tracing::error!("engine command ring full; peer {id} not added");
         }
@@ -469,7 +520,10 @@ impl Engine {
 
     /// Plays a 1 kHz tone on the output (not sent to anyone).
     pub fn play_test_tone(&self, secs: f32) {
-        self.self_params.test_tone.store((secs.clamp(0.0, 10.0) * self.info.sample_rate as f32) as u32, Relaxed);
+        self.self_params.test_tone.store(
+            (secs.clamp(0.0, 10.0) * self.info.sample_rate as f32) as u32,
+            Relaxed,
+        );
     }
 
     /// Metronome clicks on beat 0 at `start` (wall clock) and every beat after. Each peer
@@ -497,13 +551,20 @@ impl Engine {
     /// `names` maps track ids ([`SELF_TRACK`] for you) to file names; peers that join later
     /// get a track that starts with silence, so every file lines up. `opts`: the files'
     /// format and names, and whether the mix is recorded too.
-    pub fn start_recording(&mut self, dir: PathBuf, opts: RecOptions, names: Arc<Mutex<HashMap<PeerId, String>>>) -> Result<(), String> {
+    pub fn start_recording(
+        &mut self,
+        dir: PathBuf,
+        opts: RecOptions,
+        names: Arc<Mutex<HashMap<PeerId, String>>>,
+    ) -> Result<(), String> {
         if self.recorder.is_some() {
             return Err(gachi_lang::tr!("audio.already_recording"));
         }
         let (tap, rec) = Recorder::start(dir, opts, self.info.sample_rate, names, MAX_PEERS + 2)?;
         self.rec_tap_back = false;
-        self.cmd_tx.push(Cmd::StartRec(Box::new(tap))).map_err(|_| gachi_lang::tr!("audio.audio_engine_busy"))?;
+        self.cmd_tx
+            .push(Cmd::StartRec(Box::new(tap)))
+            .map_err(|_| gachi_lang::tr!("audio.audio_engine_busy"))?;
         self.recorder = Some(rec);
         Ok(())
     }
@@ -516,7 +577,10 @@ impl Engine {
 
     /// Stops recording and waits for the files to be finished.
     pub fn stop_recording(&mut self) -> Option<Result<RecordingResult, String>> {
-        Some(self.stop_recording_begin()?.and_then(|files| files.finish()))
+        Some(
+            self.stop_recording_begin()?
+                .and_then(|files| files.finish()),
+        )
     }
 
     /// Stops recording; the files are finished by [`RecordingFiles::finish`], which the
@@ -557,7 +621,10 @@ impl Engine {
             // no blocks just means no plugin (yet): shown as such, nothing to reopen
             return false;
         }
-        let now = (self.input_cb.count.load(Relaxed), self.output_cb.count.load(Relaxed));
+        let now = (
+            self.input_cb.count.load(Relaxed),
+            self.output_cb.count.load(Relaxed),
+        );
         let stalled = self.started.elapsed() > std::time::Duration::from_secs(2) && now.1 == last.1;
         *last = now;
         stalled
@@ -621,7 +688,11 @@ impl Engine {
         if let Owner::Bridge { end, .. } = &self.owner {
             let (rate, _) = end.format();
             if rate != 0 && rate != self.info.sample_rate {
-                tracing::info!(rate, now_rate = self.info.sample_rate, "DAW sample rate changed");
+                tracing::info!(
+                    rate,
+                    now_rate = self.info.sample_rate,
+                    "DAW sample rate changed"
+                );
                 return DriverCheck::Changed;
             }
             return DriverCheck::Same;
@@ -634,8 +705,17 @@ impl Engine {
         if crate::device::panel_open() {
             return DriverCheck::Same;
         }
-        let Ok(now) = crate::device::asio_driver_now() else { return DriverCheck::NoAnswer };
-        let Some(crate::device::DriverNow { rate, pref, latency }) = now else { return DriverCheck::Same };
+        let Ok(now) = crate::device::asio_driver_now() else {
+            return DriverCheck::NoAnswer;
+        };
+        let Some(crate::device::DriverNow {
+            rate,
+            pref,
+            latency,
+        }) = now
+        else {
+            return DriverCheck::Same;
+        };
         if let Some(l) = latency {
             let before = self.driver_latency_now.swap(pack_latency(Some(l)), Relaxed);
             if before != pack_latency(Some(l)) {
@@ -644,9 +724,17 @@ impl Engine {
         }
         let running = self.output_cb.range().map(|(_, max)| max);
         let rate_changed = rate != 0 && rate != self.info.sample_rate;
-        let buffer_changed = pref != 0 && self.output_cb.count.load(Relaxed) > WARMUP_CALLBACKS && running != Some(pref);
+        let buffer_changed = pref != 0
+            && self.output_cb.count.load(Relaxed) > WARMUP_CALLBACKS
+            && running != Some(pref);
         if rate_changed || buffer_changed {
-            tracing::info!(rate, pref, ?running, now_rate = self.info.sample_rate, "ASIO driver settings changed");
+            tracing::info!(
+                rate,
+                pref,
+                ?running,
+                now_rate = self.info.sample_rate,
+                "ASIO driver settings changed"
+            );
             return DriverCheck::Changed;
         }
         DriverCheck::Same
@@ -667,7 +755,11 @@ impl Engine {
     pub fn device_latency_ms(&self) -> (f32, f32, bool) {
         let (i, o) = self.device_latency();
         let ms = |n: u32| n as f32 / self.info.sample_rate.max(1) as f32 * 1000.0;
-        (ms(i), ms(o), unpack_latency(self.driver_latency_now.load(Relaxed)).is_some())
+        (
+            ms(i),
+            ms(o),
+            unpack_latency(self.driver_latency_now.load(Relaxed)).is_some(),
+        )
     }
 
     /// Frames per network packet we send now.
@@ -725,11 +817,15 @@ impl Drop for Engine {
             }
             Owner::Asio(id) => {
                 let id = *id;
-                if crate::host_thread::run(crate::host_thread::SLOW, move |kept| kept.release(id)).is_none() {
+                if crate::host_thread::run(crate::host_thread::SLOW, move |kept| kept.release(id))
+                    .is_none()
+                {
                     // the driver hangs with our streams: the recording finishes whenever
                     // they are let go, not here (that would hang too)
                     if let Some(rec) = self.recorder.take() {
-                        let _ = thread::Builder::new().name("gachi-rec-finish".into()).spawn(move || rec.finish());
+                        let _ = thread::Builder::new()
+                            .name("gachi-rec-finish".into())
+                            .spawn(move || rec.finish());
                     }
                 }
             }
@@ -747,8 +843,15 @@ impl Drop for Engine {
 /// panel; WASAPI: Windows sound settings) and its own buffer. We never ask for others:
 /// many USB drivers restart the whole device when an app does, which also scrambles their
 /// Windows playback/loopback routing for every other program.
-fn pick_config(device: &cpal::Device, input: bool) -> Result<(cpal::StreamConfig, cpal::SampleFormat), EngineError> {
-    let default = if input { device.default_input_config()? } else { device.default_output_config()? };
+fn pick_config(
+    device: &cpal::Device,
+    input: bool,
+) -> Result<(cpal::StreamConfig, cpal::SampleFormat), EngineError> {
+    let default = if input {
+        device.default_input_config()?
+    } else {
+        device.default_output_config()?
+    };
     let mut config = default.config();
     config.buffer_size = cpal::BufferSize::Default;
     Ok((config, default.sample_format()))
@@ -777,22 +880,44 @@ fn open_streams(
     garbage_tx: rtrb::Producer<Garbage>,
     shared: Shared,
 ) -> Result<(cpal::Stream, cpal::Stream, StreamInfo), EngineError> {
-    let Shared { self_params, self_meter, master_meter, input_meters, metronome, input_cb, output_cb, failed, origin, fb_sent, fb_played } = shared;
+    let Shared {
+        self_params,
+        self_meter,
+        master_meter,
+        input_meters,
+        metronome,
+        input_cb,
+        output_cb,
+        failed,
+        origin,
+        fb_sent,
+        fb_played,
+    } = shared;
     let host = host(cfg.host);
-    let in_dev = find_device(&host, cfg.input_device.as_deref(), true).ok_or(EngineError::NoDevice("input"))?;
-    let out_dev = find_device(&host, cfg.output_device.as_deref(), false).ok_or(EngineError::NoDevice("output"))?;
+    let in_dev = find_device(&host, cfg.input_device.as_deref(), true)
+        .ok_or(EngineError::NoDevice("input"))?;
+    let out_dev = find_device(&host, cfg.output_device.as_deref(), false)
+        .ok_or(EngineError::NoDevice("output"))?;
     // ASIO: one driver serves both directions, and cpal keeps the driver's stream state per
     // `Device` value. Opening the output on a second `Device` for the same driver rebuilds
     // the driver buffers without the inputs: the input then delivers only zeros. Use the
     // same `Device` for both.
-    let out_dev = if cfg.host == HostChoice::Asio && in_dev.name().ok() == out_dev.name().ok() { in_dev.clone() } else { out_dev };
+    let out_dev = if cfg.host == HostChoice::Asio && in_dev.name().ok() == out_dev.name().ok() {
+        in_dev.clone()
+    } else {
+        out_dev
+    };
 
     let (in_cfg, in_fmt) = pick_config(&in_dev, true)?;
     let (out_cfg, out_fmt) = pick_config(&out_dev, false)?;
     if in_cfg.sample_rate != out_cfg.sample_rate {
         // (only reachable without ASIO, in a dev build: an ASIO driver is one device for
         // both directions at one rate, and the app offers only ASIO or the DAW plugin)
-        return Err(EngineError::Unsupported(gachi_lang::tr!("audio.input_device_runs", input = in_cfg.sample_rate.0, output = out_cfg.sample_rate.0)));
+        return Err(EngineError::Unsupported(gachi_lang::tr!(
+            "audio.input_device_runs",
+            input = in_cfg.sample_rate.0,
+            output = out_cfg.sample_rate.0
+        )));
     }
 
     // (a first guess for the metronome: the engine puts in the real latency once the
@@ -819,7 +944,12 @@ fn open_streams(
             fb_sent,
             fb_played,
         },
-        (out_cfg.sample_rate.0, in_cfg.channels as usize, out_cfg.channels as usize, out_buffer),
+        (
+            out_cfg.sample_rate.0,
+            in_cfg.channels as usize,
+            out_cfg.channels as usize,
+            out_buffer,
+        ),
         true,
     );
 
@@ -838,7 +968,11 @@ fn open_streams(
         output_device: out_dev.name().unwrap_or_default(),
         input_channels: in_cfg.channels,
         // (on the ASIO thread with the streams running: what the driver says now)
-        driver_latency: if cfg.host == HostChoice::Asio { crate::device::asio_latencies() } else { None },
+        driver_latency: if cfg.host == HostChoice::Asio {
+            crate::device::asio_latencies()
+        } else {
+            None
+        },
     };
     Ok((in_stream, out_stream, info))
 }
@@ -856,16 +990,35 @@ fn processors(
     format: (u32, usize, usize, u32),
     local_monitor: bool,
 ) -> (InputProcessor, OutputProcessor) {
-    let Shared { self_params, self_meter, master_meter, input_meters, metronome, input_cb, output_cb, origin, fb_sent, fb_played, .. } = shared;
+    let Shared {
+        self_params,
+        self_meter,
+        master_meter,
+        input_meters,
+        metronome,
+        input_cb,
+        output_cb,
+        origin,
+        fb_sent,
+        fb_played,
+        ..
+    } = shared;
     let (sample_rate, in_channels, out_channels, out_buffer) = format;
     // your own sound, frame by frame (interleaved stereo), input → output: same device,
     // same clock, same buffer switch: no packets and no jitter buffer in between
     let (monitor_tx, monitor_rx) = rtrb::RingBuffer::new(MONITOR_RING);
     // automatic: what fits the buffer asked for, until the callbacks show the real block
     let auto = cfg.packet_frames == 0;
-    let packet_frames = if auto { auto_packet_frames(cfg.buffer_size as usize) } else { (cfg.packet_frames as usize).clamp(8, MAX_FRAMES) };
+    let packet_frames = if auto {
+        auto_packet_frames(cfg.buffer_size as usize)
+    } else {
+        (cfg.packet_frames as usize).clamp(8, MAX_FRAMES)
+    };
     input_cb.packet.store(packet_frames as u32, Relaxed);
-    metronome.out_latency_us.store((out_buffer as f64 * 1e6 / sample_rate.max(1) as f64) as u32, Relaxed);
+    metronome.out_latency_us.store(
+        (out_buffer as f64 * 1e6 / sample_rate.max(1) as f64) as u32,
+        Relaxed,
+    );
     let input = InputProcessor {
         channels: in_channels,
         map: cfg.input,
@@ -979,7 +1132,9 @@ fn build_input(
         cpal::SampleFormat::F32 => typed::<f32>(dev, cfg, p, failed),
         cpal::SampleFormat::I32 => typed::<i32>(dev, cfg, p, failed),
         cpal::SampleFormat::I16 => typed::<i16>(dev, cfg, p, failed),
-        other => Err(EngineError::Unsupported(format!("input sample format {other:?}"))),
+        other => Err(EngineError::Unsupported(format!(
+            "input sample format {other:?}"
+        ))),
     }
 }
 
@@ -1037,7 +1192,9 @@ fn build_output(
         cpal::SampleFormat::F32 => typed::<f32>(dev, cfg, p, failed),
         cpal::SampleFormat::I32 => typed::<i32>(dev, cfg, p, failed),
         cpal::SampleFormat::I16 => typed::<i16>(dev, cfg, p, failed),
-        other => Err(EngineError::Unsupported(format!("output sample format {other:?}"))),
+        other => Err(EngineError::Unsupported(format!(
+            "output sample format {other:?}"
+        ))),
     }
 }
 
@@ -1048,9 +1205,15 @@ const FB_RING: usize = 24_000;
 
 /// Once a second: does what we send contain the others' mix we played? Off the audio
 /// threads (a check costs a few ms of one core).
-fn feedback_check(mut sent_rx: rtrb::Consumer<f32>, mut played_rx: rtrb::Consumer<f32>, flag: &AtomicBool, stop: &AtomicBool) {
+fn feedback_check(
+    mut sent_rx: rtrb::Consumer<f32>,
+    mut played_rx: rtrb::Consumer<f32>,
+    flag: &AtomicBool,
+    stop: &AtomicBool,
+) {
     use crate::feedback::{best_match, Verdict, HISTORY};
-    let mut sent: std::collections::VecDeque<f32> = std::collections::VecDeque::with_capacity(HISTORY * 2);
+    let mut sent: std::collections::VecDeque<f32> =
+        std::collections::VecDeque::with_capacity(HISTORY * 2);
     let mut played = sent.clone();
     let mut verdict = Verdict::default();
     let mut ticks = 0u32;
@@ -1076,7 +1239,12 @@ fn feedback_check(mut sent_rx: rtrb::Consumer<f32>, mut played_rx: rtrb::Consume
         let was = flag.load(Relaxed);
         let now = verdict.update(m);
         if now != was {
-            tracing::warn!(on = now, ?m, "feedback: the others' sound {} what we send", if now { "comes back in" } else { "no longer in" });
+            tracing::warn!(
+                on = now,
+                ?m,
+                "feedback: the others' sound {} what we send",
+                if now { "comes back in" } else { "no longer in" }
+            );
         }
         flag.store(now, Relaxed);
     }
@@ -1097,7 +1265,9 @@ fn start_bridge(
     _: rtrb::Producer<Garbage>,
     _: Shared,
 ) -> Result<(Owner, StreamInfo), EngineError> {
-    Err(EngineError::Unsupported(gachi_lang::tr!("audio.daw_mode_works")))
+    Err(EngineError::Unsupported(gachi_lang::tr!(
+        "audio.daw_mode_works"
+    )))
 }
 
 /// DAW mode: opens the bridge and runs the same input/output processing on our own thread,
@@ -1112,7 +1282,10 @@ fn start_bridge(
     garbage_tx: rtrb::Producer<Garbage>,
     shared: Shared,
 ) -> Result<(Owner, StreamInfo), EngineError> {
-    let end = Arc::new(gachi_bridge::AppEnd::create(&gachi_bridge::name()).map_err(|e| EngineError::Unsupported(e.to_string()))?);
+    let end = Arc::new(
+        gachi_bridge::AppEnd::create(&gachi_bridge::name())
+            .map_err(|e| EngineError::Unsupported(e.to_string()))?,
+    );
     let (rate, block) = end.format();
     let sample_rate = if rate == 0 { 48_000 } else { rate };
     let block = if block == 0 { 64 } else { block };
@@ -1120,10 +1293,21 @@ fn start_bridge(
     // the plugin hands over stereo: sent as it comes (no channel choice in DAW mode)
     let stereo = InputChannels::Stereo(0, 1);
     params.input_map.store(stereo.encode(), Relaxed);
-    let cfg = EngineConfig { input: stereo, ..cfg.clone() };
+    let cfg = EngineConfig {
+        input: stereo,
+        ..cfg.clone()
+    };
     // (a block is at most `CHUNK` frames and a packet at least 8: every packet of a block fits)
     let (hold_tx, hold_rx) = rtrb::RingBuffer::<Frame>::new(CHUNK / 8);
-    let (input, output) = processors(&cfg, Box::new(Held(hold_tx)), cmd_rx, garbage_tx, shared, (sample_rate, 2, 2, block), false);
+    let (input, output) = processors(
+        &cfg,
+        Box::new(Held(hold_tx)),
+        cmd_rx,
+        garbage_tx,
+        shared,
+        (sample_rate, 2, 2, block),
+        false,
+    );
     let stop = Arc::new(AtomicBool::new(false));
     let thread = {
         let (end, stop) = (end.clone(), stop.clone());
@@ -1142,7 +1326,14 @@ fn start_bridge(
         // the DAW's own driver latency is the DAW's to know: blocks only
         driver_latency: None,
     };
-    Ok((Owner::Bridge { stop, thread: Some(thread), end }, info))
+    Ok((
+        Owner::Bridge {
+            stop,
+            thread: Some(thread),
+            end,
+        },
+        info,
+    ))
 }
 
 /// The bridge thread: wait for a block from the plugin, send it (input processing), mix the
@@ -1195,7 +1386,10 @@ fn run_bridge(
             while let Ok(f) = held.pop() {
                 sink.send(&f);
             }
-            input.cb.load.record(took_in + crate::load::CallbackLoad::now().saturating_sub(t));
+            input
+                .cb
+                .load
+                .record(took_in + crate::load::CallbackLoad::now().saturating_sub(t));
         }
     }
 }
@@ -1287,7 +1481,11 @@ impl InputProcessor {
             }
             self.map_code = code;
         }
-        let target = if self.params.muted.load(Relaxed) { 0.0 } else { self.params.input_gain.load() };
+        let target = if self.params.muted.load(Relaxed) {
+            0.0
+        } else {
+            self.params.input_gain.load()
+        };
         let steady = settled(&mut self.gain, target);
         let ch = self.channels;
         if self.auto {
@@ -1295,7 +1493,11 @@ impl InputProcessor {
             // not always the one given, and a DAW changes it as it likes. One that holds
             // for a few blocks counts; a host that varies it block by block keeps what it had
             let n = data.len() / ch;
-            self.block = if n == self.block.0 { (n, self.block.1.saturating_add(1)) } else { (n, 1) };
+            self.block = if n == self.block.0 {
+                (n, self.block.1.saturating_add(1))
+            } else {
+                (n, 1)
+            };
             if self.block.1 == AUTO_STEADY_BLOCKS {
                 self.want = auto_packet_frames(n).min(MAX_FRAMES);
             }
@@ -1306,7 +1508,9 @@ impl InputProcessor {
             InputChannels::Mono(i) => (1, at(i), at(i), 0, 0.0),
             InputChannels::Stereo(i, j) => (2, at(i), at(j), 0, 0.0),
             // mic panned center at equal power, pair at unity on top
-            InputChannels::Mix { mono, pair: (i, j) } => (2, at(i), at(j), at(mono), std::f32::consts::FRAC_1_SQRT_2),
+            InputChannels::Mix { mono, pair: (i, j) } => {
+                (2, at(i), at(j), at(mono), std::f32::consts::FRAC_1_SQRT_2)
+            }
         };
         self.follow(out_ch);
         let (mut peak_l, mut peak_r) = (0f32, 0f32);
@@ -1318,7 +1522,11 @@ impl InputProcessor {
                 *p = p.max(s.abs());
             }
             let center = frame[m] * mg;
-            let gain = if steady { target } else { glide(&mut self.gain, target, self.glide) };
+            let gain = if steady {
+                target
+            } else {
+                glide(&mut self.gain, target, self.glide)
+            };
             let l = (frame[a] + center) * gain;
             let r = (frame[b] + center) * gain;
             peak_l = peak_l.max(l.abs());
@@ -1453,7 +1661,11 @@ impl OutputProcessor {
         mix.fill(0.0);
 
         let step = self.glide;
-        let any_solo = self.peers.iter().flatten().any(|p| p.handle.params.solo.load(Relaxed));
+        let any_solo = self
+            .peers
+            .iter()
+            .flatten()
+            .any(|p| p.handle.params.solo.load(Relaxed));
         for (slot, p) in self.peers.iter_mut().enumerate() {
             let Some(p) = p else { continue };
             while let Ok(f) = p.rx.pop() {
@@ -1461,10 +1673,10 @@ impl OutputProcessor {
                 p.jitter.push(f);
             }
             let params = &p.handle.params;
-            p.jitter.set_target_f(params.jitter_target.load(Relaxed) as f64 / 100.0);
+            p.jitter
+                .set_target_f(params.jitter_target.load(Relaxed) as f64 / 100.0);
             p.jitter.set_base_ratio(params.rate_ratio.load() as f64);
             p.jitter.read_stereo(scratch);
-            p.handle.meter.update_stereo(scratch);
             // (only the tracks picked on the cards. One switched on while recording starts
             // there: the writer fills what came before with silence, as for a late joiner)
             if let (Some(rec), true) = (self.rec.as_mut(), params.rec.load(Relaxed)) {
@@ -1487,21 +1699,42 @@ impl OutputProcessor {
             let gl = gain * angle.cos() * std::f32::consts::SQRT_2;
             let gr = gain * angle.sin() * std::f32::consts::SQRT_2;
             let (cl, cr) = (&mut p.gains.0, &mut p.gains.1);
-            let frames_in = mix.as_chunks_mut::<2>().0.iter_mut().zip(scratch.as_chunks::<2>().0);
+            let frames_in = mix
+                .as_chunks_mut::<2>()
+                .0
+                .iter_mut()
+                .zip(scratch.as_chunks::<2>().0);
+            // the meter shows them as heard here, after the volume, mute, solo and pan (as a
+            // DAW's channel meter does): levels are set against each other by looking. One
+            // muted or turned all the way down shows nothing.
+            let (mut peak_l, mut peak_r) = (0.0f32, 0.0f32);
             if settled(cl, gl) & settled(cr, gr) {
                 if gl == 0.0 && gr == 0.0 {
                     continue;
                 }
                 for (m, s) in frames_in {
-                    m[0] += s[0] * gl;
-                    m[1] += s[1] * gr;
+                    let (l, r) = (s[0] * gl, s[1] * gr);
+                    m[0] += l;
+                    m[1] += r;
+                    peak_l = peak_l.max(l.abs());
+                    peak_r = peak_r.max(r.abs());
                 }
             } else {
                 for (m, s) in frames_in {
-                    m[0] += s[0] * glide(cl, gl, step);
-                    m[1] += s[1] * glide(cr, gr, step);
+                    let (l, r) = (s[0] * glide(cl, gl, step), s[1] * glide(cr, gr, step));
+                    m[0] += l;
+                    m[1] += r;
+                    peak_l = peak_l.max(l.abs());
+                    peak_r = peak_r.max(r.abs());
                 }
             }
+            // (one sending mono has a single bar, the left one: the louder side, so panning
+            // them to the right does not empty it)
+            if p.channels == 1 {
+                peak_l = peak_l.max(peak_r);
+                peak_r = peak_l;
+            }
+            p.handle.meter.update_stereo(&[peak_l, peak_r]);
         }
 
         // the others' mix as it leaves (before our own sound, master and metronome): what must
@@ -1517,7 +1750,8 @@ impl OutputProcessor {
         Self::take_own_sound(&mut self.monitor_rx, &mut self.monitor_missing, scratch);
         if let Some(rec) = self.rec.as_mut() {
             if self.params.rec.load(Relaxed) {
-                let mono = InputChannels::decode(self.params.input_map.load(Relaxed)).is_some_and(|m| m.is_mono());
+                let mono = InputChannels::decode(self.params.input_map.load(Relaxed))
+                    .is_some_and(|m| m.is_mono());
                 rec.write(0, SELF_TRACK, scratch, if mono { 1 } else { 2 });
             }
             if rec.mix {
@@ -1577,7 +1811,14 @@ mod input_code_tests {
 
     #[test]
     fn input_routing_survives_the_atomic() {
-        for m in [InputChannels::Mono(3), InputChannels::Stereo(4, 5), InputChannels::Mix { mono: 0, pair: (8, 9) }] {
+        for m in [
+            InputChannels::Mono(3),
+            InputChannels::Stereo(4, 5),
+            InputChannels::Mix {
+                mono: 0,
+                pair: (8, 9),
+            },
+        ] {
             assert_eq!(InputChannels::decode(m.encode()), Some(m));
         }
         assert_eq!(InputChannels::decode(0), None);
@@ -1604,7 +1845,10 @@ mod daw_tests {
     #[test]
     fn daw_mode_sends_the_plugins_sound_and_returns_the_mix() {
         let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("GACHI_BRIDGE_NAME", format!("gachi-engine-test-{}", std::process::id()));
+        std::env::set_var(
+            "GACHI_BRIDGE_NAME",
+            format!("gachi-engine-test-{}", std::process::id()),
+        );
         let sent = Arc::new(AtomicUsize::new(0));
         let cfg = EngineConfig {
             host: HostChoice::Daw,
@@ -1615,10 +1859,14 @@ mod daw_tests {
             packet_frames: 32,
             input: InputChannels::Mono(0),
         };
-        let mut engine = Engine::start(cfg, Box::new(Count(sent.clone()))).expect("DAW mode starts without a plugin");
+        let mut engine = Engine::start(cfg, Box::new(Count(sent.clone())))
+            .expect("DAW mode starts without a plugin");
         assert!(engine.is_daw());
         assert_eq!(engine.plugin_connected(), Some(false));
-        assert!(!engine.is_broken(&mut (0, 0)), "no plugin yet is not a broken device");
+        assert!(
+            !engine.is_broken(&mut (0, 0)),
+            "no plugin yet is not a broken device"
+        );
 
         let mut plugin = gachi_bridge::PluginEnd::open(&gachi_bridge::name(), 1).unwrap();
         plugin.set_format(48_000, 64);
@@ -1632,7 +1880,12 @@ mod daw_tests {
         for b in 0..400u32 {
             // the peer sends 64 frames per block too (two 32-frame packets)
             for k in 0..2 {
-                let mut f = Frame { seq: b * 2 + k, channels: 1, frames: 32, ..Frame::EMPTY };
+                let mut f = Frame {
+                    seq: b * 2 + k,
+                    channels: 1,
+                    frames: 32,
+                    ..Frame::EMPTY
+                };
                 f.data[..32].fill(0.25);
                 let _ = peer_tx.push(f);
             }
@@ -1647,11 +1900,68 @@ mod daw_tests {
             }
             thread::sleep(Duration::from_micros(1300));
         }
-        assert!(answered >= 395, "mix came back for {answered} of 400 blocks");
-        assert!(sent.load(Relaxed) >= 790, "{} packets sent", sent.load(Relaxed));
-        assert!((heard - 0.25).abs() < 0.01, "the peer is in the mix ({heard})");
+        assert!(
+            answered >= 395,
+            "mix came back for {answered} of 400 blocks"
+        );
+        assert!(
+            sent.load(Relaxed) >= 790,
+            "{} packets sent",
+            sent.load(Relaxed)
+        );
+        assert!(
+            (heard - 0.25).abs() < 0.01,
+            "the peer is in the mix ({heard})"
+        );
         assert_eq!(engine.plugin_connected(), Some(true));
-        assert_eq!(plugin.own_gain(), 0.5, "the app's own-sound level reached the plugin");
+        assert_eq!(
+            plugin.own_gain(),
+            0.5,
+            "the app's own-sound level reached the plugin"
+        );
+        // the peer's meter shows them as heard here: after their volume and their mute
+        let mut seq = 800u32;
+        let mut shown = |set: &dyn Fn()| {
+            set();
+            let mut peak = [0f32; 2];
+            for b in 0..80 {
+                for _ in 0..2 {
+                    let mut f = Frame {
+                        seq,
+                        channels: 1,
+                        frames: 32,
+                        ..Frame::EMPTY
+                    };
+                    f.data[..32].fill(0.25);
+                    let _ = peer_tx.push(f);
+                    seq += 1;
+                }
+                plugin.write_up(&up);
+                thread::sleep(Duration::from_micros(1300));
+                plugin.read_down(&mut down);
+                // (the first blocks: the volume still on its way there)
+                peak = if b < 40 {
+                    peer.meter.take()
+                } else {
+                    peer.meter.take().map(|v| v.max(peak[0]))
+                };
+            }
+            peak[0]
+        };
+        let as_it_came = shown(&|| ());
+        assert!(
+            (as_it_came - 0.25).abs() < 0.01,
+            "at 0 dB the meter shows what came ({as_it_came})"
+        );
+        let halved = shown(&|| peer.params.gain.store(0.5));
+        assert!(
+            (halved - 0.125).abs() < 0.01,
+            "turned down 6 dB, the meter is 6 dB lower ({halved})"
+        );
+        let muted = shown(&|| peer.params.mute.store(true, Relaxed));
+        assert_eq!(muted, 0.0, "muted, the meter shows nothing");
+        peer.params.mute.store(false, Relaxed);
+        peer.params.gain.store(1.0);
         // the app's monitor button, off: the plugin plays none of your own sound
         engine.self_params.own_on.store(false, Relaxed);
         for _ in 0..20 {
@@ -1664,7 +1974,11 @@ mod daw_tests {
         assert_eq!(engine.real_buffers(), (64, 64), "the DAW's block size");
         assert_eq!(engine.driver_check(), DriverCheck::Same);
         plugin.set_format(44_100, 64);
-        assert_eq!(engine.driver_check(), DriverCheck::Changed, "follows the DAW's sample rate");
+        assert_eq!(
+            engine.driver_check(),
+            DriverCheck::Changed,
+            "follows the DAW's sample rate"
+        );
     }
 
     /// Noise the way a player is noise to the check: different seeds never match.
@@ -1689,7 +2003,8 @@ mod daw_tests {
             packet_frames: 32,
             input: InputChannels::Stereo(0, 1),
         };
-        let mut engine = Engine::start(cfg, Box::new(Count(Arc::new(AtomicUsize::new(0))))).unwrap();
+        let mut engine =
+            Engine::start(cfg, Box::new(Count(Arc::new(AtomicUsize::new(0))))).unwrap();
         let mut plugin = gachi_bridge::PluginEnd::open(&gachi_bridge::name(), 1).unwrap();
         plugin.set_format(48_000, 64);
         let (mut peer_tx, peer) = engine.add_peer(2);
@@ -1700,7 +2015,12 @@ mod daw_tests {
         let blocks = (secs * 48_000.0 / 64.0) as u32;
         for b in 0..blocks {
             for k in 0..2 {
-                let mut f = Frame { seq: b * 2 + k, channels: 1, frames: 32, ..Frame::EMPTY };
+                let mut f = Frame {
+                    seq: b * 2 + k,
+                    channels: 1,
+                    frames: 32,
+                    ..Frame::EMPTY
+                };
                 for s in &mut f.data[..32] {
                     *s = noise(&mut peer_seed);
                 }
@@ -1730,8 +2050,14 @@ mod daw_tests {
     fn the_others_routed_back_into_the_plugin_are_noticed() {
         let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let base = format!("gachi-engine-fb-{}", std::process::id());
-        assert!(!run_loop(&format!("{base}-clean"), false, 4.0), "no loop: no warning");
-        assert!(run_loop(&format!("{base}-loop"), true, 4.0), "the others' mix came back: warned");
+        assert!(
+            !run_loop(&format!("{base}-clean"), false, 4.0),
+            "no loop: no warning"
+        );
+        assert!(
+            run_loop(&format!("{base}-loop"), true, 4.0),
+            "the others' mix came back: warned"
+        );
     }
 }
 
@@ -1762,7 +2088,19 @@ mod monitor_tests {
 
     #[test]
     fn automatic_packet_size_fits_the_block() {
-        for (block, packet) in [(16, 16), (32, 32), (48, 48), (64, 64), (96, 48), (128, 64), (144, 48), (256, 64), (480, 60), (441, 63), (1024, 64)] {
+        for (block, packet) in [
+            (16, 16),
+            (32, 32),
+            (48, 48),
+            (64, 64),
+            (96, 48),
+            (128, 64),
+            (144, 48),
+            (256, 64),
+            (480, 60),
+            (441, 63),
+            (1024, 64),
+        ] {
             assert_eq!(auto_packet_frames(block), packet, "block {block}");
         }
         // nothing fits: the biggest; tiny blocks: several to a packet
@@ -1797,8 +2135,20 @@ mod monitor_tests {
         let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
         let (_cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (garbage_tx, _garbage_rx) = rtrb::RingBuffer::new(8);
-        let (mut input, _output) = processors(&cfg, Box::new(Sizes(sent.clone())), cmd_rx, garbage_tx, sh, (48_000, 2, 2, 64), true);
-        assert_eq!(stats.packet.load(Relaxed), 64, "until the device shows its block: what fits the buffer asked for");
+        let (mut input, _output) = processors(
+            &cfg,
+            Box::new(Sizes(sent.clone())),
+            cmd_rx,
+            garbage_tx,
+            sh,
+            (48_000, 2, 2, 64),
+            true,
+        );
+        assert_eq!(
+            stats.packet.load(Relaxed),
+            64,
+            "until the device shows its block: what fits the buffer asked for"
+        );
         let mut run = |block: usize, blocks: usize| -> Vec<Vec<u16>> {
             let data = vec![0.1f32; block * 2];
             (0..blocks)
@@ -1810,13 +2160,24 @@ mod monitor_tests {
         };
         // the device gives 96 (not the 64 asked for)
         let got = run(96, 40);
-        assert!(got[10..].iter().all(|b| b == &[48, 48]), "96 → two of 48 per block: {:?}", &got[..12]);
+        assert!(
+            got[10..].iter().all(|b| b == &[48, 48]),
+            "96 → two of 48 per block: {:?}",
+            &got[..12]
+        );
         assert_eq!(stats.packet.load(Relaxed), 48);
         // nothing was lost over the change: every frame handed in was sent
-        assert_eq!(got.iter().flatten().map(|&n| n as usize).sum::<usize>(), 96 * 40);
+        assert_eq!(
+            got.iter().flatten().map(|&n| n as usize).sum::<usize>(),
+            96 * 40
+        );
         // the block becomes 144, then 32
         let got = run(144, 40);
-        assert!(got[10..].iter().all(|b| b == &[48, 48, 48]), "{:?}", &got[..12]);
+        assert!(
+            got[10..].iter().all(|b| b == &[48, 48, 48]),
+            "{:?}",
+            &got[..12]
+        );
         let got = run(32, 40);
         assert!(got[10..].iter().all(|b| b == &[32]), "{:?}", &got[..12]);
         assert_eq!(stats.packet.load(Relaxed), 32);
@@ -1842,7 +2203,15 @@ mod monitor_tests {
         let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
         let (_cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (garbage_tx, _garbage_rx) = rtrb::RingBuffer::new(8);
-        let (mut input, _output) = processors(&cfg, Box::new(Sizes(sent.clone())), cmd_rx, garbage_tx, shared(), (48_000, 2, 2, 96), true);
+        let (mut input, _output) = processors(
+            &cfg,
+            Box::new(Sizes(sent.clone())),
+            cmd_rx,
+            garbage_tx,
+            shared(),
+            (48_000, 2, 2, 96),
+            true,
+        );
         let data = vec![0.1f32; 96 * 2];
         for _ in 0..20 {
             input.process(&data);
@@ -1855,7 +2224,11 @@ mod monitor_tests {
     /// go out in that same block (0 added).
     /// (delay at the block's middle frame, smallest and largest delay over the last 100
     /// blocks, frames that did not follow their predecessor, monitor jitter-buffer stats)
-    fn monitor_delay(block: usize, packet: u16, output_first: bool) -> (Option<i64>, i64, i64, usize, u64) {
+    fn monitor_delay(
+        block: usize,
+        packet: u16,
+        output_first: bool,
+    ) -> (Option<i64>, i64, i64, usize, u64) {
         let cfg = EngineConfig {
             host: HostChoice::Asio,
             input_device: None,
@@ -1870,7 +2243,15 @@ mod monitor_tests {
         params.monitor.store(true, Relaxed);
         let (_cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (garbage_tx, _garbage_rx) = rtrb::RingBuffer::new(8);
-        let (mut input, mut output) = processors(&cfg, Box::new(Nowhere), cmd_rx, garbage_tx, sh, (48_000, 2, 2, block as u32), true);
+        let (mut input, mut output) = processors(
+            &cfg,
+            Box::new(Nowhere),
+            cmd_rx,
+            garbage_tx,
+            sh,
+            (48_000, 2, 2, block as u32),
+            true,
+        );
         // each input sample carries its own frame number (small, so the limiter leaves it be)
         let code = |n: usize| 1e-6 * (n as f32 + 1.0);
         let mut inbuf = vec![0f32; block * 2];
@@ -1917,10 +2298,25 @@ mod monitor_tests {
     /// one-packet jitter buffer, which broke up at 48/32 and from 256/32 on: crackling).
     #[test]
     fn the_software_monitor_adds_nothing_beyond_the_device() {
-        for (block, packet) in [(32, 32), (64, 32), (128, 32), (64, 16), (48, 32), (96, 32), (256, 32), (512, 32), (1024, 16), (2048, 32)] {
+        for (block, packet) in [
+            (32, 32),
+            (64, 32),
+            (128, 32),
+            (64, 16),
+            (48, 32),
+            (96, 32),
+            (256, 32),
+            (512, 32),
+            (1024, 16),
+            (2048, 32),
+        ] {
             let (d, lo, hi, breaks, missing) = monitor_delay(block, packet, false);
             println!("monitor: block {block:>4}, packet {packet}: added {d:?} (range {lo}..{hi}), breaks {breaks}, missing {missing}");
-            assert_eq!((lo, hi, breaks), (0, 0, 0), "block {block}, packet {packet}");
+            assert_eq!(
+                (lo, hi, breaks),
+                (0, 0, 0),
+                "block {block}, packet {packet}"
+            );
             assert_eq!(missing, 0, "block {block}");
         }
     }
@@ -1943,7 +2339,15 @@ mod monitor_tests {
         sh.self_params.monitor.store(true, Relaxed);
         let (mut cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (garbage_tx, _garbage_rx) = rtrb::RingBuffer::new(8);
-        let (mut input, mut output) = processors(&cfg, Box::new(Nowhere), cmd_rx, garbage_tx, sh, (48_000, 2, 2, 64), true);
+        let (mut input, mut output) = processors(
+            &cfg,
+            Box::new(Nowhere),
+            cmd_rx,
+            garbage_tx,
+            sh,
+            (48_000, 2, 2, 64),
+            true,
+        );
         let mut peers = Vec::new();
         for id in 1..=3u16 {
             let (tx, rx) = rtrb::RingBuffer::<Frame>::new(PEER_RING);
@@ -1952,14 +2356,28 @@ mod monitor_tests {
                 meter: Arc::new(Meter::default()),
                 stats: Arc::new(SharedJitterStats::default()),
             };
-            let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle: handle.clone(), gains: (f32::NAN, f32::NAN), channels: 2 });
+            let slot = Box::new(PeerSlot {
+                id,
+                rx,
+                jitter: JitterBuffer::new(3),
+                handle: handle.clone(),
+                gains: (f32::NAN, f32::NAN),
+                channels: 2,
+            });
             assert!(cmd_tx.push(Cmd::AddPeer(slot)).is_ok());
             peers.push((tx, handle));
         }
         let tone = |seq: u32| {
-            let mut f = Frame { seq, channels: 2, frames: 32, ..Frame::EMPTY };
+            let mut f = Frame {
+                seq,
+                channels: 2,
+                frames: 32,
+                ..Frame::EMPTY
+            };
             for k in 0..32 {
-                let v = 0.3 * (std::f32::consts::TAU * 220.0 * (seq as usize * 32 + k) as f32 / 48_000.0).sin();
+                let v = 0.3
+                    * (std::f32::consts::TAU * 220.0 * (seq as usize * 32 + k) as f32 / 48_000.0)
+                        .sin();
                 f.data[k * 2] = v;
                 f.data[k * 2 + 1] = v;
             }
@@ -1970,7 +2388,11 @@ mod monitor_tests {
         // warm up outside the guard (the peers are taken in, buffers primed)
         let mut seq = 0u32;
         let mut held: Vec<u32> = Vec::with_capacity(256);
-        let mut block = |b: u32, input: &mut InputProcessor, output: &mut OutputProcessor, peers: &mut Vec<(rtrb::Producer<Frame>, PeerHandle)>, held: &mut Vec<u32>| {
+        let mut block = |b: u32,
+                         input: &mut InputProcessor,
+                         output: &mut OutputProcessor,
+                         peers: &mut Vec<(rtrb::Producer<Frame>, PeerHandle)>,
+                         held: &mut Vec<u32>| {
             for _ in 0..2 {
                 let stalled = (600..630).contains(&(b % 1000)); // 40 ms of nothing, then all at once
                 let lost = seq % 97 == 5;
@@ -2013,8 +2435,14 @@ mod monitor_tests {
             }
         });
         let st = peers[0].1.stats.clone();
-        assert!(st.concealed.load(Relaxed) > 0 && st.underruns.load(Relaxed) > 0, "the test must exercise concealment and dry-outs");
-        assert_eq!(calls, 0, "the audio callbacks asked the allocator {calls} times");
+        assert!(
+            st.concealed.load(Relaxed) > 0 && st.underruns.load(Relaxed) > 0,
+            "the test must exercise concealment and dry-outs"
+        );
+        assert_eq!(
+            calls, 0,
+            "the audio callbacks asked the allocator {calls} times"
+        );
         // (the guard does count: one Vec is an allocation and a free)
         assert!(crate::alloc_guard::count(|| drop(std::hint::black_box(vec![1u8; 100]))) >= 2);
     }
@@ -2047,13 +2475,21 @@ mod monitor_tests {
             sig += m * m;
             err += (v - m) * (v - m);
         }
-        ((a * a + b * b).sqrt(), 10.0 * (sig / err.max(1e-300)).log10())
+        (
+            (a * a + b * b).sqrt(),
+            10.0 * (sig / err.max(1e-300)).log10(),
+        )
     }
 
     /// One PC plays a tone into its input; the packets go through the wire format (16 or 24
     /// bit) into another PC's peer slot, which mixes it out. Returns (level change dB,
     /// signal/error dB, left−right difference) of what that PC's speakers get.
-    fn through_the_room(level_db: f64, freq: f64, format: gachi_proto::audio::SampleFormat, peers: usize) -> (f64, f64, f64) {
+    fn through_the_room(
+        level_db: f64,
+        freq: f64,
+        format: gachi_proto::audio::SampleFormat,
+        peers: usize,
+    ) -> (f64, f64, f64) {
         use gachi_proto::audio::{decode, decode_samples, encode_audio, Packet, MAX_PACKET};
         let cfg = EngineConfig {
             host: HostChoice::Asio,
@@ -2068,16 +2504,43 @@ mod monitor_tests {
         // the player
         let (_c1, cmd_rx) = rtrb::RingBuffer::new(8);
         let (g1, _g1) = rtrb::RingBuffer::new(8);
-        let (mut player, _) = processors(&cfg, Box::new(Wire(wire.clone())), cmd_rx, g1, shared(), (48_000, 2, 2, 64), true);
+        let (mut player, _) = processors(
+            &cfg,
+            Box::new(Wire(wire.clone())),
+            cmd_rx,
+            g1,
+            shared(),
+            (48_000, 2, 2, 64),
+            true,
+        );
         // the listener, with `peers` others in the room playing the same
         let (mut cmd_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (g2, _g2) = rtrb::RingBuffer::new(8);
-        let (_, mut listener) = processors(&cfg, Box::new(Nowhere), cmd_rx, g2, shared(), (48_000, 2, 2, 64), true);
+        let (_, mut listener) = processors(
+            &cfg,
+            Box::new(Nowhere),
+            cmd_rx,
+            g2,
+            shared(),
+            (48_000, 2, 2, 64),
+            true,
+        );
         let mut rings = Vec::new();
         for id in 1..=peers as u16 {
             let (tx, rx) = rtrb::RingBuffer::<Frame>::new(PEER_RING);
-            let handle = PeerHandle { params: Arc::new(PeerParams::default()), meter: Arc::new(Meter::default()), stats: Arc::new(SharedJitterStats::default()) };
-            let slot = Box::new(PeerSlot { id, rx, jitter: JitterBuffer::new(3), handle, gains: (f32::NAN, f32::NAN), channels: 2 });
+            let handle = PeerHandle {
+                params: Arc::new(PeerParams::default()),
+                meter: Arc::new(Meter::default()),
+                stats: Arc::new(SharedJitterStats::default()),
+            };
+            let slot = Box::new(PeerSlot {
+                id,
+                rx,
+                jitter: JitterBuffer::new(3),
+                handle,
+                gains: (f32::NAN, f32::NAN),
+                channels: 2,
+            });
             assert!(cmd_tx.push(Cmd::AddPeer(slot)).is_ok());
             rings.push(tx);
         }
@@ -2096,8 +2559,18 @@ mod monitor_tests {
             player.process(&inbuf);
             for f in wire.lock().unwrap().drain(..) {
                 let n = encode_audio(&mut packet, 1, f.seq, f.channels, format, f.samples());
-                let Ok(Packet::Audio { header, payload, .. }) = decode(&packet[..n]) else { panic!("not audio") };
-                let mut g = Frame { seq: header.seq, channels: header.channels, frames: header.frames, ..Frame::EMPTY };
+                let Ok(Packet::Audio {
+                    header, payload, ..
+                }) = decode(&packet[..n])
+                else {
+                    panic!("not audio")
+                };
+                let mut g = Frame {
+                    seq: header.seq,
+                    channels: header.channels,
+                    frames: header.frames,
+                    ..Frame::EMPTY
+                };
                 decode_samples(&header, payload, &mut g.data);
                 for tx in rings.iter_mut() {
                     assert!(tx.push(g).is_ok());
@@ -2110,7 +2583,11 @@ mod monitor_tests {
             }
         }
         let (a, snr) = fit_tone(&left, w);
-        let lr = left.iter().zip(&right).map(|(l, r)| (l - r).abs()).fold(0.0, f64::max);
+        let lr = left
+            .iter()
+            .zip(&right)
+            .map(|(l, r)| (l - r).abs())
+            .fold(0.0, f64::max);
         (20.0 * (a / amp).log10(), snr, lr)
     }
 
@@ -2126,12 +2603,19 @@ mod monitor_tests {
                 for freq in [100.0, 1000.0, 10_000.0] {
                     let (gain, snr, lr) = through_the_room(level, freq, format, 1);
                     println!("{name}: {level:>5} dBFS {freq:>6} Hz -> level {gain:+.3} dB, signal/error {snr:5.1} dB, L-R {lr:.1e}");
-                    assert!(gain.abs() < 0.05, "{name} {level} dB {freq} Hz: level moved {gain:+.3} dB");
+                    assert!(
+                        gain.abs() < 0.05,
+                        "{name} {level} dB {freq} Hz: level moved {gain:+.3} dB"
+                    );
                     // (16 bit: each side gets its own dither, a step or two apart)
                     let lr_max = if format == Pcm16 { 3.0 / 32768.0 } else { 1e-6 };
                     assert!(lr < lr_max, "{name}: left and right differ by {lr:.1e}");
                     // (16 bit: the dither's noise floor sets it, ~ 91 dB below full scale)
-                    let floor = if format == Pcm16 { 85.0 + level } else { 100.0f64.min(120.0 + level) };
+                    let floor = if format == Pcm16 {
+                        85.0 + level
+                    } else {
+                        100.0f64.min(120.0 + level)
+                    };
                     assert!(snr > floor, "{name} {level} dB {freq} Hz: signal/error {snr:.1} dB (wanted > {floor:.0})");
                 }
             }
@@ -2139,8 +2623,14 @@ mod monitor_tests {
         // three playing a loud tone together: 3 × -6 dBFS sums over full scale
         let (gain, snr, _) = through_the_room(-6.0, 1000.0, Pcm24, 3);
         let peak = 20.0 * (3.0f64 * 10f64.powf(-6.0 / 20.0)).log10();
-        println!("3 × -6 dBFS: sum {peak:+.1} dBFS -> {:+.2} dBFS out, signal/error {snr:.1} dB", gain - 6.0);
-        assert!(snr > 60.0, "the limiter distorted a steady sum: {snr:.1} dB");
+        println!(
+            "3 × -6 dBFS: sum {peak:+.1} dBFS -> {:+.2} dBFS out, signal/error {snr:.1} dB",
+            gain - 6.0
+        );
+        assert!(
+            snr > 60.0,
+            "the limiter distorted a steady sum: {snr:.1} dB"
+        );
     }
 
     /// A host that runs the output before the input: one block late, still unbroken.
@@ -2148,7 +2638,11 @@ mod monitor_tests {
     fn the_software_monitor_survives_output_first() {
         for block in [32, 64, 256] {
             let (_, lo, hi, breaks, missing) = monitor_delay(block, 32, true);
-            assert_eq!((lo, hi, breaks), (block as i64, block as i64, 0), "block {block}");
+            assert_eq!(
+                (lo, hi, breaks),
+                (block as i64, block as i64, 0),
+                "block {block}"
+            );
             assert_eq!(missing, block as u64, "only the very first block is empty");
         }
     }

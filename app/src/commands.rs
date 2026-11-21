@@ -4,13 +4,12 @@ use crate::session::{self, Intent, Session};
 use crate::settings::Settings;
 use crate::view::{CreateOpts, PeerPatch, RoomView, SelfPatch};
 use crate::AppState;
-use gachi_engine::{list_devices as engine_devices, HostChoice};
+use gachi_engine::{list_devices as engine_devices, HostChoice, FADER_MAX_DB, FADER_MIN_DB};
 use gachi_proto::code;
 
 use serde_json::{json, Value};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
-
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Settings {
@@ -31,14 +30,19 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
     state.save_settings();
     let _ = app.emit("settings", &s);
 
-    let changed = |k: &str| {
-        let a = serde_json::to_value(&before).ok().and_then(|v| v.get(k).cloned());
-        let b = serde_json::to_value(&s).ok().and_then(|v| v.get(k).cloned());
-        a != b
-    };
+    // (both as JSON once: every key asked about below made them anew, a dozen times a change)
+    let (was, now) = (
+        serde_json::to_value(&before).ok(),
+        serde_json::to_value(&s).ok(),
+    );
+    let changed =
+        |k: &str| was.as_ref().and_then(|v| v.get(k)) != now.as_ref().and_then(|v| v.get(k));
     let mut restart = session::ENGINE_KEYS.iter().any(|k| changed(k));
     // only the input channels changed: switch them live (no device reopen, no gap)
-    let input_only = restart && session::ENGINE_KEYS.iter().all(|k| *k == "inputChannel" || !changed(k));
+    let input_only = restart
+        && session::ENGINE_KEYS
+            .iter()
+            .all(|k| *k == "inputChannel" || !changed(k));
     if input_only {
         let input = crate::settings::parse_input(&s.input_channel);
         if let Some(sess) = state.session.lock().await.as_ref() {
@@ -91,7 +95,10 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
                     let _ = app.emit("recording", recording_json(rec));
                 }
                 match opened {
-                    Ok(summary) => session::notice(&app, gachi_lang::tr!("app.audio_settings_applied", summary)),
+                    Ok(summary) => session::notice(
+                        &app,
+                        gachi_lang::tr!("app.audio_settings_applied", summary),
+                    ),
                     Err(e) => {
                         session::notice(&app, gachi_lang::tr!("app.e_please_choose", e));
                         return Err(e);
@@ -110,29 +117,37 @@ pub async fn update_settings(app: AppHandle, patch: Value) -> Result<Settings, S
 /// loads every ASIO driver there is: a slow or hanging one froze the window for up to 16 s)
 #[tauri::command]
 pub async fn list_devices() -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(list_devices_now).await.map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(list_devices_now)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn list_devices_now() -> Value {
     // `inputs` = input channel count, so the UI can offer every channel / pair / mic+loopback mix
     let map = |host| {
-        let default_inputs = gachi_engine::device::default_input_channels(host);
+        // (the listing first: the first driver's channels come from it)
         let devices = engine_devices(host);
+        let default_inputs = gachi_engine::device::default_input_channels(host);
         // "system default" on ASIO is the first driver: borrow its channel names
         let default_names = devices
             .iter()
             .find(|d| d.has_input && d.inputs == default_inputs)
             .map(|d| d.input_names.clone())
             .unwrap_or_default();
-        let mut list =
-            vec![json!({ "id": "", "label": gachi_lang::tr!("app.default_asio_device"), "inputs": default_inputs, "inputNames": default_names })];
+        let mut list = vec![
+            json!({ "id": "", "label": gachi_lang::tr!("app.default_asio_device"), "inputs": default_inputs, "inputNames": default_names }),
+        ];
         list.extend(devices.into_iter().map(
             |d| json!({ "id": d.id, "label": d.label, "inputs": d.inputs, "inputNames": d.input_names }),
         ));
         list
     };
     // ASIO only: no ASIO driver installed → no devices (the UI shows how to get one)
-    let devices = if gachi_engine::device::ASIO_AVAILABLE { map(HostChoice::Asio) } else { vec![] };
+    let devices = if gachi_engine::device::ASIO_AVAILABLE {
+        map(HostChoice::Asio)
+    } else {
+        vec![]
+    };
     let has_asio = devices.len() > 1; // more than the "first driver" entry
     json!({ "devices": if has_asio { devices } else { vec![] }, "hasAsio": has_asio })
 }
@@ -147,14 +162,21 @@ pub async fn check_network() -> Result<Value, String> {
             let up = s.spawn(gachi_net::upnp::available);
             (v6.join().unwrap_or(false), up.join().unwrap_or(false))
         });
-        let servers: Vec<String> = gachi_net::stun::DEFAULT_SERVERS.iter().map(|s| s.to_string()).collect();
+        let servers: Vec<String> = gachi_net::stun::DEFAULT_SERVERS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let probe = gachi_net::probe(&servers).ok().flatten();
-        let link = probe.map_or(gachi_proto::signal::Link::Unknown, |(_, public, _)| crate::link::detect(public));
+        let link = probe.map_or(gachi_proto::signal::Link::Unknown, |(_, public, _)| {
+            crate::link::detect(public)
+        });
         (probe, link, ipv6, upnp)
     })
     .await
     .map_err(|e| e.to_string())?;
-    Ok(json!({ "link": crate::link::label(link), "ipv6": ipv6, "nat": nat_kind(probe), "upnp": upnp }))
+    Ok(
+        json!({ "link": crate::link::label(link), "ipv6": ipv6, "nat": nat_kind(probe), "upnp": upnp }),
+    )
 }
 
 /// What sits between us and the internet, from our local address and the public one STUN
@@ -162,7 +184,13 @@ pub async fn check_network() -> Result<Value, String> {
 /// `symmetric` (two servers saw us at different ports: every destination gets its own, so
 /// peers behind ordinary routers may not get through), `cone` (both saw the same address,
 /// or the router kept our port: P2P will be easy), `unknown` (one answer, port changed).
-fn nat_kind(probe: Option<(std::net::SocketAddr, std::net::SocketAddr, gachi_net::stun::Mapping)>) -> &'static str {
+fn nat_kind(
+    probe: Option<(
+        std::net::SocketAddr,
+        std::net::SocketAddr,
+        gachi_net::stun::Mapping,
+    )>,
+) -> &'static str {
     use gachi_net::stun::Mapping;
     match probe {
         None => "offline",
@@ -179,11 +207,23 @@ mod nat_tests {
     #[test]
     fn a_public_address_on_the_pc_means_no_router() {
         use gachi_net::stun::Mapping;
-        let with = |l: &str, g: &str, m: Mapping| super::nat_kind(Some((l.parse().unwrap(), g.parse().unwrap(), m)));
+        let with = |l: &str, g: &str, m: Mapping| {
+            super::nat_kind(Some((l.parse().unwrap(), g.parse().unwrap(), m)))
+        };
         let p = |l: &str, g: &str| with(l, g, Mapping::Unknown);
         // two servers agree: fine even though the router changed the port
-        assert_eq!(with("192.168.0.7:4000", "203.0.113.5:61022", Mapping::Steady), "cone");
-        assert_eq!(with("192.168.0.7:4000", "203.0.113.5:61022", Mapping::Varies { step: 1 }), "symmetric");
+        assert_eq!(
+            with("192.168.0.7:4000", "203.0.113.5:61022", Mapping::Steady),
+            "cone"
+        );
+        assert_eq!(
+            with(
+                "192.168.0.7:4000",
+                "203.0.113.5:61022",
+                Mapping::Varies { step: 1 }
+            ),
+            "symmetric"
+        );
         assert_eq!(p("203.0.113.5:4000", "203.0.113.5:4000"), "none");
         assert_eq!(p("192.168.0.7:4000", "203.0.113.5:4000"), "cone");
         assert_eq!(p("192.168.0.7:4000", "203.0.113.5:61022"), "unknown");
@@ -195,28 +235,55 @@ mod nat_tests {
 
 #[tauri::command]
 pub async fn create_room(app: AppHandle, opts: CreateOpts) -> Result<RoomView, String> {
-    let gen = app.state::<AppState>().join_gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let gen = app
+        .state::<AppState>()
+        .join_gen
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
     // (no longer than the password box takes when joining: a longer one could not be typed in)
     let password: String = opts.password.chars().take(session::PASSWORD_MAX).collect();
     let password = (!password.is_empty()).then_some(password);
-    let name = if opts.name.trim().is_empty() { session::new_room_name() } else { opts.name };
-    session::start(app, Intent::Create { name, max_peers: opts.max_peers, password }, gen).await
+    let name = if opts.name.trim().is_empty() {
+        session::new_room_name()
+    } else {
+        opts.name
+    };
+    session::start(
+        app,
+        Intent::Create {
+            name,
+            max_peers: opts.max_peers,
+            password,
+        },
+        gen,
+    )
+    .await
 }
 
 /// Errors come back as `{ kind, message }`; kind `password_required` / `wrong_password`
 /// makes the UI ask for the room password and call again with it.
 #[tauri::command]
-pub async fn join_room(app: AppHandle, code: String, password: Option<String>) -> Result<RoomView, Value> {
+pub async fn join_room(
+    app: AppHandle,
+    code: String,
+    password: Option<String>,
+) -> Result<RoomView, Value> {
     let fail = |kind: &str, message: &str| json!({ "kind": kind, "message": message });
     let code = code::normalize(&code)
         .ok_or_else(|| fail("bad_code", &gachi_lang::tr!("app.doesnt_look_like")))?;
-    let gen = app.state::<AppState>().join_gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let gen = app
+        .state::<AppState>()
+        .join_gen
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
     let password = password.filter(|p| !p.is_empty());
-    session::start(app, Intent::Join { code, password }, gen).await.map_err(|e| match e.as_str() {
-        session::ERR_PASSWORD_REQUIRED => fail(&e, &gachi_lang::tr!("app.room_has_password")),
-        session::ERR_WRONG_PASSWORD => fail(&e, &gachi_lang::tr!("app.wrong_password")),
-        _ => fail("other", &e),
-    })
+    session::start(app, Intent::Join { code, password }, gen)
+        .await
+        .map_err(|e| match e.as_str() {
+            session::ERR_PASSWORD_REQUIRED => fail(&e, &gachi_lang::tr!("app.room_has_password")),
+            session::ERR_WRONG_PASSWORD => fail(&e, &gachi_lang::tr!("app.wrong_password")),
+            _ => fail("other", &e),
+        })
 }
 
 #[tauri::command]
@@ -238,7 +305,18 @@ pub async fn restart_app(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn leave_room(app: AppHandle) -> Result<(), String> {
-    let old = app.state::<AppState>().session.lock().await.take();
+    let state = app.state::<AppState>();
+    // Nothing opens the audio device until the room's engine has let go of it. The page asks
+    // for the settings' preview the moment a room is left with the settings open (a room that
+    // ended under them: closed by its host, put out, the connection lost) and in DAW mode;
+    // that came while the room's engine was still closing, and two engines on one ASIO
+    // driver took the program down: the driver's thread wrote into buffers just freed.
+    // (`set_preview` and `probe_device` take this lock first, and wait here.)
+    // (and a reopening of the room's own device under way is waited out: it would hand its
+    // new engine to a room that is gone, and hold the driver meanwhile)
+    let _gate = state.device_gate.lock().await;
+    let _no_preview = state.preview.lock().await;
+    let old = state.session.lock().await.take();
     // stops audio, closes the socket and the signaling connection. Off the async runtime:
     // letting go of the device waits on its driver (seconds, if the driver hangs)
     let _ = tauri::async_runtime::spawn_blocking(move || drop(old)).await;
@@ -263,13 +341,27 @@ pub async fn set_peer(app: AppHandle, id: String, patch: PeerPatch) -> Result<()
     {
         let p = s.peers.get_mut(&id).ok_or("unknown peer")?;
         let ui = &mut p.ui;
-        if let Some(v) = patch.volume { ui.volume_db = v.clamp(-40.0, 6.0) }
-        if let Some(v) = patch.pan { ui.pan = v.clamp(-100.0, 100.0) }
-        if let Some(v) = patch.mute { ui.mute = v }
-        if let Some(v) = patch.solo { ui.solo = v }
-        if let Some(v) = patch.rec { ui.rec = v }
-        if let Some(v) = patch.jitter_auto { ui.jitter_auto = v }
-        if let Some(v) = patch.jitter_packets { ui.jitter_packets = v.clamp(1, 12) }
+        if let Some(v) = patch.volume {
+            ui.volume_db = v.clamp(FADER_MIN_DB, FADER_MAX_DB)
+        }
+        if let Some(v) = patch.pan {
+            ui.pan = v.clamp(-100.0, 100.0)
+        }
+        if let Some(v) = patch.mute {
+            ui.mute = v
+        }
+        if let Some(v) = patch.solo {
+            ui.solo = v
+        }
+        if let Some(v) = patch.rec {
+            ui.rec = v
+        }
+        if let Some(v) = patch.jitter_auto {
+            ui.jitter_auto = v
+        }
+        if let Some(v) = patch.jitter_packets {
+            ui.jitter_packets = v.clamp(1, 12)
+        }
         Session::apply_peer(p);
     }
     s.update_jitter_targets();
@@ -282,12 +374,29 @@ pub async fn set_self(app: AppHandle, patch: SelfPatch) -> Result<(), String> {
     let state = app.state::<AppState>();
     let ui = {
         let mut g = state.self_ui.lock().unwrap();
-        if let Some(v) = patch.gain { g.gain_db = v.clamp(-24.0, 24.0) }
-        if let Some(v) = patch.muted { g.muted = v }
-        if let Some(v) = patch.monitor { g.monitor = v }
-        if let Some(v) = patch.monitor_db { g.monitor_db = v.clamp(-40.0, 6.0) }
-        if let Some(v) = patch.own { g.own = v }
-        if let Some(v) = patch.rec { g.rec = v }
+        if let Some(v) = patch.gain {
+            g.gain_db = v.clamp(-24.0, 24.0)
+        }
+        // (what is sent is not made louder by its fader: over 0 dB it would break up, and the
+        // input's gain is for that)
+        if let Some(v) = patch.level {
+            g.level_db = v.clamp(FADER_MIN_DB, 0.0)
+        }
+        if let Some(v) = patch.muted {
+            g.muted = v
+        }
+        if let Some(v) = patch.monitor {
+            g.monitor = v
+        }
+        if let Some(v) = patch.monitor_db {
+            g.monitor_db = v.clamp(FADER_MIN_DB, FADER_MAX_DB)
+        }
+        if let Some(v) = patch.own {
+            g.own = v
+        }
+        if let Some(v) = patch.rec {
+            g.rec = v
+        }
         g.clone()
     };
     if let Some(s) = state.session.lock().await.as_ref() {
@@ -301,7 +410,7 @@ pub async fn set_master(app: AppHandle, db: f32) -> Result<(), String> {
     let state = app.state::<AppState>();
     let ui = {
         let mut g = state.self_ui.lock().unwrap();
-        g.master_db = db.clamp(-40.0, 6.0);
+        g.master_db = db.clamp(FADER_MIN_DB, FADER_MAX_DB);
         g.clone()
     };
     if let Some(s) = state.session.lock().await.as_ref() {
@@ -311,7 +420,13 @@ pub async fn set_master(app: AppHandle, db: f32) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn set_metronome(app: AppHandle, on: bool, bpm: f32, beats: Option<u8>, count_in: Option<u8>) -> Result<(), String> {
+pub async fn set_metronome(
+    app: AppHandle,
+    on: bool,
+    bpm: f32,
+    beats: Option<u8>,
+    count_in: Option<u8>,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut guard = state.session.lock().await;
     let s = guard.as_mut().ok_or("not in a room")?;
@@ -342,19 +457,21 @@ impl gachi_engine::PacketSink for Nowhere {
 }
 
 fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String> {
-    let engine = gachi_engine::Engine::start(settings.engine_config(), Box::new(Nowhere)).map_err(|e| {
-        tracing::warn!(device = %settings.device, "audio device (settings preview): {e}");
-        session::open_error(settings, &e)
-    })?;
+    let engine =
+        gachi_engine::Engine::start(settings.engine_config(), Box::new(Nowhere)).map_err(|e| {
+            tracing::warn!(device = %settings.device, "audio device (settings preview): {e}");
+            session::open_error(settings, &e)
+        })?;
     if let Some(n) = crate::session::device_note(settings, &engine.info) {
         session::notice(app, n);
     }
     let ui = app.state::<AppState>().self_ui.lock().unwrap().clone();
     let p = &engine.self_params;
-    p.input_gain.store(gachi_engine::db_to_gain(ui.gain_db));
+    p.input_gain.store(ui.input_gain());
     p.muted.store(ui.muted, Ordering::Relaxed);
     p.monitor.store(ui.monitor, Ordering::Relaxed);
-    p.monitor_gain.store(gachi_engine::db_to_gain(ui.monitor_db));
+    p.monitor_gain
+        .store(gachi_engine::db_to_gain(ui.monitor_db));
     p.own_on.store(ui.own, Ordering::Relaxed);
     let app2 = app.clone();
     let task = tauri::async_runtime::spawn(async move {
@@ -378,22 +495,19 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
             {
                 // the device's real format (ASIO: whatever its driver runs)
                 let (i, o) = e.real_buffers();
-                let _ = app2.emit(
-                    "stats",
-                    {
-                        let (lat_in, lat_out, reported) = e.device_latency_ms();
-                        json!({
-                            "peers": [],
-                            "localMs": e.local_latency_ms(),
-                            "bufferFrames": i.max(o),
-                            "packetFrames": e.packet_frames(),
-                            "sampleRate": e.info.sample_rate,
-                            "plugin": e.plugin_connected(),
-                            "pluginWaiting": e.plugin_waiting(),
-                            "latency": { "inMs": lat_in, "outMs": lat_out, "reported": reported },
-                        })
-                    },
-                );
+                let _ = app2.emit("stats", {
+                    let (lat_in, lat_out, reported) = e.device_latency_ms();
+                    json!({
+                        "peers": [],
+                        "localMs": e.local_latency_ms(),
+                        "bufferFrames": i.max(o),
+                        "packetFrames": e.packet_frames(),
+                        "sampleRate": e.info.sample_rate,
+                        "plugin": e.plugin_connected(),
+                        "pluginWaiting": e.plugin_waiting(),
+                        "latency": { "inMs": lat_in, "outMs": lat_out, "reported": reported },
+                    })
+                });
             }
             // a new rate/buffer in the driver panel, or the device stopped: reopen
             if n.is_multiple_of(4) || n == 2 {
@@ -421,7 +535,11 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
             }
         }
     });
-    Ok(Preview { engine, task, probe: false })
+    Ok(Preview {
+        engine,
+        task,
+        probe: false,
+    })
 }
 
 /// Opens the ASIO driver's own control panel (buffer size, sample rate). The settings screen
@@ -429,7 +547,9 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
 /// driver check and the device reopened.
 #[tauri::command]
 pub async fn open_control_panel() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(gachi_engine::open_asio_control_panel).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(gachi_engine::open_asio_control_panel)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Opens/closes the preview engine. Ignored while in a room (the room's engine is used).
@@ -521,33 +641,53 @@ async fn restart_preview(app: &AppHandle, settings: &Settings) {
 pub async fn play_test_tone(app: AppHandle) -> Result<(), String> {
     const SECS: f32 = 1.5;
     let state = app.state::<AppState>();
-    if let Some(e) = state.session.lock().await.as_ref().and_then(|s| s.engine.as_ref()) {
-        e.play_test_tone(SECS);
+    // in a room: on the room's engine (none for the moment its device is being reopened)
+    if let Some(s) = state.session.lock().await.as_ref() {
+        if let Some(e) = s.engine.as_ref() {
+            e.play_test_tone(SECS);
+        }
         return Ok(());
     }
-    if let Some(p) = state.preview.lock().await.as_ref() {
+    // The preview is held for as long as the tone's own engine lives: whoever opens the
+    // device next (a room being entered, the settings, the home screen's reading of it)
+    // waits here for the tone to end. Left free, a room made during the tone found the
+    // driver taken and did not open (and before engines refused that: the program crashed).
+    let preview = state.preview.lock().await;
+    if let Some(p) = preview.as_ref() {
         p.engine.play_test_tone(SECS);
+        return Ok(());
+    }
+    if state.entering() || state.session.lock().await.is_some() {
         return Ok(());
     }
     let cfg = state.settings.lock().unwrap().engine_config();
     tauri::async_runtime::spawn_blocking(move || {
-        let engine = gachi_engine::Engine::start(cfg, Box::new(Nowhere)).map_err(|e| gachi_lang::tr!("app.cant_open_audio", e))?;
+        let engine = gachi_engine::Engine::start(cfg, Box::new(Nowhere))
+            .map_err(|e| gachi_lang::tr!("app.cant_open_audio", e))?;
         engine.play_test_tone(SECS);
         std::thread::sleep(std::time::Duration::from_secs_f32(SECS + 0.2));
-        Ok(())
+        Ok::<(), String>(())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    drop(preview);
+    Ok(())
 }
 
 fn recordings_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let docs = app.path().document_dir().map_err(|e| gachi_lang::tr!("app.cant_find_documents", e))?;
+    let docs = app
+        .path()
+        .document_dir()
+        .map_err(|e| gachi_lang::tr!("app.cant_find_documents", e))?;
     let base = docs.join("gachi");
     // the folder is named in the user's language; one already there (an earlier
     // version's "녹음", or another language's) keeps being used
     let names = ["녹음", "Recordings", "録音"];
     let mine = gachi_lang::tr!("rec.folder");
-    let found = std::iter::once(mine.as_str()).chain(names).map(|n| base.join(n)).find(|d| d.is_dir());
+    let found = std::iter::once(mine.as_str())
+        .chain(names)
+        .map(|n| base.join(n))
+        .find(|d| d.is_dir());
     Ok(found.unwrap_or_else(|| base.join(mine)))
 }
 
@@ -574,17 +714,23 @@ pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
         (g.rec_format(), g.rec_mix)
     };
     let mut guard = state.session.lock().await;
-    let s = guard.as_mut().ok_or_else(|| gachi_lang::tr!("app.join_room_record"))?;
+    let s = guard
+        .as_mut()
+        .ok_or_else(|| gachi_lang::tr!("app.join_room_record"))?;
     if on {
         let dir = s.start_recording(base, format, mix)?;
         Ok(json!({ "recording": true, "dir": dir.display().to_string() }))
     } else {
         // the files are written out with the session let go: until they were (seconds, for a
         // long recording), the meters stood still and nothing in the room could be done
-        let stopped = s.stop_recording_begin().unwrap_or_else(|| Err(gachi_lang::tr!("app.not_recording")));
+        let stopped = s
+            .stop_recording_begin()
+            .unwrap_or_else(|| Err(gachi_lang::tr!("app.not_recording")));
         drop(guard);
         let r = match stopped {
-            Ok(files) => tauri::async_runtime::spawn_blocking(move || files.finish()).await.unwrap_or_else(|e| Err(e.to_string())),
+            Ok(files) => tauri::async_runtime::spawn_blocking(move || files.finish())
+                .await
+                .unwrap_or_else(|e| Err(e.to_string())),
             Err(e) => Err(e),
         };
         let v = recording_json(r);
@@ -617,7 +763,9 @@ pub fn take_levels(state: State<'_, AppState>) -> Option<Value> {
     let guard = state.preview.try_lock().ok()?;
     let e = &guard.as_ref()?.engine;
     let inputs = e.input_meters.take(e.info.input_channels as usize);
-    Some(json!({ "self": e.self_meter.take(), "master": e.master_meter.take(), "peers": {}, "inputs": inputs }))
+    Some(
+        json!({ "self": e.self_meter.take(), "master": e.master_meter.take(), "peers": {}, "inputs": inputs }),
+    )
 }
 
 /// Opens the recordings folder in Explorer/Finder.
@@ -625,8 +773,17 @@ pub fn take_levels(state: State<'_, AppState>) -> Option<Value> {
 pub fn open_recordings(app: AppHandle) -> Result<(), String> {
     let dir = recordings_dir(&app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let opener = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-    std::process::Command::new(opener).arg(&dir).spawn().map_err(|e| e.to_string())?;
+    let opener = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -652,7 +809,11 @@ pub const REPOSITORY: &str = "https://github.com/aape133/gachi";
 /// for another).
 #[tauri::command]
 pub fn open_repo() -> Result<(), String> {
-    std::process::Command::new("explorer").arg(REPOSITORY).spawn().map(|_| ()).map_err(|e| e.to_string())
+    std::process::Command::new("explorer")
+        .arg(REPOSITORY)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// Is a newer version out? (asks GitHub for the latest release; see `update`)
@@ -670,7 +831,11 @@ pub async fn check_update() -> Result<Option<crate::update::Update>, String> {
 /// Opens the latest release's page in the browser (this one address only).
 #[tauri::command]
 pub fn open_release() -> Result<(), String> {
-    std::process::Command::new("explorer").arg(format!("{REPOSITORY}/releases/latest")).spawn().map(|_| ()).map_err(|e| e.to_string())
+    std::process::Command::new("explorer")
+        .arg(format!("{REPOSITORY}/releases/latest"))
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// Opens the folder with the log files (to send one along with a problem report).
@@ -678,12 +843,21 @@ pub fn open_release() -> Result<(), String> {
 pub fn open_logs() -> Result<(), String> {
     let dir = crate::log_dir().ok_or_else(|| gachi_lang::tr!("app.cant_find_log"))?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// Host: turn the code on/off, change the room size, or switch to a new code.
 #[tauri::command]
-pub async fn set_room(app: AppHandle, open: Option<bool>, max_peers: Option<u8>, new_code: Option<bool>) -> Result<(), String> {
+pub async fn set_room(
+    app: AppHandle,
+    open: Option<bool>,
+    max_peers: Option<u8>,
+    new_code: Option<bool>,
+) -> Result<(), String> {
     crate::gate::configure(app, open, max_peers, new_code.unwrap_or(false)).await
 }
 
@@ -698,18 +872,23 @@ pub async fn send_chat(app: AppHandle, text: String) -> Result<(), String> {
 
 /// Rooms open on our network (same public address and subnet), for the home screen.
 #[tauri::command]
-pub async fn nearby_rooms(state: State<'_, AppState>) -> Result<Vec<gachi_proto::signal::NearbyRoom>, String> {
+pub async fn nearby_rooms(
+    state: State<'_, AppState>,
+) -> Result<Vec<gachi_proto::signal::NearbyRoom>, String> {
     use gachi_proto::signal::FromWorker;
     let server = state.settings.lock().unwrap().server.clone();
     let lan = session::lan_prefix();
     // (no router to recognise each other by: nothing is nearby)
-    let Some(gw) = gachi_net::router_key() else { return Ok(Vec::new()) };
+    let Some(gw) = gachi_net::router_key() else {
+        return Ok(Vec::new());
+    };
     let url = crate::signal::Endpoint::parse(&server).nearby_url(lan.as_deref(), Some(&gw));
     let (_tx, mut rx) = crate::signal::connect(&url).await?;
     match tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await {
         Ok(Some(FromWorker::Nearby { rooms })) => Ok(rooms),
-        Ok(Some(FromWorker::Error { kind, message })) => Err(crate::refusal::localize(kind, &message)),
+        Ok(Some(FromWorker::Error { kind, message })) => {
+            Err(crate::refusal::localize(kind, &message))
+        }
         _ => Err(gachi_lang::tr!("app.no_answer_server")),
     }
 }
-

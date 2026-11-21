@@ -33,7 +33,9 @@ mod imp {
     use std::time::{Duration, Instant};
     use windows_sys::core::GUID;
     use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::NetworkManagement::IpHelper::{IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho2Ex, ICMP_ECHO_REPLY};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho2Ex, ICMP_ECHO_REPLY,
+    };
     use windows_sys::Win32::NetworkManagement::WiFi::*;
 
     /* ── one clock for pings and Wi-Fi events ── */
@@ -86,7 +88,12 @@ mod imp {
     fn events_between(from: f64, to: f64) -> Vec<String> {
         let e = EVENTS.lock().unwrap();
         e.iter()
-            .filter(|(t, s, c)| *t >= from && *t <= to && !(*s == WLAN_NOTIFICATION_SOURCE_MSM && *c as i32 == wlan_notification_msm_signal_quality_change))
+            .filter(|(t, s, c)| {
+                *t >= from
+                    && *t <= to
+                    && !(*s == WLAN_NOTIFICATION_SOURCE_MSM
+                        && *c as i32 == wlan_notification_msm_signal_quality_change)
+            })
             .map(|(t, s, c)| format!("{} @{t:.1}", event_name(*s, *c)))
             .collect()
     }
@@ -110,7 +117,9 @@ mod imp {
             }
             let mut list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
             // SAFETY: the handle is open; the list is freed below
-            if unsafe { WlanEnumInterfaces(handle, std::ptr::null(), &mut list) } != 0 || list.is_null() {
+            if unsafe { WlanEnumInterfaces(handle, std::ptr::null(), &mut list) } != 0
+                || list.is_null()
+            {
                 unsafe { WlanCloseHandle(handle, std::ptr::null()) };
                 return None;
             }
@@ -119,8 +128,15 @@ mod imp {
                 let l = &*list;
                 (l.dwNumberOfItems > 0).then(|| {
                     let i = &*l.InterfaceInfo.as_ptr();
-                    let n = i.strInterfaceDescription.iter().position(|&c| c == 0).unwrap_or(256);
-                    (i.InterfaceGuid, String::from_utf16_lossy(&i.strInterfaceDescription[..n]))
+                    let n = i
+                        .strInterfaceDescription
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(256);
+                    (
+                        i.InterfaceGuid,
+                        String::from_utf16_lossy(&i.strInterfaceDescription[..n]),
+                    )
                 })
             };
             unsafe { WlanFreeMemory(list as *const _) };
@@ -136,7 +152,17 @@ mod imp {
         fn get(&self, opcode: WLAN_INTF_OPCODE) -> Option<bool> {
             let (mut size, mut data) = (0u32, std::ptr::null_mut());
             // SAFETY: out-pointers to locals; the data is freed below
-            let r = unsafe { WlanQueryInterface(self.handle, &self.guid, opcode, std::ptr::null(), &mut size, &mut data, std::ptr::null_mut()) };
+            let r = unsafe {
+                WlanQueryInterface(
+                    self.handle,
+                    &self.guid,
+                    opcode,
+                    std::ptr::null(),
+                    &mut size,
+                    &mut data,
+                    std::ptr::null_mut(),
+                )
+            };
             if r != 0 || data.is_null() || size < 4 {
                 return None;
             }
@@ -203,7 +229,10 @@ mod imp {
             };
             let rtt = t.elapsed();
             let ok = n > 0 && unsafe { (*(reply.as_ptr() as *const ICMP_ECHO_REPLY)).Status } == 0;
-            out.push(((t - origin()).as_secs_f64(), ok.then_some(rtt.as_micros() as u32)));
+            out.push((
+                (t - origin()).as_secs_f64(),
+                ok.then_some(rtt.as_micros() as u32),
+            ));
             next += Duration::from_millis(2);
             let now = Instant::now();
             if next > now {
@@ -219,8 +248,16 @@ mod imp {
         let mut ok: Vec<u32> = pings.iter().filter_map(|p| p.1).collect();
         let lost = pings.len() - ok.len();
         ok.sort_unstable();
-        let q = |f: f64| ok.get(((ok.len() as f64 * f) as usize).min(ok.len().saturating_sub(1))).map_or(0.0, |&v| v as f64 / 1000.0);
-        let over = |ms: u32| pings.iter().filter(|p| p.1.is_none_or(|v| v > ms * 1000)).count();
+        let q = |f: f64| {
+            ok.get(((ok.len() as f64 * f) as usize).min(ok.len().saturating_sub(1)))
+                .map_or(0.0, |&v| v as f64 / 1000.0)
+        };
+        let over = |ms: u32| {
+            pings
+                .iter()
+                .filter(|p| p.1.is_none_or(|v| v > ms * 1000))
+                .count()
+        };
         // stall moments: runs of pings over 10 ms (or lost), counted once per run
         let mut moments = Vec::new();
         let mut run_start: Option<(f64, u32)> = None;
@@ -262,11 +299,24 @@ mod imp {
             }
         }
         let scans = {
-            let (a, b) = (pings.first().map_or(0.0, |p| p.0), pings.last().map_or(0.0, |p| p.0));
+            let (a, b) = (
+                pings.first().map_or(0.0, |p| p.0),
+                pings.last().map_or(0.0, |p| p.0),
+            );
             let e = EVENTS.lock().unwrap();
-            e.iter().filter(|(t, s, c)| *t >= a && *t <= b && *s == WLAN_NOTIFICATION_SOURCE_ACM && *c as i32 == wlan_notification_acm_scan_complete).count()
+            e.iter()
+                .filter(|(t, s, c)| {
+                    *t >= a
+                        && *t <= b
+                        && *s == WLAN_NOTIFICATION_SOURCE_ACM
+                        && *c as i32 == wlan_notification_acm_scan_complete
+                })
+                .count()
         };
-        println!("           stall clusters: {} | Windows reported {scans} finished scans in this time", clusters.len());
+        println!(
+            "           stall clusters: {} | Windows reported {scans} finished scans in this time",
+            clusters.len()
+        );
         for (a, b, n, m) in &clusters {
             let near = events_between(a - 1.0, b + 5.0);
             println!(
@@ -279,7 +329,10 @@ mod imp {
     }
 
     pub fn main() {
-        let args: Vec<String> = std::env::args().skip(1).filter(|a| !a.starts_with('-') && a.parse::<Ipv4Addr>().is_err()).collect();
+        let args: Vec<String> = std::env::args()
+            .skip(1)
+            .filter(|a| !a.starts_with('-') && a.parse::<Ipv4Addr>().is_err())
+            .collect();
         let secs: f64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(90.0);
         let rounds: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(2);
 
@@ -289,13 +342,21 @@ mod imp {
         if let Some(i) = all.iter().position(|a| a == "--wired") {
             origin();
             let lan = netdev::get_default_interface().expect("a network interface");
-            let from = lan.ipv4.iter().map(|a| a.addr()).find(|a| !a.is_link_local()).expect("an IPv4 address");
+            let from = lan
+                .ipv4
+                .iter()
+                .map(|a| a.addr())
+                .find(|a| !a.is_link_local())
+                .expect("an IPv4 address");
             let to = all
                 .get(i + 1)
                 .and_then(|s| s.parse().ok())
                 .or_else(|| netdev::get_default_gateway().ok()?.ipv4.first().copied())
                 .expect("a target");
-            println!("wired: {} ({from}) → {to}, {secs:.0} s", lan.description.clone().unwrap_or_default());
+            println!(
+                "wired: {} ({from}) → {to}, {secs:.0} s",
+                lan.description.clone().unwrap_or_default()
+            );
             let h = unsafe { IcmpCreateFile() };
             assert!(h != INVALID_HANDLE_VALUE && !h.is_null(), "ICMP handle");
             let icmp = Icmp(h);
@@ -305,10 +366,18 @@ mod imp {
         }
         let wifi = netdev::get_interfaces()
             .into_iter()
-            .find(|i| i.if_type == netdev::prelude::InterfaceType::Wireless80211 && i.ipv4.iter().any(|a| !a.addr().is_link_local()))
+            .find(|i| {
+                i.if_type == netdev::prelude::InterfaceType::Wireless80211
+                    && i.ipv4.iter().any(|a| !a.addr().is_link_local())
+            })
             .expect("a connected Wi-Fi interface with an IPv4 address");
         // the address the router gave (not a 169.254 one Windows adds on its own)
-        let from = wifi.ipv4.iter().map(|a| a.addr()).find(|a| !a.is_link_local()).expect("an IPv4 address");
+        let from = wifi
+            .ipv4
+            .iter()
+            .map(|a| a.addr())
+            .find(|a| !a.is_link_local())
+            .expect("an IPv4 address");
         // the Wi-Fi's own gateway, else the default one (one router for wired and Wi-Fi)
         let to = wifi
             .gateway
@@ -318,13 +387,33 @@ mod imp {
             .expect("a gateway");
         origin();
         let w = Wlan::open().expect("the WLAN service");
-        println!("Wi-Fi: {} ({from}) → router {to}; {rounds} rounds of {secs:.0} s per setting", w.name);
+        println!(
+            "Wi-Fi: {} ({from}) → router {to}; {rounds} rounds of {secs:.0} s per setting",
+            w.name
+        );
         // a second handle that only listens (it changes nothing)
         let listen = Wlan::open().expect("the WLAN service");
         let mut prev = 0u32;
         // SAFETY: a plain extern fn and no context; the handle stays open until the end
-        let r = unsafe { WlanRegisterNotification(listen.handle, WLAN_NOTIFICATION_SOURCE_ACM | WLAN_NOTIFICATION_SOURCE_MSM, 0, Some(on_event), std::ptr::null(), std::ptr::null(), &mut prev) };
-        println!("listening for Wi-Fi events: {}", if r == 0 { "yes".to_string() } else { format!("no (error {r})") });
+        let r = unsafe {
+            WlanRegisterNotification(
+                listen.handle,
+                WLAN_NOTIFICATION_SOURCE_ACM | WLAN_NOTIFICATION_SOURCE_MSM,
+                0,
+                Some(on_event),
+                std::ptr::null(),
+                std::ptr::null(),
+                &mut prev,
+            )
+        };
+        println!(
+            "listening for Wi-Fi events: {}",
+            if r == 0 {
+                "yes".to_string()
+            } else {
+                format!("no (error {r})")
+            }
+        );
         drop(w);
         state("before");
 

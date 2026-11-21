@@ -20,16 +20,16 @@
 //!   peer's more direct addresses are tried too (same network > IPv6 > public IPv4) and the
 //!   route moves to the best one that answers; the peer follows (roaming).
 
-pub mod prio;
 mod control;
 pub mod crypto;
 pub mod joinseal;
 pub mod logaddr;
+pub mod natpmp;
+pub mod prio;
 mod recv;
 mod sock;
 mod stats;
 pub mod stun;
-pub mod natpmp;
 pub mod upnp;
 pub mod wifi;
 
@@ -89,15 +89,35 @@ pub enum NetEvent {
 }
 
 pub(crate) enum Ctl {
-    AddPeer { id: PeerId, tx: rtrb::Producer<Frame> },
+    AddPeer {
+        id: PeerId,
+        tx: rtrb::Producer<Frame>,
+    },
     /// new mixer input for an existing peer (after the audio engine restarted); route is kept
-    SetOutput { id: PeerId, tx: rtrb::Producer<Frame> },
+    SetOutput {
+        id: PeerId,
+        tx: rtrb::Producer<Frame>,
+    },
     /// the peer's sample rate (from its status), for timing stats
-    SetRate { id: PeerId, sample_rate: u32 },
-    Candidates { id: PeerId, addrs: Vec<SocketAddr>, token: u32, key: crypto::PeerKey },
-    SendControl { id: PeerId, data: Vec<u8> },
+    SetRate {
+        id: PeerId,
+        sample_rate: u32,
+    },
+    Candidates {
+        id: PeerId,
+        addrs: Vec<SocketAddr>,
+        token: u32,
+        key: crypto::PeerKey,
+    },
+    SendControl {
+        id: PeerId,
+        data: Vec<u8>,
+    },
     /// also send each packet a second time, a little later (the peer reports loss)
-    SetRedundancy { id: PeerId, on: bool },
+    SetRedundancy {
+        id: PeerId,
+        on: bool,
+    },
     RemovePeer(PeerId),
     /// say bye to everyone and stop
     Goodbye,
@@ -135,7 +155,10 @@ pub struct Gathered {
 impl Gathered {
     /// What peers need to encrypt to us: our public key and whether we have AES in hardware.
     pub fn peer_key(&self) -> crypto::PeerKey {
-        crypto::PeerKey { public: self.public_key, aes: crypto::aes_in_hardware() }
+        crypto::PeerKey {
+            public: self.public_key,
+            aes: crypto::aes_in_hardware(),
+        }
     }
 
     /// Binds the socket and collects candidates. `stun_servers` are tried in order
@@ -155,7 +178,9 @@ impl Gathered {
         let mut second = None;
         let mut lan_ip = None;
         for server in stun_servers {
-            let Some(addr) = stun::resolve(server) else { continue };
+            let Some(addr) = stun::resolve(server) else {
+                continue;
+            };
             lan_ip = lan_ip.or_else(|| local_ip_toward(addr).filter(|ip| ip.is_ipv4()));
             match asked {
                 None => {
@@ -175,7 +200,9 @@ impl Gathered {
         }
         let mapping = stun::Mapping::from_answers(public, second);
         // offline or STUN blocked: still find our LAN address
-        let lan_ip = lan_ip.or_else(|| local_ip_toward("1.1.1.1:53".parse().expect("valid")).filter(|ip| ip.is_ipv4()));
+        let lan_ip = lan_ip.or_else(|| {
+            local_ip_toward("1.1.1.1:53".parse().expect("valid")).filter(|ip| ip.is_ipv4())
+        });
         let local = lan_ip.map(|ip| SocketAddr::new(ip, socket.port()));
         // a global IPv6 address usually needs no NAT traversal at all
         let v6 = socket
@@ -184,11 +211,19 @@ impl Gathered {
             .flatten()
             .map(|ip| SocketAddr::new(ip.into(), socket.port()));
         // other adapters (a VPN both sides are on, a second card)
-        let others = sock::other_ipv4s(lan_ip).into_iter().map(|ip| SocketAddr::new(ip.into(), socket.port()));
+        let others = sock::other_ipv4s(lan_ip)
+            .into_iter()
+            .map(|ip| SocketAddr::new(ip.into(), socket.port()));
         // a router that gives every destination its own port, in order: where the next
         // peers will probably see us
         let guessed = second.map(|s| mapping.predicted(s, 2)).unwrap_or_default();
-        let mut candidates: Vec<SocketAddr> = local.into_iter().chain(others).chain(public).chain(guessed).chain(v6).collect();
+        let mut candidates: Vec<SocketAddr> = local
+            .into_iter()
+            .chain(others)
+            .chain(public)
+            .chain(guessed)
+            .chain(v6)
+            .collect();
         candidates.dedup();
         tracing::info!(candidates = %logaddr::list(&candidates), ?mapping, "udp candidates");
         if matches!(mapping, stun::Mapping::Varies { .. }) {
@@ -204,7 +239,17 @@ impl Gathered {
                 candidates.push(forwarded);
             }
         }
-        Ok(Self { socket, public_key: identity.public, identity, lan_ip, candidates, public, mapping, stun: asked, token: rand::random() })
+        Ok(Self {
+            socket,
+            public_key: identity.public,
+            identity,
+            lan_ip,
+            candidates,
+            public,
+            mapping,
+            stun: asked,
+            token: rand::random(),
+        })
     }
 }
 
@@ -232,12 +277,26 @@ pub struct Net {
 impl Net {
     /// Our public key and AES support, as peers need them.
     pub fn peer_key(&self) -> crypto::PeerKey {
-        crypto::PeerKey { public: self.public_key, aes: crypto::aes_in_hardware() }
+        crypto::PeerKey {
+            public: self.public_key,
+            aes: crypto::aes_in_hardware(),
+        }
     }
 
     /// Starts the receive thread on a gathered socket (and the UPnP helper if enabled).
     pub fn start(g: Gathered, cfg: NetConfig) -> io::Result<Self> {
-        let Gathered { socket, identity, lan_ip, candidates, token, public_key, mapping, public, stun, .. } = g;
+        let Gathered {
+            socket,
+            identity,
+            lan_ip,
+            candidates,
+            token,
+            public_key,
+            mapping,
+            public,
+            stun,
+            ..
+        } = g;
         socket.set_read_timeout(Some(Duration::from_millis(5)))?;
         // sends never wait (they run on the audio callback); the receive thread waits for
         // datagrams in `wait_readable`
@@ -262,26 +321,49 @@ impl Net {
             stun,
             public,
         );
-        let thread = thread::Builder::new().name("gachi-net-recv".into()).spawn(move || {
-            prio::pro_audio();
-            worker.run()
-        })?;
+        let thread = thread::Builder::new()
+            .name("gachi-net-recv".into())
+            .spawn(move || {
+                prio::pro_audio();
+                worker.run()
+            })?;
 
         // a public address on the PC itself (plugged into the modem or wall jack): no router
         // to open a port on, and nothing to open
         if let (true, Some(ip)) = (cfg.upnp, lan_ip.filter(|ip| behind_router(*ip))) {
-            let (port, stop, events, mut cands) = (socket.port(), stop.clone(), events_tx.clone(), candidates.clone());
-            let _ = thread::Builder::new().name("gachi-upnp".into()).spawn(move || {
-                upnp::run(ip, port, stop, |public| {
-                    if !cands.contains(&public) {
-                        cands.push(public);
-                        let _ = events.send(NetEvent::Candidates(cands));
-                    }
+            let (port, stop, events, mut cands) = (
+                socket.port(),
+                stop.clone(),
+                events_tx.clone(),
+                candidates.clone(),
+            );
+            let _ = thread::Builder::new()
+                .name("gachi-upnp".into())
+                .spawn(move || {
+                    upnp::run(ip, port, stop, |public| {
+                        if !cands.contains(&public) {
+                            cands.push(public);
+                            let _ = events.send(NetEvent::Candidates(cands));
+                        }
+                    });
                 });
-            });
         }
 
-        Ok(Self { socket, cfg, routes, ctl_tx, stats, events_rx, stop, thread: Some(thread), token, candidates, mapping, public, public_key })
+        Ok(Self {
+            socket,
+            cfg,
+            routes,
+            ctl_tx,
+            stats,
+            events_rx,
+            stop,
+            thread: Some(thread),
+            token,
+            candidates,
+            mapping,
+            public,
+            public_key,
+        })
     }
 
     /// The packet sink to hand to the audio engine (PCM in the configured format).
@@ -320,8 +402,19 @@ impl Net {
     }
 
     /// The peer's addresses, punch token and public key (with its AES support).
-    pub fn set_candidates(&self, id: PeerId, addrs: Vec<SocketAddr>, token: u32, key: crypto::PeerKey) {
-        let _ = self.ctl_tx.send(Ctl::Candidates { id, addrs, token, key });
+    pub fn set_candidates(
+        &self,
+        id: PeerId,
+        addrs: Vec<SocketAddr>,
+        token: u32,
+        key: crypto::PeerKey,
+    ) {
+        let _ = self.ctl_tx.send(Ctl::Candidates {
+            id,
+            addrs,
+            token,
+            key,
+        });
     }
 
     /// Send our audio to this peer twice (it reported packet loss), or stop doing so.
@@ -388,7 +481,14 @@ impl PacketSink for UdpSender {
         let slot = self.next;
         self.next = (self.next + 1) % self.history.len();
         let (plain, len) = &mut self.history[slot];
-        *len = audio::encode_audio(&mut plain[..], self.my_id, frame.seq, frame.channels, self.format, frame.samples());
+        *len = audio::encode_audio(
+            &mut plain[..],
+            self.my_id,
+            frame.seq,
+            frame.channels,
+            self.format,
+            frame.samples(),
+        );
         let n = *len;
         // the packet from REDUNDANT_LAG packets ago (the slot about to be reused next-but-…)
         let old = (slot + self.history.len() - REDUNDANT_LAG) % self.history.len();
@@ -407,7 +507,9 @@ impl PacketSink for UdpSender {
 /// Network check for the settings screen: asks the STUN servers for our public address on
 /// a throwaway socket. Returns `(local, public, how the router maps us)`, or `None` if none
 /// answered.
-pub fn probe(stun_servers: &[String]) -> io::Result<Option<(SocketAddr, SocketAddr, stun::Mapping)>> {
+pub fn probe(
+    stun_servers: &[String],
+) -> io::Result<Option<(SocketAddr, SocketAddr, stun::Mapping)>> {
     let g = Gathered::gather(stun_servers)?;
     let local = g.lan_ip.map(|ip| SocketAddr::new(ip, g.socket.port()));
     Ok(g.public.map(|p| (local.unwrap_or(p), p, g.mapping)))
@@ -423,7 +525,11 @@ pub fn probe(stun_servers: &[String]) -> io::Result<Option<(SocketAddr, SocketAd
 pub fn router_key() -> Option<String> {
     use std::sync::Mutex;
     static LAST: Mutex<Option<(String, String)>> = Mutex::new(None);
-    let mac = netdev::get_default_gateway().ok()?.mac_addr.to_string().to_lowercase();
+    let mac = netdev::get_default_gateway()
+        .ok()?
+        .mac_addr
+        .to_string()
+        .to_lowercase();
     if mac.chars().all(|c| c == '0' || c == ':' || c == '-') {
         return None;
     }
@@ -433,7 +539,10 @@ pub fn router_key() -> Option<String> {
             return Some(key.clone());
         }
     }
-    let key: String = joinseal::password_key("gachi nearby v1", &mac)[..16].iter().map(|b| format!("{b:02x}")).collect();
+    let key: String = joinseal::password_key("gachi nearby v1", &mac)[..16]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     *last = Some((mac, key.clone()));
     Some(key)
 }
@@ -460,9 +569,9 @@ pub fn now_us() -> u64 {
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod nat_sim;
+#[cfg(test)]
+mod tests;
 
 /// Whether this local address sits behind a NAT router (private, or the carrier-grade
 /// 100.64/10 range), as opposed to a public address handed straight to the PC.

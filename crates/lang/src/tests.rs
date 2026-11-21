@@ -6,8 +6,16 @@ use std::path::{Path, PathBuf};
 fn a_choice_finds_its_language() {
     assert_eq!(resolve("ko-KR"), "ko-KR");
     assert_eq!(resolve("ko"), "ko-KR", "the language alone");
-    assert_eq!(resolve("KO_kr.UTF-8"), "ko-KR", "a locale variable's spelling");
-    assert_eq!(resolve("en-GB"), "en-US", "another region of a language we have");
+    assert_eq!(
+        resolve("KO_kr.UTF-8"),
+        "ko-KR",
+        "a locale variable's spelling"
+    );
+    assert_eq!(
+        resolve("en-GB"),
+        "en-US",
+        "another region of a language we have"
+    );
     assert_eq!(resolve("ja"), "ja-JP");
     assert_eq!(resolve("fr-FR"), BASE, "a language we lack: English");
     assert_eq!(resolve("auto"), resolve(system()));
@@ -16,16 +24,28 @@ fn a_choice_finds_its_language() {
 #[test]
 fn the_macro_speaks_the_thread_language() {
     let name = "Sam";
-    assert_eq!(with("en-US", || tr!("room.name_host_now", name)), "Sam is the host now.");
-    assert_eq!(with("ja-JP", || tr!("room.name_host_now", name = "Sam")), "Samさんがホストになりました。");
-    assert_eq!(with("ko-KR", || tr!("room.name_host_now", name)), "이제 Sam님이 방장이에요.");
+    assert_eq!(
+        with("en-US", || tr!("room.name_host_now", name)),
+        "Sam is the host now."
+    );
+    assert_eq!(
+        with("ja-JP", || tr!("room.name_host_now", name = "Sam")),
+        "Samさんがホストになりました。"
+    );
+    assert_eq!(
+        with("ko-KR", || tr!("room.name_host_now", name)),
+        "이제 Sam님이 방장이에요."
+    );
     assert_eq!(with("fr", get), BASE);
 }
 
 #[test]
 fn holes_are_filled_by_name() {
     let n: &dyn Display = &3;
-    assert_eq!(fill("{n} of {n}, {other} {", &[("n", n)]), "3 of 3, {other} {");
+    assert_eq!(
+        fill("{n} of {n}, {other} {", &[("n", n)]),
+        "3 of 3, {other} {"
+    );
     assert_eq!(fill("no holes", &[]), "no holes");
 }
 
@@ -64,7 +84,11 @@ fn holes(s: &str) -> BTreeSet<String> {
 /// Every file of the app's own source that may name a key.
 fn sources() -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
-    let mut walk = vec![repo().join("app/src"), repo().join("crates"), repo().join("ui")];
+    let mut walk = vec![
+        repo().join("app/src"),
+        repo().join("crates"),
+        repo().join("ui"),
+    ];
     while let Some(dir) = walk.pop() {
         for e in std::fs::read_dir(&dir).unwrap().flatten() {
             let p = e.path();
@@ -72,7 +96,11 @@ fn sources() -> Vec<(PathBuf, String)> {
                 if !p.ends_with("locales") && !p.ends_with("target") {
                     walk.push(p);
                 }
-            } else if matches!(p.extension().and_then(|x| x.to_str()), Some("rs" | "js" | "html")) && !p.ends_with("tests.rs") {
+            } else if matches!(
+                p.extension().and_then(|x| x.to_str()),
+                Some("rs" | "js" | "html")
+            ) && !p.ends_with("tests.rs")
+            {
                 out.push((p.clone(), std::fs::read_to_string(&p).unwrap()));
             }
         }
@@ -83,7 +111,15 @@ fn sources() -> Vec<(PathBuf, String)> {
 /// The keys a source names: `tr!("…"`, `tr('…'`, `data-i18n…="…"`.
 fn named_keys(text: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for pat in ["tr!(\"", "tr('", "data-i18n=\"", "data-i18n-html=\"", "data-i18n-title=\"", "data-i18n-placeholder=\"", "data-i18n-aria=\""] {
+    for pat in [
+        "tr!(\"",
+        "tr('",
+        "data-i18n=\"",
+        "data-i18n-html=\"",
+        "data-i18n-title=\"",
+        "data-i18n-placeholder=\"",
+        "data-i18n-aria=\"",
+    ] {
         let close = if pat.ends_with('\'') { '\'' } else { '"' };
         let mut rest = text;
         while let Some(i) = rest.find(pat) {
@@ -106,7 +142,11 @@ fn every_language_has_every_sentence_with_its_holes() {
         let extra: Vec<_> = t[i].keys().filter(|k| !base.contains_key(*k)).collect();
         assert!(extra.is_empty(), "{code} has keys en-US lacks: {extra:?}");
         for (k, v) in &t[i] {
-            assert_eq!(holes(v), holes(&base[k]), "{code} {k}: the {{holes}} differ from en-US");
+            assert_eq!(
+                holes(v),
+                holes(&base[k]),
+                "{code} {k}: the {{holes}} differ from en-US"
+            );
         }
     }
 }
@@ -122,7 +162,10 @@ fn the_list_and_the_folder_agree() {
         .map(|n| n.trim_end_matches(".json").to_string())
         .collect();
     let listed: BTreeSet<String> = languages().map(str::to_string).collect();
-    assert_eq!(files, listed, "ui/locales/languages.json lists every language file, and only those");
+    assert_eq!(
+        files, listed,
+        "ui/locales/languages.json lists every language file, and only those"
+    );
 }
 
 #[test]
@@ -131,14 +174,22 @@ fn the_code_names_only_keys_that_exist_and_every_key_is_used() {
     let srcs = sources();
     for (path, text) in &srcs {
         for k in named_keys(text) {
-            assert!(base.contains_key(&k), "{}: no key \"{k}\" in en-US.json", path.display());
+            assert!(
+                base.contains_key(&k),
+                "{}: no key \"{k}\" in en-US.json",
+                path.display()
+            );
         }
     }
     // a key may also be named as a plain string (lists of keys in app.js)
     let all: String = srcs.iter().map(|(_, t)| t.as_str()).collect();
     let unused: Vec<_> = base
         .keys()
-        .filter(|k| *k != "language.name" && !all.contains(&format!("\"{k}\"")) && !all.contains(&format!("'{k}'")))
+        .filter(|k| {
+            *k != "language.name"
+                && !all.contains(&format!("\"{k}\""))
+                && !all.contains(&format!("'{k}'"))
+        })
         .collect();
     assert!(unused.is_empty(), "keys nothing uses: {unused:?}");
 }

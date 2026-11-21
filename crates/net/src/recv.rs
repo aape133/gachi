@@ -51,7 +51,11 @@ const IDLE_WAIT: Duration = Duration::from_millis(5);
 /// hiccup, a re-introduction); after a longer absence its app has rejoined with new keys.
 /// Kept for good, they added ~110 bytes for everyone who ever left. (Short in tests, to
 /// see the memory level off.)
-const RETIRED_KEEP: Duration = if cfg!(test) { Duration::from_secs(5) } else { Duration::from_secs(3600) };
+const RETIRED_KEEP: Duration = if cfg!(test) {
+    Duration::from_secs(5)
+} else {
+    Duration::from_secs(3600)
+};
 
 /// How direct a path to `addr` is: 0 = on our network (private IPv4, loopback), 1 = IPv6
 /// (no NAT on the way), 2 = a public IPv4 address (through the NATs; between two PCs in one
@@ -187,11 +191,33 @@ pub(crate) struct Receiver {
     /// send counter) are taken up again: deriving them anew would restart the counter at 0
     /// and reuse nonces under the same key, which breaks the encryption.
     /// (and when it was removed: kept for `RETIRED_KEEP`)
-    retired: HashMap<PeerId, (crate::crypto::PeerKey, Arc<PeerCrypto>, ReplayWindow, Instant)>,
+    retired: HashMap<
+        PeerId,
+        (
+            crate::crypto::PeerKey,
+            Arc<PeerCrypto>,
+            ReplayWindow,
+            Instant,
+        ),
+    >,
 }
 
 /// Keeps a removed peer's keys (see `Receiver::retired`), and forgets the ones kept long enough.
-fn retire(retired: &mut HashMap<PeerId, (crate::crypto::PeerKey, Arc<PeerCrypto>, ReplayWindow, Instant)>, id: PeerId, key: crate::crypto::PeerKey, keys: Arc<PeerCrypto>, replay: ReplayWindow) {
+fn retire(
+    retired: &mut HashMap<
+        PeerId,
+        (
+            crate::crypto::PeerKey,
+            Arc<PeerCrypto>,
+            ReplayWindow,
+            Instant,
+        ),
+    >,
+    id: PeerId,
+    key: crate::crypto::PeerKey,
+    keys: Arc<PeerCrypto>,
+    replay: ReplayWindow,
+) {
     let now = Instant::now();
     retired.retain(|_, e| now - e.3 < RETIRED_KEEP);
     retired.insert(id, (key, keys, replay, now));
@@ -233,7 +259,11 @@ impl Receiver {
             net_check: Instant::now(),
             // the server that told us our address (the same one answers the same way while
             // nothing changed), else one of the usual ones
-            stun_server: stun_server.or_else(|| crate::stun::DEFAULT_SERVERS.iter().find_map(|s| crate::stun::resolve(s))),
+            stun_server: stun_server.or_else(|| {
+                crate::stun::DEFAULT_SERVERS
+                    .iter()
+                    .find_map(|s| crate::stun::resolve(s))
+            }),
             public,
             moved: false,
             stun_pending: None,
@@ -270,7 +300,14 @@ impl Receiver {
                     idle = false;
                     self.on_datagram(&buf[..n], from, &mut plain, &mut frame);
                 }
-                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => idle = true,
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    idle = true
+                }
                 // Windows reports ICMP "port unreachable" from an earlier send as ConnectionReset
                 Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => {}
                 Err(e) => {
@@ -312,7 +349,10 @@ impl Receiver {
                             last_upgrade: Instant::now(),
                         },
                     );
-                    self.stats.lock().unwrap_or_else(|e| e.into_inner()).insert(id, PeerNetStats::default());
+                    self.stats
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(id, PeerNetStats::default());
                 }
                 Ctl::SetRate { id, sample_rate } => {
                     if let Some(p) = self.peers.get_mut(&id) {
@@ -324,12 +364,23 @@ impl Receiver {
                         p.tx = tx;
                     }
                 }
-                Ctl::Candidates { id, addrs, token, key } => {
+                Ctl::Candidates {
+                    id,
+                    addrs,
+                    token,
+                    key,
+                } => {
                     if let Some(p) = self.peers.get_mut(&id) {
                         if p.key != Some(key) {
                             if let Some(old) = p.key.zip(p.keys.take()) {
                                 // a new key for a known peer: keep the old one's counter too
-                                retire(&mut self.retired, id, old.0, old.1, std::mem::take(&mut p.replay));
+                                retire(
+                                    &mut self.retired,
+                                    id,
+                                    old.0,
+                                    old.1,
+                                    std::mem::take(&mut p.replay),
+                                );
                             }
                             match self.retired.remove(&id) {
                                 // the same peer, same key, back again: same keys, counter goes on
@@ -341,11 +392,20 @@ impl Receiver {
                                     if let Some(o) = other {
                                         self.retired.insert(id, o);
                                     }
-                                    let Some(keys) = self.identity.session_with(self.cfg.my_id, id, &key) else {
-                                        tracing::warn!(id, "peer sent an invalid public key; not connecting");
+                                    let Some(keys) =
+                                        self.identity.session_with(self.cfg.my_id, id, &key)
+                                    else {
+                                        tracing::warn!(
+                                            id,
+                                            "peer sent an invalid public key; not connecting"
+                                        );
                                         continue;
                                     };
-                                    tracing::info!(id, cipher = keys.cipher().label(), "audio encryption");
+                                    tracing::info!(
+                                        id,
+                                        cipher = keys.cipher().label(),
+                                        "audio encryption"
+                                    );
                                     p.keys = Some(Arc::new(keys));
                                     p.replay = ReplayWindow::default();
                                 }
@@ -367,7 +427,10 @@ impl Receiver {
                 Ctl::SendControl { id, data } => {
                     if let Some(p) = self.peers.get_mut(&id) {
                         if !p.control.queue(data) {
-                            tracing::warn!(id, "too many unacknowledged room messages; dropping one");
+                            tracing::warn!(
+                                id,
+                                "too many unacknowledged room messages; dropping one"
+                            );
                         }
                     }
                 }
@@ -375,7 +438,11 @@ impl Receiver {
                     if let Some(p) = self.peers.get_mut(&id) {
                         if p.redundant != on {
                             p.redundant = on;
-                            tracing::info!(id, on, "sending this peer every packet twice (lossy link)");
+                            tracing::info!(
+                                id,
+                                on,
+                                "sending this peer every packet twice (lossy link)"
+                            );
                             self.publish_routes();
                         }
                     }
@@ -386,7 +453,10 @@ impl Receiver {
                             retire(&mut self.retired, id, key, keys, p.replay);
                         }
                     }
-                    self.stats.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                    self.stats
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&id);
                     self.publish_routes();
                 }
                 Ctl::Goodbye => {
@@ -409,7 +479,9 @@ impl Receiver {
 
     /// Seals an inner packet (ping, pong, control, bye) for a peer and sends it to `addr`.
     fn send_to_peer(&self, addr: SocketAddr, dest: PeerId, plain: &[u8]) {
-        let Some(keys) = self.peers.get(&dest).and_then(|p| p.keys.as_ref()) else { return };
+        let Some(keys) = self.peers.get(&dest).and_then(|p| p.keys.as_ref()) else {
+            return;
+        };
         send_sealed(&self.socket, &self.cfg, keys, addr, plain);
     }
 
@@ -418,8 +490,14 @@ impl Receiver {
         let mut out = [0u8; 32];
 
         // someone is silent: them, or us? Ask a STUN server meanwhile
-        let silent = self.peers.values().any(|p| p.route.is_some() && p.last_heard.is_some_and(|h| now - h > PROBE_AFTER));
-        if let (true, Some(server)) = (silent && now - self.last_probe >= PROBE_EVERY, self.stun_server) {
+        let silent = self
+            .peers
+            .values()
+            .any(|p| p.route.is_some() && p.last_heard.is_some_and(|h| now - h > PROBE_AFTER));
+        if let (true, Some(server)) = (
+            silent && now - self.last_probe >= PROBE_EVERY,
+            self.stun_server,
+        ) {
             let txid: [u8; 12] = rand::random();
             let _ = self.socket.send_to(&crate::stun::request(&txid), server);
             self.probe = Some(txid);
@@ -433,7 +511,9 @@ impl Receiver {
             // (none is given up on, see `ControlChannel::send_due`) and go once it is heard
             // again, in order
             let heard = p.last_heard.is_some_and(|h| now - h < REPUNCH_AFTER);
-            if let (Some(route), Some(keys), false, true) = (p.route, p.keys.as_ref(), p.control.idle(), heard) {
+            if let (Some(route), Some(keys), false, true) =
+                (p.route, p.keys.as_ref(), p.control.idle(), heard)
+            {
                 let mut buf = [0u8; MAX_INNER];
                 p.control.send_due(now, |seq, data| {
                     let n = audio::encode_control(&mut buf, me, seq, data);
@@ -456,7 +536,12 @@ impl Receiver {
             // keep knocking on its more direct addresses for a moment
             if let (Some(route), Some(at)) = (p.route, p.connected_at) {
                 if now - at < UPGRADE_FOR && now - p.last_upgrade >= UPGRADE_EVERY {
-                    let better: Vec<SocketAddr> = p.candidates.iter().copied().filter(|a| path_rank(*a) < path_rank(route)).collect();
+                    let better: Vec<SocketAddr> = p
+                        .candidates
+                        .iter()
+                        .copied()
+                        .filter(|a| path_rank(*a) < path_rank(route))
+                        .collect();
                     if !better.is_empty() {
                         p.last_upgrade = now;
                         let n = audio::encode_punch(&mut out, false, me, self.my_token);
@@ -481,7 +566,9 @@ impl Receiver {
                 }
                 continue;
             }
-            let Some(started) = p.punch_started else { continue };
+            let Some(started) = p.punch_started else {
+                continue;
+            };
             if p.failed {
                 continue;
             }
@@ -548,8 +635,16 @@ impl Receiver {
     /// Our addresses now (LAN, public from STUN if known, global IPv6) → the room.
     fn announce_addresses(&mut self, public: Option<SocketAddr>) {
         let port = self.socket.port();
-        let mut addrs: Vec<SocketAddr> = self.last_lan.map(|ip| SocketAddr::new(ip, port)).into_iter().collect();
-        addrs.extend(crate::sock::other_ipv4s(self.last_lan).into_iter().map(|ip| SocketAddr::new(ip.into(), port)));
+        let mut addrs: Vec<SocketAddr> = self
+            .last_lan
+            .map(|ip| SocketAddr::new(ip, port))
+            .into_iter()
+            .collect();
+        addrs.extend(
+            crate::sock::other_ipv4s(self.last_lan)
+                .into_iter()
+                .map(|ip| SocketAddr::new(ip.into(), port)),
+        );
         addrs.extend(public);
         if self.socket.is_dual_stack() {
             addrs.extend(crate::sock::global_ipv6().map(|ip| SocketAddr::new(ip.into(), port)));
@@ -560,7 +655,9 @@ impl Receiver {
     }
 
     fn set_route(&mut self, id: PeerId, addr: SocketAddr) {
-        let Some(p) = self.peers.get_mut(&id) else { return };
+        let Some(p) = self.peers.get_mut(&id) else {
+            return;
+        };
         if p.route == Some(addr) {
             return;
         }
@@ -578,8 +675,11 @@ impl Receiver {
 
     fn publish_routes(&mut self) {
         // never send to a peer we have no keys for
-        let routes: Vec<_> =
-            self.peers.iter().filter_map(|(&id, p)| Some((id, p.route?, p.keys.clone()?, p.redundant))).collect();
+        let routes: Vec<_> = self
+            .peers
+            .iter()
+            .filter_map(|(&id, p)| Some((id, p.route?, p.keys.clone()?, p.redundant)))
+            .collect();
         let old = self.routes.swap(Arc::new(routes));
         self.old_routes.push_back((Instant::now(), old));
         self.let_go_of_old_routes(Instant::now());
@@ -588,7 +688,11 @@ impl Receiver {
     /// The replaced route lists the audio thread is surely done with (it reads one for the
     /// length of one send, µs), freed here.
     fn let_go_of_old_routes(&mut self, now: Instant) {
-        while self.old_routes.front().is_some_and(|(t, _)| now - *t >= OLD_ROUTES_KEEP) {
+        while self
+            .old_routes
+            .front()
+            .is_some_and(|(t, _)| now - *t >= OLD_ROUTES_KEEP)
+        {
             self.old_routes.pop_front();
         }
     }
@@ -600,7 +704,9 @@ impl Receiver {
                 self.probe = None;
                 self.internet_at = Instant::now();
                 if self.public.is_some_and(|p| p != seen) {
-                    tracing::warn!("our public address changed while peers went silent: the router moved us");
+                    tracing::warn!(
+                        "our public address changed while peers went silent: the router moved us"
+                    );
                     self.moved = true;
                     self.public = Some(seen);
                     self.announce_addresses(Some(seen));
@@ -619,11 +725,20 @@ impl Receiver {
                 return;
             }
         }
-        let Ok(packet) = audio::decode(data) else { return };
+        let Ok(packet) = audio::decode(data) else {
+            return;
+        };
         let via = from;
         match packet {
-            Packet::Sealed { sender, counter, aad, body } => {
-                let Some(p) = self.peers.get_mut(&sender) else { return };
+            Packet::Sealed {
+                sender,
+                counter,
+                aad,
+                body,
+            } => {
+                let Some(p) = self.peers.get_mut(&sender) else {
+                    return;
+                };
                 let Some(keys) = p.keys.as_ref() else { return };
                 let Some(n) = keys.open(counter, aad, body, plain) else {
                     tracing::trace!(sender, "dropping packet that failed authentication");
@@ -632,7 +747,9 @@ impl Receiver {
                 if !p.replay.accept(counter) {
                     return; // duplicate or replayed
                 }
-                let Ok(inner) = audio::decode(&plain[..n]) else { return };
+                let Ok(inner) = audio::decode(&plain[..n]) else {
+                    return;
+                };
                 let allowed = matches!(
                     inner,
                     Packet::Audio { .. }
@@ -656,7 +773,8 @@ impl Receiver {
                 // roaming: a packet only this peer could have sealed, and new (the replay
                 // window passed it), came from another address: the peer moved (new IP,
                 // NAT rebinding). Follow it, as WireGuard does.
-                let moved = p.route.is_some_and(|r| r != via) && !matches!(inner, Packet::Bye { .. });
+                let moved =
+                    p.route.is_some_and(|r| r != via) && !matches!(inner, Packet::Bye { .. });
                 if moved {
                     tracing::info!(sender, from = %crate::logaddr::opt(p.route), to = %crate::logaddr::Shown(via), "peer moved to a new address");
                     self.set_route(sender, via);
@@ -674,8 +792,14 @@ impl Receiver {
         let me = self.cfg.my_id;
         let mut out = [0u8; 32];
         match packet {
-            Packet::Audio { sender, header, payload } => {
-                let Some(p) = self.peers.get_mut(&sender) else { return };
+            Packet::Audio {
+                sender,
+                header,
+                payload,
+            } => {
+                let Some(p) = self.peers.get_mut(&sender) else {
+                    return;
+                };
                 if p.route != Some(via) {
                     return; // only accept audio from the confirmed route
                 }
@@ -703,7 +827,9 @@ impl Receiver {
                 }
             }
             Packet::Punch { sender, token } => {
-                let Some(p) = self.peers.get(&sender) else { return };
+                let Some(p) = self.peers.get(&sender) else {
+                    return;
+                };
                 if p.token != Some(token) {
                     return;
                 }
@@ -716,18 +842,37 @@ impl Receiver {
                 }
             }
             Packet::PunchAck { sender, token } => {
-                if self.peers.get(&sender).is_some_and(|p| p.token == Some(token) && punch_may_route(p, via)) {
+                if self
+                    .peers
+                    .get(&sender)
+                    .is_some_and(|p| p.token == Some(token) && punch_may_route(p, via))
+                {
                     self.set_route(sender, via);
                 }
             }
-            Packet::Ping { sender, nonce, sent_us } => {
-                if self.peers.get(&sender).is_some_and(|p| p.route == Some(via)) {
+            Packet::Ping {
+                sender,
+                nonce,
+                sent_us,
+            } => {
+                if self
+                    .peers
+                    .get(&sender)
+                    .is_some_and(|p| p.route == Some(via))
+                {
                     let n = audio::encode_pong(&mut out, me, nonce, sent_us, now_us());
                     self.send_to_peer(via, sender, &out[..n]);
                 }
             }
-            Packet::Pong { sender, sent_us, their_us, .. } => {
-                let Some(p) = self.peers.get_mut(&sender) else { return };
+            Packet::Pong {
+                sender,
+                sent_us,
+                their_us,
+                ..
+            } => {
+                let Some(p) = self.peers.get_mut(&sender) else {
+                    return;
+                };
                 if p.route != Some(via) {
                     return;
                 }
@@ -737,7 +882,8 @@ impl Receiver {
                 // clock offset (their clock − ours), trusting only near-fastest round trips:
                 // a slow one was queued somewhere, so its midpoint is off
                 let best = p.clock.best_rtt_us.map_or(rtt_us, |b| b.min(rtt_us));
-                let offset = (rtt_us <= best + 1_000).then(|| their_us as i64 - (sent_us + rtt_us / 2) as i64);
+                let offset = (rtt_us <= best + 1_000)
+                    .then(|| their_us as i64 - (sent_us + rtt_us / 2) as i64);
                 // let the best slowly age, so a route change can raise it again
                 p.clock.best_rtt_us = Some(best + 20);
                 let s = &mut p.stats;
@@ -754,11 +900,17 @@ impl Receiver {
                     }
                 }
             }
-            Packet::Control { sender, seq, payload } => {
+            Packet::Control {
+                sender,
+                seq,
+                payload,
+            } => {
                 // always acknowledge (our earlier ack may have been lost)
                 let n = audio::encode_control_ack(&mut out, me, seq);
                 self.send_to_peer(via, sender, &out[..n]);
-                let Some(p) = self.peers.get_mut(&sender) else { return };
+                let Some(p) = self.peers.get_mut(&sender) else {
+                    return;
+                };
                 for data in p.control.on_data(seq, payload) {
                     let _ = self.events.send(NetEvent::Control { id: sender, data });
                 }
@@ -824,7 +976,8 @@ fn punch_may_route(p: &Peer, via: SocketAddr) -> bool {
 /// `via` is one of the peer's announced addresses, more direct than the route `r`, and we
 /// are still looking for better paths (shortly after connecting).
 fn upgrades(p: &Peer, r: SocketAddr, via: SocketAddr) -> bool {
-    p.connected_at.is_some_and(|t| t.elapsed() < UPGRADE_FOR + Duration::from_secs(1))
+    p.connected_at
+        .is_some_and(|t| t.elapsed() < UPGRADE_FOR + Duration::from_secs(1))
         && p.candidates.contains(&via)
         && path_rank(via) < path_rank(r)
 }
@@ -844,8 +997,15 @@ mod path_tests {
         assert_eq!(r("192.168.0.14:4000"), 0);
         assert_eq!(r("10.0.0.2:4000"), 0);
         assert_eq!(r("[2001:db8::1]:4000"), 1, "IPv6: no NAT");
-        assert_eq!(r("203.0.113.5:4000"), 2, "public IPv4: through the NATs (hairpin at home)");
-        assert!(r("192.168.0.14:4000") < r("[2001:db8::1]:4000") && r("[2001:db8::1]:4000") < r("203.0.113.5:4000"));
+        assert_eq!(
+            r("203.0.113.5:4000"),
+            2,
+            "public IPv4: through the NATs (hairpin at home)"
+        );
+        assert!(
+            r("192.168.0.14:4000") < r("[2001:db8::1]:4000")
+                && r("[2001:db8::1]:4000") < r("203.0.113.5:4000")
+        );
     }
 }
 
