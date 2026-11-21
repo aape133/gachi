@@ -476,7 +476,16 @@ input[type=range]:disabled { opacity: .45; }
 .knob { position: relative; width: 26px; height: 26px; }
 .knob-face { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--line-3); }
 .knob-face::after { content: ""; position: absolute; left: 50%; top: 2px; width: 2px; height: 9px; margin-left: -1px; border-radius: 1px; background: var(--text); }
-.knob input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+.knob input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: grab; margin: 0; touch-action: none; }
+.knob.turning input { cursor: grabbing; }
+/* the faders and the master move the same way (see the script): picked with a click, the
+   thumb says so; moved by dragging */
+.fader input, .master input { cursor: grab; touch-action: none; }
+.fader input.turning, .master input.turning { cursor: grabbing; }
+.fader input:focus::-webkit-slider-thumb, .master input:focus::-webkit-slider-thumb { background: var(--accent); }
+/* (picked with a click: it now follows the wheel and the arrow keys) */
+.knob:has(input:focus) .knob-face { border-color: var(--accent); }
+.knob:has(input:focus) .knob-face::after { background: var(--accent); }
 .knob-val { font: 9px var(--mono); color: var(--text-3); white-space: nowrap; }
 .self .knob-box { visibility: hidden; }
 
@@ -494,8 +503,10 @@ input[type=range]:disabled { opacity: .45; }
 .ms.r i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--dim); }
 .ms.r.on { background: var(--bad); border-color: var(--bad); }
 .ms.r.on i { background: var(--inv-text); border-color: var(--inv-text); }
-.recording .ms.r.on i { animation: blink 1s steps(2) infinite; }
-@keyframes blink { 50% { background: transparent; } }
+/* (a slow, even fade there and back, not on and off: by its opacity alone, which the
+   window draws without laying anything out again) */
+.recording .ms.r.on i { animation: blink 1.6s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .2; } }
 
 /* meters: a bar per channel; --v 0..1 (–60..0 dB), green, then yellow, then red */
 .meter { display: flex; gap: 2px; }

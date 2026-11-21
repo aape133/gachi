@@ -15,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 // what a page refers to that is kept a year: the path as written in the page
-const KEPT = /\/(?:style\.css|main\.js|fonts\/pretendard\.css|img\/[\w.-]+\.(?:webp|png|jpg|svg))(?:\?v=[0-9a-f]*)?/g;
+// (and the site's icon: asked for anew each visit like the pages, but browsers keep the
+// icon of a page they know for a long time by its address; a new stamp is a new address)
+const KEPT = /\/(?:style\.css|main\.js|favicon\.svg|fonts\/pretendard\.css|img\/[\w.-]+\.(?:webp|png|jpg|svg))(?:\?v=[0-9a-f]*)?/g;
 
 /** The pages: every .html under public/. */
 function pages(dir = PUBLIC) {

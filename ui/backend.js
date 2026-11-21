@@ -432,7 +432,7 @@
     async openRecordings() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.7.0'; }
+    async appVersion() { return '0.7.1'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));

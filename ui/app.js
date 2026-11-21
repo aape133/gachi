@@ -102,7 +102,7 @@
 
   /* a slider clicked once follows the mouse wheel while the pointer is on it (until
      something else is clicked; the wheel scrolls as usual everywhere else): a notch moves
-     it about 1/40 of its range (1 dB, 5 on the pan, 3 % of the click), with Shift one step */
+     it about 1/40 of its range (1 dB, 3 % of the click; 2 on the pan), with Shift one step */
   // (by how far the wheel turned, not by events: one notch of a mouse wheel is 100 px, a
   // wheel turned fast sends several in one event, a touchpad many small ones)
   const WHEEL_NOTCH = 100;
@@ -112,7 +112,8 @@
     if (t !== document.activeElement || t.disabled) return;
     e.preventDefault();
     const min = +t.min, max = +t.max, step = +t.step || 1;
-    const notch = e.shiftKey ? step : Math.max(step, Math.round((max - min) / 40 / step) * step);
+    // (the pan: 2 a notch of its 200, where a 40th would be 5)
+    const notch = e.shiftKey ? step : t.dataset.act === 'pan' ? 2 : Math.max(step, Math.round((max - min) / 40 / step) * step);
     // (Shift turns the wheel sideways in some systems; lines rather than pixels in others)
     let d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
     if (e.deltaMode === 1) d *= WHEEL_NOTCH / 3;
@@ -745,6 +746,57 @@
     updateDim();
   });
 
+  /* ── the pan knob, the faders and the master: a click picks one and changes nothing (it
+     then follows the wheel and the arrow keys); it moves by dragging, by how far the
+     pointer went, not to where the pointer is. As plain sliders they jumped to wherever
+     they were clicked: a pan thrown to one side, a volume to the top, by a stray click.
+
+     - a fader goes with the pointer: its whole range over its own length, up in the mixer,
+       to the right in the tracks view and for the master;
+     - the knob has no length: up or to the right is right, its whole way in 400 px;
+     - with Shift, a quarter of that. ── */
+  const KNOB_TRAVEL = 400, DRAG_FINE = 4, DRAG_SLACK = 3;
+  const DRAGGED = '[data-act=pan], [data-act=vol], [data-act=fader], #master-vol';
+  document.addEventListener('pointerdown', (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement) || t.type !== 'range' || !t.matches(DRAGGED) || e.button !== 0 || t.disabled) return;
+    // (no jump to the place clicked: the slider's own handling is kept out)
+    e.preventDefault();
+    t.focus();
+    const knob = t.dataset.act === 'pan';
+    const upright = !knob && !!t.closest('.stage.mixer');
+    const box = t.getBoundingClientRect();
+    // (a fader's thumb stops half its size short of either end)
+    const travel = knob ? KNOB_TRAVEL : Math.max(40, (upright ? box.height : box.width) - 12);
+    const [min, max, step] = [+t.min, +t.max, +t.step || 1];
+    const marked = knob ? t.closest('.knob') : t;
+    let from = +t.value, x = e.clientX, y = e.clientY, moved = false, fine = e.shiftKey;
+    const move = (ev) => {
+      const [dx, dy] = [ev.clientX - x, y - ev.clientY];
+      let by = knob ? dx + dy : upright ? dy : dx;
+      if (!moved && Math.abs(by) < DRAG_SLACK) return;
+      if (!moved) { moved = true; marked.classList.add('turning'); }
+      // (Shift pressed or let go on the way: from where it stands, at the other pace)
+      if (ev.shiftKey !== fine) { from = +t.value; x = ev.clientX; y = ev.clientY; fine = ev.shiftKey; by = 0; }
+      const raw = from + (by / travel) * (max - min) / (fine ? DRAG_FINE : 1);
+      const v = clamp(Math.round(raw / step) * step, min, max);
+      if (v === +t.value) return;
+      t.value = v;
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const done = () => {
+      marked.classList.remove('turning');
+      t.removeEventListener('pointermove', move);
+      t.removeEventListener('pointerup', done);
+      t.removeEventListener('pointercancel', done);
+      if (moved) t.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    try { t.setPointerCapture(e.pointerId); } catch { /* fine without */ }
+    t.addEventListener('pointermove', move);
+    t.addEventListener('pointerup', done);
+    t.addEventListener('pointercancel', done);
+  });
+
   /* ── the others' order: a name plate dragged to another place ── */
   let dragId = null;
   const clearDrop = () => $$('#stage .drop-before, #stage .drop-after').forEach((s) => s.classList.remove('drop-before', 'drop-after'));
@@ -986,6 +1038,7 @@
     if (popFor && !pop.contains(e.target) && !popAnchor?.contains(e.target)) closePop();
   });
   window.addEventListener('resize', placePop);
+  window.addEventListener('resize', () => { for (const id of ['metro-menu', 'rec-menu']) if (!$('#' + id).hidden) keepMenuInside($('#' + id)); });
   stage.addEventListener('scroll', closePop);
   $('#stage-others').addEventListener('scroll', closePop);
 
@@ -1074,7 +1127,18 @@
       $(`#${other}-menu`).hidden = !open;
       $(`#${other}`).classList.toggle('open', open);
       $(`#${other}-more`).setAttribute('aria-expanded', open);
+      if (open) keepMenuInside($(`#${other}-menu`));
     }
+  }
+  /** A menu hangs from its button's left edge (the metronome's) or right edge (the
+   *  recording's). In a narrow window the buttons sit on a line of their own at the left,
+   *  and the recording's menu, hung from the right, reached out of the window on that
+   *  side: moved over by as much as it would be cut off, either way. */
+  function keepMenuInside(menu) {
+    menu.style.translate = '';
+    const r = menu.getBoundingClientRect(), edge = 8;
+    const by = r.left < edge ? edge - r.left : r.right > innerWidth - edge ? innerWidth - edge - r.right : 0;
+    if (by) menu.style.translate = `${Math.round(by)}px 0`;
   }
   const closeMenus = () => toggleMenu(null);
   const menuOpen = () => !$('#metro-menu').hidden || !$('#rec-menu').hidden;

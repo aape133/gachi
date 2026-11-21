@@ -765,15 +765,43 @@ mod behind_routers {
         assert_eq!((outcome(&a), outcome(&b)), (None, None));
     }
 
-    /// Two hotspots: neither can guess where the other will be let in. Punching must give
-    /// up and say so (no relay).
+    /// Two hotspots whose ports cannot be guessed: neither knows where the other will be
+    /// let in. Punching must give up and say so (no relay).
+    ///
+    /// (Not two that hand their ports out in order: those do meet when each one's next
+    /// port is the one the other guessed, see the test below, and here the order in which
+    /// a router maps what a host sends at once is decided by its threads. With the ports
+    /// in order this test failed now and then, when the whole workspace was tested at once.)
     #[test]
     fn hotspot_to_hotspot_gives_up() {
-        let (na, nb) = (symmetric(28), symmetric(29));
+        let random = |ip| Nat::new(lo(ip), Mapping::PerDestinationRandom, Filter::AddressPort);
+        let (na, nb) = (random(28), random(29));
         let (a, b, _) = pair(&na, &nb);
         assert_eq!(outcome(&a), None, "a should have given up");
         assert_eq!(outcome(&b), None, "b should have given up");
         // (the routers did turn the knocking away: nothing went around them)
         assert!(na.filtered() > 0 && nb.filtered() > 0);
+    }
+
+    /// Two hotspots that hand their ports out in order can meet: each knocks on the port
+    /// the other will use next, and when that is the very next thing each router maps, the
+    /// two knocks meet. Each side is told only the other's first guessed address here, so
+    /// that it is (told all of them, which one a router maps first is up to its threads).
+    #[test]
+    fn hotspots_with_ports_in_order_meet_when_the_guess_is_next() {
+        let (na, nb) = (symmetric(48), symmetric(49));
+        let stuns = [stun_at(lo(10)), stun_at(lo(11))];
+        let a = behind(&na, &stuns, 1);
+        let b = behind(&nb, &stuns, 2);
+        let (a_tx, _) = rtrb::RingBuffer::<Frame>::new(64);
+        let (b_tx, _b_rx) = rtrb::RingBuffer::<Frame>::new(64);
+        a.add_peer(2, a_tx);
+        b.add_peer(1, b_tx);
+        // (as announced: the address the first server saw, then the guesses)
+        let first_guess = |c: Vec<SocketAddr>| c.into_iter().skip(1).take(1).collect::<Vec<_>>();
+        a.set_candidates(2, first_guess(reachable(&b.candidates, &nb, &na)), b.token, b.peer_key());
+        b.set_candidates(1, first_guess(reachable(&a.candidates, &na, &nb)), a.token, a.peer_key());
+        assert!(outcome(&a).is_some(), "a did not get through");
+        assert!(outcome(&b).is_some(), "b did not get through");
     }
 }

@@ -207,10 +207,18 @@ use flacenc::source::{Context, Fill, FrameBuf};
 
 /// Frames to a FLAC block (the format's usual size).
 const FLAC_BLOCK: usize = 4096;
+/// Places in a FLAC file's seek table: where a block starts, for players to jump by (they
+/// search for the place otherwise, which some do slowly or badly). The table sits before
+/// the sound, so its room is taken when the file is begun and filled in as it grows:
+/// evenly over the whole length, every block of a short file, one in some dozens of a long.
+const SEEK_POINTS: usize = 1024;
 
 pub(crate) struct FlacSink {
     out: BufWriter<File>,
     cfg: Verified<flacenc::config::Encoder>,
+    sample_rate: usize,
+    /// one channel's samples of a block (see `as_they_are`)
+    apart: Vec<i32>,
     /// the header as it stands (written first as a placeholder, again at the end)
     stream: Stream,
     buf: FrameBuf,
@@ -224,6 +232,11 @@ pub(crate) struct FlacSink {
     /// blocks since the header last got the length, and how many go between two updates
     since_header: usize,
     header_every: usize,
+    /// where each block starts, in bytes from the first one (for the seek table)
+    starts: Vec<u64>,
+    /// bytes of blocks written, and the frames in the last one
+    written: u64,
+    last_frames: usize,
 }
 
 impl FlacSink {
@@ -231,12 +244,14 @@ impl FlacSink {
         let bits = bits as usize;
         let mut stream = Stream::new(sample_rate as usize, channels, bits).map_err(|e| e.to_string())?;
         stream.stream_info_mut().set_block_sizes(FLAC_BLOCK, FLAC_BLOCK).map_err(|e| e.to_string())?;
-        let cfg = flacenc::config::Encoder::default().into_verified().map_err(|(_, e)| e.to_string())?;
+        let cfg = encoder_config().into_verified().map_err(|(_, e)| e.to_string())?;
         let mut out = BufWriter::new(File::create(path).map_err(|e| e.to_string())?);
-        out.write_all(&header_bytes(&stream)?).map_err(|e| e.to_string())?;
+        out.write_all(&header_bytes(&stream, &[], 0)?).map_err(|e| e.to_string())?;
         Ok(Self {
             out,
             cfg,
+            sample_rate: sample_rate as usize,
+            apart: Vec::with_capacity(FLAC_BLOCK),
             stream,
             buf: FrameBuf::with_size(channels, FLAC_BLOCK).map_err(|e| e.to_string())?,
             ctx: Context::new(bits, channels),
@@ -247,6 +262,9 @@ impl FlacSink {
             dither: Dither::new(),
             since_header: 0,
             header_every: (sample_rate as usize * WAV_HEADER_EVERY_S).div_ceil(FLAC_BLOCK).max(1),
+            starts: Vec::new(),
+            written: 0,
+            last_frames: FLAC_BLOCK,
         })
     }
 
@@ -278,7 +296,7 @@ impl FlacSink {
         let info = self.stream.stream_info_mut();
         info.set_block_sizes(FLAC_BLOCK, FLAC_BLOCK).map_err(|e| e.to_string())?;
         info.set_total_samples(self.ctx.total_samples());
-        let header = header_bytes(&self.stream)?;
+        let header = header_bytes(&self.stream, &self.starts, self.last_frames)?;
         let end = self.out.stream_position().map_err(io)?;
         self.out.seek(SeekFrom::Start(0)).map_err(io)?;
         self.out.write_all(&header).map_err(io)?;
@@ -290,12 +308,44 @@ impl FlacSink {
     fn encode(&mut self, at: usize, len: usize) -> Result<(), String> {
         let bad = |e: &dyn std::fmt::Display| gachi_lang::tr!("rec.cant_convert_flac", e);
         (&mut self.buf, &mut self.ctx).fill_interleaved(&self.pending[at..at + len]).map_err(|e| bad(&e))?;
-        let frame = flacenc::encode_fixed_size_frame(&self.cfg, &self.buf, self.frame_no, self.stream.stream_info()).map_err(|e| bad(&e))?;
-        self.frame_no += 1;
+        let mut frame = flacenc::encode_fixed_size_frame(&self.cfg, &self.buf, self.frame_no, self.stream.stream_info()).map_err(|e| bad(&e))?;
         let mut bytes = ByteSink::new();
         frame.write(&mut bytes).map_err(|e| bad(&e))?;
+        // A block must not come out bigger than its samples stored as they are: the encoder
+        // lets some through (see `encoder_config`), and some players stall or hang jumping
+        // in a file with such blocks. Then the samples as they are.
+        if bytes.as_slice().len() > len * self.bits as usize / 8 {
+            frame = self.as_they_are(at, len).map_err(|e| bad(&e))?;
+            bytes = ByteSink::new();
+            frame.write(&mut bytes).map_err(|e| bad(&e))?;
+        }
+        self.frame_no += 1;
         self.stream.stream_info_mut().update_frame_info(&frame);
+        self.starts.push(self.written);
+        self.written += bytes.as_slice().len() as u64;
+        self.last_frames = len / self.channels;
         self.out.write_all(bytes.as_slice()).map_err(io)
+    }
+
+    /// `pending[at..at + len]` as a block that stores every sample as it is (no prediction,
+    /// nothing to go wrong): each channel by itself.
+    fn as_they_are(&mut self, at: usize, len: usize) -> Result<flacenc::component::Frame, flacenc::error::VerifyError> {
+        use flacenc::component::{ChannelAssignment, Frame, FrameHeader, FrameOffset, SubFrame, Verbatim};
+        let frames = len / self.channels;
+        let header = FrameHeader::new(
+            frames,
+            ChannelAssignment::Independent(self.channels as u8),
+            self.bits as usize,
+            self.sample_rate,
+            FrameOffset::Frame(self.frame_no as u32),
+        )?;
+        let mut subframes: Vec<SubFrame> = Vec::with_capacity(self.channels);
+        for ch in 0..self.channels {
+            self.apart.clear();
+            self.apart.extend(self.pending[at..at + len].iter().skip(ch).step_by(self.channels));
+            subframes.push(Verbatim::new(&self.apart, self.bits as usize)?.into());
+        }
+        Frame::new(header, subframes.into_iter())
     }
 
     fn finish(mut self) -> Result<(), String> {
@@ -315,19 +365,61 @@ impl FlacSink {
         info.set_block_sizes(FLAC_BLOCK, FLAC_BLOCK).map_err(|e| e.to_string())?;
         info.set_md5_digest(&self.ctx.md5_digest());
         info.set_total_samples(self.ctx.total_samples());
-        // the header again, now with the length and the checksum
-        let header = header_bytes(&self.stream)?;
+        // the header again, now with the length, the checksum and the whole seek table
+        let header = header_bytes(&self.stream, &self.starts, self.last_frames)?;
         self.out.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
         self.out.write_all(&header).map_err(|e| e.to_string())?;
         self.out.flush().map_err(|e| e.to_string())
     }
 }
 
-/// "fLaC" and the stream's description (no audio: the frames are written one by one).
-fn header_bytes(stream: &Stream) -> Result<Vec<u8>, String> {
+/// The encoder's settings: as it comes, but each channel's coding is picked by the bits it
+/// really takes, not by an estimate.
+///
+/// The estimate (the encoder's default for its simple predictors) does not know that the
+/// encoder writes residuals with a parameter of 14 at most. Loud, noisy 24 bit sound needs
+/// more: such blocks were estimated small, picked over storing the samples as they are, and
+/// came out at over twice that size (a 4-minute test: 134 MB as FLAC, 69 MB as WAV; blocks
+/// of 53 kB where the samples themselves are 24 kB). Some players stalled or hung when
+/// jumping in such a file. Counted for real, far fewer blocks are; the ones that still are
+/// (a difference between the channels takes a bit more per sample than a channel) are
+/// caught where they are written (`FlacSink::encode`).
+fn encoder_config() -> flacenc::config::Encoder {
+    let mut cfg = flacenc::config::Encoder::default();
+    cfg.subframe_coding.fixed.order_sel = flacenc::config::OrderSel::BitCount;
+    cfg
+}
+
+/// What comes before the sound: "fLaC", the stream's description, and the seek table (see
+/// `SEEK_POINTS`) for the blocks that start at `starts` (bytes from the first block); the
+/// last of them holds `last_frames` frames. Always the same length, whatever is in it.
+fn header_bytes(stream: &Stream, starts: &[u64], last_frames: usize) -> Result<Vec<u8>, String> {
     let mut bytes = ByteSink::new();
     stream.write(&mut bytes).map_err(|e| e.to_string())?;
-    Ok(bytes.as_slice().to_vec())
+    let mut out = bytes.as_slice().to_vec();
+    // (the description is no longer the last thing before the sound: its mark says so)
+    if out.len() != 42 {
+        return Err("unexpected FLAC header".into());
+    }
+    out[4] &= 0x7f;
+    // the table: a block of kind 3, the last one; 18 bytes a place
+    out.push(0x80 | 3);
+    out.extend_from_slice(&((SEEK_POINTS * 18) as u32).to_be_bytes()[1..]);
+    let step = starts.len().div_ceil(SEEK_POINTS).max(1);
+    let mut places = 0;
+    for i in (0..starts.len()).step_by(step).take(SEEK_POINTS) {
+        let frames = if i + 1 == starts.len() { last_frames } else { FLAC_BLOCK };
+        out.extend_from_slice(&((i * FLAC_BLOCK) as u64).to_be_bytes());
+        out.extend_from_slice(&starts[i].to_be_bytes());
+        out.extend_from_slice(&(frames as u16).to_be_bytes());
+        places += 1;
+    }
+    // (the places not used yet: marked as such, after the used ones)
+    for _ in places..SEEK_POINTS {
+        out.extend_from_slice(&u64::MAX.to_be_bytes());
+        out.extend_from_slice(&[0; 10]);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -340,6 +432,43 @@ mod tests {
 
     fn temp(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("gachi-recfile-{}-{name}", std::process::id()))
+    }
+
+    /// Files to try in players, one of each format, in the folder `GACHI_REC_SAMPLES` names:
+    /// `cargo test -p gachi-engine --no-default-features samples_for_players -- --ignored`
+    /// Four minutes of two tones, some noise and a silent stretch, in stereo.
+    #[test]
+    #[ignore = "writes files for trying in players"]
+    fn samples_for_players() {
+        let Ok(dir) = std::env::var("GACHI_REC_SAMPLES") else { return };
+        let (rate, secs) = (48_000u32, 240usize);
+        let mut seed = 12345u32;
+        let mut noise = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / (1u32 << 23) as f32 - 1.0
+        };
+        let mut sound = Vec::with_capacity(rate as usize * secs * 2);
+        for i in 0..rate as usize * secs {
+            let t = i as f32 / rate as f32;
+            let quiet = (60.0..75.0).contains(&t);
+            let l = if quiet { 0.0 } else { 0.4 * (t * 220.0 * std::f32::consts::TAU).sin() + 0.05 * noise() };
+            let r = if quiet { 0.0 } else { 0.3 * (t * 331.0 * std::f32::consts::TAU).sin() + 0.05 * noise() };
+            sound.extend([l, r]);
+        }
+        for (name, format) in [
+            ("wav16.wav", RecFormat::Wav { bits: 16 }),
+            ("wav24.wav", RecFormat::Wav { bits: 24 }),
+            ("wav32f.wav", RecFormat::Wav { bits: 32 }),
+            ("flac16.flac", RecFormat::Flac { bits: 16 }),
+            ("flac24.flac", RecFormat::Flac { bits: 24 }),
+        ] {
+            let mut sink = Sink::create(&std::path::Path::new(&dir).join(name), format, 2, rate).unwrap();
+            // (in pieces, as the recording's writer hands them over)
+            for piece in sound.chunks(480 * 2) {
+                sink.write(piece).unwrap();
+            }
+            sink.finish().unwrap();
+        }
     }
 
     #[test]
@@ -493,6 +622,73 @@ mod tests {
 
     /// FLAC is lossless: what a decoder gives back is the 24 bit samples we wrote, block
     /// by block and with a last block that is not full.
+    /// The seek table: every place in it is where a block really starts, in order, the used
+    /// ones first, and a long file's places reach to its end.
+    #[test]
+    fn the_seek_table_points_at_blocks() {
+        for (secs, bits) in [(3usize, 16u8), (130, 24)] {
+            let path = temp(&format!("seek{secs}.flac"));
+            let mut sink = Sink::create(&path, RecFormat::Flac { bits }, 2, 48_000).unwrap();
+            let sound = sine(48_000, 48_000, 440.0, 2);
+            for _ in 0..secs {
+                sink.write(&sound).unwrap();
+            }
+            sink.finish().unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let _ = std::fs::remove_file(&path);
+            assert_eq!((bytes[4], bytes[42]), (0x00, 0x83), "the description, then the table as the last block");
+            let first_block = 46 + SEEK_POINTS * 18;
+            let blocks = (secs * 48_000).div_ceil(FLAC_BLOCK);
+            let step = blocks.div_ceil(SEEK_POINTS).max(1);
+            let (mut used, mut unused_seen, mut last) = (0usize, false, None);
+            for p in bytes[46..first_block].chunks(18) {
+                let sample = u64::from_be_bytes(p[..8].try_into().unwrap());
+                if sample == u64::MAX {
+                    unused_seen = true;
+                    continue;
+                }
+                assert!(!unused_seen, "used places come first");
+                assert!(last.is_none_or(|l| sample > l), "in order");
+                assert_eq!(sample as usize, used * step * FLAC_BLOCK);
+                let at = first_block + u64::from_be_bytes(p[8..16].try_into().unwrap()) as usize;
+                // (a block begins with its sync code; blocks of one size: 0xFFF8)
+                assert_eq!(&bytes[at..at + 2], &[0xff, 0xf8], "a place that is not the start of a block");
+                last = Some(sample);
+                used += 1;
+            }
+            assert_eq!(used, blocks.div_ceil(step));
+            let mut reader = claxon::FlacReader::new(std::io::Cursor::new(bytes)).unwrap();
+            assert_eq!(reader.samples().count(), secs * 48_000 * 2);
+        }
+    }
+
+    /// Loud noise, the worst there is to compress: no block may come out bigger than its
+    /// samples stored as they are (a little for the block's own header), in either depth.
+    #[test]
+    fn a_flac_block_is_never_bigger_than_its_samples() {
+        let mut seed = 99u32;
+        let mut noise = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / (1u32 << 23) as f32 - 1.0
+        };
+        let sound: Vec<f32> = (0..48_000 * 2 * 4).map(|i| 0.3 * (i as f32 * 0.01).sin() + 0.25 * noise()).collect();
+        for bits in [16u8, 24] {
+            let path = temp(&format!("loud{bits}.flac"));
+            let mut sink = Sink::create(&path, RecFormat::Flac { bits }, 2, 48_000).unwrap();
+            sink.write(&sound).unwrap();
+            sink.finish().unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let _ = std::fs::remove_file(&path);
+            // (the header: the largest block's size in bytes, three bytes from the 15th)
+            let largest = u32::from_be_bytes([0, bytes[15], bytes[16], bytes[17]]) as usize;
+            let as_they_are = FLAC_BLOCK * 2 * bits as usize / 8;
+            assert!(largest <= as_they_are + 64, "{bits} bit: a block of {largest} bytes, its samples are {as_they_are}");
+            // and the sound is still all there
+            let mut reader = claxon::FlacReader::new(std::io::Cursor::new(bytes)).unwrap();
+            assert_eq!(reader.samples().count(), sound.len());
+        }
+    }
+
     #[test]
     fn flac_reads_back_exactly() {
         let path = temp("a.flac");
