@@ -324,7 +324,7 @@ input[type=range]:disabled { opacity: .45; }
 .code-boxes .box.cursor { border: 1.5px solid var(--text); }
 .code-dash { height: 2px; border-radius: 1px; background: var(--line-3); }
 #code-real { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: text; font-size: 16px; }
-.code-wrap.shake { animation: shake .3s; }
+.code-wrap.shake, .me-row.shake { animation: shake .3s; }
 @keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 .join-hint { margin: -6px 0 0; font-size: 11px; color: var(--text-4); min-height: 16px; }
 .join-hint.err { color: var(--bad-text); font-size: 12px; }
@@ -624,7 +624,8 @@ input[type=range]:disabled { opacity: .45; }
 .master .meter i { height: 3px; width: 100%; border-radius: 2px; }
 .master .meter i::after { background: linear-gradient(to right, var(--good) 0 75%, var(--warn) 75% 92%, var(--bad) 92%); clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0); }
 .master input { height: 12px; }
-.master .val { width: 52px; text-align: right; font-size: 12px; }
+/* (room for "-40.0 dB" on one line: at 52 wide, anything below -10 broke in two) */
+.master .val { width: 60px; flex: none; text-align: right; font-size: 12px; white-space: nowrap; }
 
 /* chat */
 .chat { width: 320px; flex: none; display: none; flex-direction: column; min-height: 0; border-left: 1px solid var(--hair); background: var(--panel); }

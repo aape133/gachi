@@ -211,7 +211,29 @@
     if (e.target.checked) $('#create-pw').focus();
   });
 
+  /** The home screen says a name is needed before going in, and it is: no room is made or
+   *  joined under the name a first run starts with ("나", "Me"...). True with a name of
+   *  one's own (one just typed is taken at once: it is saved a moment after the last key);
+   *  else the name box is shown to be what is missing, and nothing happens. */
+  function haveName() {
+    const typed = $('#home-name').value.trim();
+    const saved = backend.getSettings().name;
+    if (typed) {
+      if (typed !== saved) backend.updateSettings({ name: typed });
+      return true;
+    }
+    if (saved && !DEFAULT_NAMES.includes(saved)) return true;
+    const row = $('#me-row');
+    row.classList.add('first');
+    put($('#me-hint'), tr('home.name_needed'));
+    row.classList.remove('shake'); void row.offsetWidth; row.classList.add('shake');
+    if ($('#screen-home').classList.contains('active')) $('#home-name').focus();
+    toast(tr('home.name_needed'), { kind: 'warn' });
+    return false;
+  }
+
   $('#btn-create').addEventListener('click', async () => {
+    if (!haveName()) return;
     const btn = $('#btn-create'), label = $('span:last-child', btn);
     btn.disabled = true; label.textContent = tr('app.creating');
     try {
@@ -278,6 +300,7 @@
   /** Joins a room. Returns 'ok', or why not: 'stop' (asked for a password, refused,
    *  cancelled: nothing to retry) or 'retry' (no connection). */
   async function join(code, password) {
+    if (!haveName()) return 'stop';
     $('#connect-code').textContent = fmtCode(code);
     $('#connect-steps').innerHTML = Object.entries(STEP_LABELS)
       .map(([id, l]) => `<li data-step="${id}"><span class="st"></span><span>${tr(l)}</span><span class="detail"></span></li>`).join('');
