@@ -20,7 +20,13 @@ pub struct Settings {
     pub packet_size: u16,
     pub jitter_mode: String,
     pub jitter_packets: u32,
+    /// "": not picked yet (a first run; no room without one, the home screen asks)
     pub name: String,
+    /// the name is the person's own. Files from before 0.7.3 lack this: there a first run
+    /// was saved under a stand-in ("나", "Me"...), which could not be told from the same
+    /// word typed in. Such a file loses a stand-in name once (see `load`).
+    #[serde(default = "yes")]
+    pub own_name: bool,
     pub instrument: String,
     /// my colour: an index into `gachi_proto::signal::COLOR_HUES` (picked at random on the
     /// first run, changed by clicking one's own avatar)
@@ -140,7 +146,8 @@ impl Default for Settings {
             packet_size: 0,
             jitter_mode: "auto".into(),
             jitter_packets: 3,
-            name: gachi_lang::tr!("settings.default_name"),
+            name: String::new(),
+            own_name: true,
             instrument: gachi_lang::tr!("settings.default_instrument"),
             color: None,
             // the connection server (Cloudflare Worker); GACHI_SERVER overrides it
@@ -172,10 +179,12 @@ impl Settings {
     /// Saved settings on top of the defaults (unknown or broken entries are ignored).
     pub fn load(path: &Path) -> Settings {
         let mut s = Settings::default();
+        let mut old_name = false;
         if let Ok(text) = std::fs::read_to_string(path) {
             match serde_json::from_str::<serde_json::Value>(&text) {
                 Ok(mut v) => {
                     if let Some(obj) = v.as_object_mut() {
+                        old_name = !obj.contains_key("ownName");
                         NOT_SAVED.iter().for_each(|k| {
                             obj.remove(*k);
                         });
@@ -186,6 +195,15 @@ impl Settings {
                 }
                 Err(e) => tracing::warn!("settings file unreadable: {e}"),
             }
+        }
+        // a file from before names were one's own: the stand-in of any language is no name
+        if old_name {
+            let stand_in = |c| gachi_lang::with(c, || gachi_lang::text("settings.default_name"));
+            if gachi_lang::languages().any(|c| stand_in(c) == s.name) {
+                s.name.clear();
+            }
+            s.own_name = true;
+            let _ = s.save(path);
         }
         // only uncompressed PCM is left (anything else, like an old "opus", becomes the default)
         if s.quality != "pcm16" && s.quality != "pcm24" {
@@ -206,7 +224,10 @@ impl Settings {
 
     /// How we show to the room.
     pub fn profile(&self) -> gachi_proto::signal::Profile {
-        gachi_proto::signal::Profile { name: self.name.clone(), instrument: self.instrument.clone(), color: self.color }
+        // (the home screen lets nobody in without a name; were one to get by, the others
+        // would still see somebody)
+        let name = if self.name.trim().is_empty() { gachi_lang::tr!("settings.default_name") } else { self.name.clone() };
+        gachi_proto::signal::Profile { name, instrument: self.instrument.clone(), color: self.color }
     }
 
     /// Writes the settings (atomically: a crash mid-write cannot leave a broken file).
@@ -304,6 +325,29 @@ mod tests {
         assert_eq!(back.server, Settings::default().server);
         std::fs::write(&path, "{ broken").unwrap();
         assert_eq!(Settings::load(&path).name, Settings::default().name, "broken file → defaults");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn an_old_stand_in_name_is_dropped_once_and_a_typed_one_stays() {
+        let dir = std::env::temp_dir().join(format!("gachi-settings-name-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        assert_eq!(Settings::default().name, "", "a first run has no name");
+        // a file from before: the stand-in of any language is no name, a real one is kept
+        for (saved, kept) in [("나", ""), ("Me", ""), ("민지", "민지")] {
+            std::fs::write(&path, serde_json::json!({ "name": saved, "theme": "light" }).to_string()).unwrap();
+            let s = Settings::load(&path);
+            assert_eq!((s.name.as_str(), s.theme.as_str()), (kept, "light"), "{saved}");
+            assert!(std::fs::read_to_string(&path).unwrap().contains("ownName"), "written back");
+        }
+        // typed in since: one's own, whatever the word
+        let mut s = Settings::load(&path);
+        s.apply_patch(&serde_json::json!({ "name": "나" })).unwrap();
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path).name, "나");
+        // nobody shows to the others without a name
+        assert!(!Settings::default().profile().name.is_empty());
         std::fs::remove_dir_all(dir).ok();
     }
 

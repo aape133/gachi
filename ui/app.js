@@ -21,7 +21,6 @@
   const putAttr = (el, name, v) => { if (el && el.getAttribute(name) !== v) el.setAttribute(name, v); };
   const fmtCode = (c) => `${c.slice(0, 3)}-${c.slice(3)}`;
   // the name a first run gets, in each language (the home screen asks for a real one)
-  const DEFAULT_NAMES = i18n.everywhere('settings.default_name');
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const dbText = (db) => (db <= -40 ? '-∞' : (db > 0 ? '+' : '') + f1(db));
   const panText = (v) => (v === 0 ? 'C' : (v < 0 ? 'L' : 'R') + Math.abs(v));
@@ -212,9 +211,9 @@
   });
 
   /** The home screen says a name is needed before going in, and it is: no room is made or
-   *  joined under the name a first run starts with ("나", "Me"...). True with a name of
-   *  one's own (one just typed is taken at once: it is saved a moment after the last key);
-   *  else the name box is shown to be what is missing, and nothing happens. */
+   *  joined without a name (a first run starts with none). True with one (one just typed
+   *  is taken at once: it is saved a moment after the last key); else the name box is
+   *  shown to be what is missing, and nothing happens. */
   function haveName() {
     const typed = $('#home-name').value.trim();
     const saved = backend.getSettings().name;
@@ -222,7 +221,7 @@
       if (typed !== saved) backend.updateSettings({ name: typed });
       return true;
     }
-    if (saved && !DEFAULT_NAMES.includes(saved)) return true;
+    if (saved) return true;
     const row = $('#me-row');
     row.classList.add('first');
     put($('#me-hint'), tr('home.name_needed'));
@@ -240,8 +239,8 @@
       const password = $('#create-pw-on').checked ? $('#create-pw').value : '';
       // (left empty: the room is called what the field said it would be)
       const named = $('#create-name').value.trim();
-      const me = backend.getSettings().name;
-      const name = named || (me && !DEFAULT_NAMES.includes(me) ? tr('home.names_room', { name: me }) : '');
+      const me = $('#home-name').value.trim() || backend.getSettings().name;
+      const name = named || (me ? tr('home.names_room', { name: me }) : '');
       const r = await backend.createRoom({ name, maxPeers: createMax, password });
       enterRoom(r, password);
       openInvite();
@@ -1078,7 +1077,7 @@
     colorPop.setAttribute('aria-label', title);
     colorPop.innerHTML = `<div class="color-title">${esc(title)}</div>`
       + (me ? `<div class="me-edit">
-          <label><span>${esc(tr('input.name'))}</span><input class="input" data-me="name" maxlength="12" autocomplete="off" spellcheck="false" value="${esc(DEFAULT_NAMES.includes(s.name) ? '' : s.name)}" placeholder="${esc(tr('home.pick_name'))}"></label>
+          <label><span>${esc(tr('input.name'))}</span><input class="input" data-me="name" maxlength="12" autocomplete="off" spellcheck="false" value="${esc(s.name || '')}" placeholder="${esc(tr('home.pick_name'))}"></label>
           <label><span>${esc(tr('home.instrument'))}</span><input class="input" data-me="instrument" maxlength="12" autocomplete="off" spellcheck="false" value="${esc(s.instrument || '')}" placeholder="${esc(tr('home.e_g_guitar'))}"></label>
         </div><div class="hr"></div>` : '')
       + `<div class="swatches">${PALETTE.map((c, i) => `<button class="swatch${c === cur ? ' on' : ''}" type="button" data-color="${c}" style="--c:${c}" title="${esc(tr(PALETTE_NAMES[i]))}" aria-label="${esc(tr(PALETTE_NAMES[i]))}"></button>`).join('')}</div>`
@@ -1656,8 +1655,9 @@
   let nameTimer = null;
   function syncHomeProfile() {
     const s = backend.getSettings();
-    const first = !s.name || DEFAULT_NAMES.includes(s.name);
-    if (document.activeElement !== homeName) homeName.value = first ? '' : s.name;
+    // (no name yet: a first run. Any name is one's own, "나" too: none is put in for us)
+    const first = !s.name;
+    if (document.activeElement !== homeName) homeName.value = s.name || '';
     $('#me-row').classList.toggle('first', first && !homeName.value.trim());
     $('#me-row').classList.toggle('loading', !backend.ready);
     put($('#me-hint'), first && !homeName.value.trim() ? tr('home.name_needed') : '');
@@ -1667,13 +1667,18 @@
       if (first && $('#screen-home').classList.contains('active')) homeName.focus();
     }
     if (document.activeElement !== homeInst) homeInst.value = s.instrument || '';
-    if (!$('#create-name').value) $('#create-name').placeholder = first ? tr('home.e_g_friday') : tr('home.names_room', { name: s.name });
+    roomHint(homeName.value.trim() || s.name);
+  }
+  /** What a room left unnamed will be called, shown in the empty name field: "<me>의 합주방". */
+  function roomHint(me) {
+    $('#create-name').placeholder = me ? tr('home.names_room', { name: me }) : tr('home.e_g_friday');
   }
   homeName.addEventListener('input', () => {
     clearTimeout(nameTimer);
     const v = homeName.value.trim();
     $('#me-row').classList.toggle('first', !v);
     put($('#me-hint'), v ? '' : tr('home.name_needed'));
+    roomHint(v);
     nameTimer = setTimeout(() => { if (v) backend.updateSettings({ name: v }); }, 400);
   });
   homeName.addEventListener('blur', () => { if (!homeName.value.trim()) syncHomeProfile(); });
