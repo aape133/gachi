@@ -1,4 +1,5 @@
-// The landing page's own few lines: the font, the download buttons, and the language menu.
+// The landing page's own few lines: the font, the download buttons, the room's two views,
+// and the language menu.
 
 // ── the font comes in pieces (a piece per range of characters, loaded as the page shows
 //    one): the text waits for every piece it needs and then shows at once, not a piece at
@@ -31,7 +32,7 @@ fontFor(document.body).then(() => {
 
 // ── light / dark: the system's, until the switch in the top bar picks one (kept in this
 //    browser). The head of each page puts the kept choice on before the page paints. ──
-const BG = { dark: '#0b0a12', light: '#f7f5f0' };
+const BG = { dark: '#0b0c0e', light: '#f4f5f7' };
 const systemTheme = () => (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 const theme = () => document.documentElement.dataset.theme || systemTheme();
 function setTheme(t) {
@@ -57,12 +58,21 @@ async function showRelease() {
   const rel = await release;
   if (!rel) return;
   const file = (re) => (rel.assets || []).find((a) => re.test(a.name))?.browser_download_url;
-  const app = file(/_x64-setup\.exe$/), vst = file(/_vst3\.zip$/);
-  const set = (id, href) => { const el = document.getElementById(id); if (el && href) el.href = href; };
-  set('dl', app); set('vst', vst);
+  const href = { app: file(/_x64-setup\.exe$/), vst: file(/_vst3\.zip$/) };
+  for (const a of document.querySelectorAll('[data-dl]')) if (href[a.dataset.dl]) a.href = href[a.dataset.dl];
   const v = String(rel.tag_name || '').replace(/^v/, '');
-  const ver = document.getElementById('ver');
-  if (ver && /^\d+(\.\d+){1,3}$/.test(v)) ver.textContent = `v${v}`;
+  if (/^\d+(\.\d+){1,3}$/.test(v)) for (const el of document.querySelectorAll('[data-ver]')) el.textContent = `v${v}`;
+}
+
+// ── the two views of the room: the switch shows one picture or the other ──
+function wireViews() {
+  const frame = document.querySelector('.views .window');
+  for (const b of document.querySelectorAll('.views .seg button')) {
+    b.addEventListener('click', () => {
+      frame.dataset.view = b.dataset.view;
+      for (const o of document.querySelectorAll('.views .seg button')) o.setAttribute('aria-pressed', String(o === b));
+    });
+  }
 }
 
 // ── languages: each has its own page (/, /en/, /ja/: what search engines show), but
@@ -107,6 +117,7 @@ addEventListener('popstate', () => { if (location.pathname !== document.body.dat
 function wire() {
   document.body.dataset.path = location.pathname;
   showRelease();
+  wireViews();
   document.querySelector('[data-act="theme"]')?.addEventListener('click', () => setTheme(theme() === 'dark' ? 'light' : 'dark'));
   const menu = document.querySelector('details.lang');
   if (!menu) return;

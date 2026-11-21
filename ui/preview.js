@@ -28,6 +28,28 @@ if (!window.__TAURI__) {
           if (clock) new MutationObserver(hold).observe(clock, { childList: true, characterData: true, subtree: true });
         }, 1200);
       }
+      // &act=tracks,metro,…: something opened or switched on, to look at it (one after another)
+      const ACT = {
+        mixer: () => $('#view-seg [data-v=mixer]').click(),
+        tracks: () => $('#view-seg [data-v=tracks]').click(),
+        metro: () => $('#metro-more').click(),
+        metroon: () => $('#metro-toggle').click(),
+        rec: () => $('#rec-more').click(),
+        recording: () => $('#rec-btn').click(),
+        room: () => $('#btn-room').click(),
+        lat: () => document.querySelectorAll('#stage-others .strip')[2]?.querySelector('[data-act=lat]').click(),
+        color: () => document.querySelectorAll('#stage-others .strip')[1]?.querySelector('[data-act=color]').click(),
+        colorme: () => $('#stage-me [data-act=color]').click(),
+        chat: () => $('#btn-chat').click(),
+        leave: () => $('#btn-leave').click(),
+        feedback: () => { $('#feedback-warn').hidden = false; },
+        audio: () => $('[data-open=settings]').click(),
+        network: () => { $('[data-open=settings]').click(); $('[data-tab=network]').click(); },
+        general: () => { $('[data-open=settings]').click(); $('[data-tab=display]').click(); },
+        about: () => { $('[data-open=settings]').click(); $('[data-tab=about]').click(); },
+      };
+      const acts = (q.get('act') || '').split(',').filter((a) => ACT[a]);
+      acts.forEach((a, i) => setTimeout(ACT[a], (shot === 'room' ? 1600 : 400) + i * 250));
     }, 200));
   }
 }

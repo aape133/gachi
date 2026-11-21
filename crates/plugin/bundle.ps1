@@ -23,6 +23,8 @@ try {
     $res = Join-Path $bundle 'Contents\Resources'
     New-Item -ItemType Directory -Force $res | Out-Null
     Copy-Item (Join-Path $root 'LICENSE') (Join-Path $res 'LICENSE.txt') -Force
+    # (and the licenses of what it is built with, their texts included)
+    Copy-Item (Join-Path $root 'THIRD-PARTY-LICENSES.md') (Join-Path $res 'THIRD-PARTY-LICENSES.md') -Force
     Write-Host "bundle: $bundle"
 
     $version = (Get-Content (Join-Path $root 'app\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version

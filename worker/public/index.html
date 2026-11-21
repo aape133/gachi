@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>gachi - 멀리 있어도, 같이 합주해요</title>
 <meta name="description" content="gachi (가치)는 인터넷으로 함께 연주하는 합주 앱이에요. 소리는 서버를 거치지 않고 서로에게 바로 가요. 무료 오픈소스(GPLv3), Windows용.">
 <script>
@@ -18,8 +18,8 @@
   })();
 </script>
 <meta name="color-scheme" content="dark light">
-<meta name="theme-color" content="#0b0a12" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f7f5f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0c0e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="canonical" href="https://gachi.band/">
 <link rel="alternate" hreflang="ko" href="https://gachi.band/">
@@ -33,7 +33,7 @@
 <meta property="og:locale:alternate" content="ja_JP">
 <meta property="og:title" content="gachi - 멀리 있어도, 같이 합주해요">
 <meta property="og:description" content="gachi (가치)는 인터넷으로 함께 연주하는 합주 앱이에요. 무료 오픈소스, Windows용.">
-<meta property="og:image" content="https://gachi.band/img/og.png?v=149a15b4b9">
+<meta property="og:image" content="https://gachi.band/img/og.png?v=4db0a7163a">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="https://gachi.band/">
@@ -51,7 +51,7 @@
   })();
 </script>
 <link rel="stylesheet" href="/fonts/pretendard.css?v=a164929fe4">
-<link rel="stylesheet" href="/style.css?v=248bf643af">
+<link rel="stylesheet" href="/style.css?v=46bf1a8cab">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -84,17 +84,17 @@
 <header class="top">
   <div class="wrap top-in">
     <a class="brand" href="/" aria-label="gachi 처음으로">
-      <svg class="mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/><path d="M15 3.76 A8 8 0 0 1 15 16.24 A8 8 0 0 1 15 3.76Z"/></svg>
+      <svg class="mark" viewBox="-5.6 -5.6 35.2 35.2" aria-hidden="true"><rect x="-5.6" y="-5.6" width="35.2" height="35.2" rx="9.6"/><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4"/></svg>
       gachi
     </a>
     <nav class="nav">
       <a href="#features">기능</a>
       <a href="#start">시작하기</a>
       <a href="#faq">자주 묻는 질문</a>
-      <a href="https://github.com/aape133/gachi" class="nav-gh">GitHub</a>
-      <button class="theme-btn" type="button" data-act="theme" title="라이트/다크 모드" aria-label="라이트/다크 모드"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg></button>
+      <a href="https://github.com/aape133/gachi">GitHub</a>
+      <button class="icon-btn theme-btn" type="button" data-act="theme" title="라이트/다크 모드" aria-label="라이트/다크 모드"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg></button>
       <details class="lang">
-        <summary aria-label="언어 선택"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>한국어</summary>
+        <summary aria-label="언어 선택"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="lang-name">한국어</span></summary>
         <ul>
           <li><a href="/" hreflang="ko" lang="ko" data-lang="ko" aria-current="page">한국어</a></li>
           <li><a href="/en/" hreflang="en" lang="en" data-lang="en">English</a></li>
@@ -106,99 +106,187 @@
 </header>
 
 <main>
-  <!-- the stage: spotlights on the headline, the app on the big screen -->
-  <section class="stage">
-    <div class="lights" aria-hidden="true"><i class="beam a"></i><i class="beam b"></i><i class="beam c"></i><i class="haze"></i></div>
+  <section class="hero">
     <div class="wrap">
-      <p class="eyebrow"><span class="dot"></span>무료 · 오픈소스 · Windows</p>
-      <h1>멀리 있어도,<br><span class="grad">같이 합주해요</span></h1>
-      <p class="lead"><span>gachi (가치)는 인터넷으로 함께 연주하는 합주 앱이에요.</span>
-        <span>소리는 서버를 거치지 않고 서로에게 바로 가요.</span>
-        <span>앱, VST3 플러그인, 연결 서버까지 <b>모든 소스가 공개된 오픈소스</b>예요.</span></p>
-      <div class="cta">
-        <a class="btn primary" id="dl" href="https://github.com/aape133/gachi/releases/latest">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
-          Windows용 내려받기
-        </a>
-        <a class="btn" id="vst" href="https://github.com/aape133/gachi/releases/latest">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-          VST3 플러그인 받기
-        </a>
+      <div class="hero-top">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="led"></span>P2P 합주 앱 · Windows</p>
+          <h1>멀리 있어도,<br><span class="dim">같이 합주해요</span></h1>
+          <p class="lead">gachi (가치)는 인터넷으로 함께 연주하는 합주 앱이에요. 소리는 서버를 거치지 않고 서로에게 바로 가요. 앱과 플러그인, 연결 서버까지 <b>모든 소스가 공개된 무료 오픈소스</b>예요.</p>
+          <div class="cta">
+            <a class="btn primary" id="dl" data-dl="app" href="https://github.com/aape133/gachi/releases/latest">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+              Windows용 내려받기
+            </a>
+            <a class="btn" id="vst" data-dl="vst" href="https://github.com/aape133/gachi/releases/latest">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+              VST3 플러그인 받기
+            </a>
+          </div>
+          <p class="meta"><span class="num" data-ver>최신 버전</span> · Windows 10 / 11 (64비트) · ASIO 오디오 인터페이스</p>
+        </div>
+        <ul class="stats">
+          <li class="card"><span class="k">한 방에</span><span class="v">16<small>명까지</small></span></li>
+          <li class="card"><span class="k">오디오</span><span class="v">24<small>bit 무압축</small></span></li>
+          <li class="card"><span class="k">연결</span><span class="v">P2P</span></li>
+          <li class="card"><span class="k">암호화</span><span class="v">E2E</span></li>
+        </ul>
       </div>
-      <p class="meta"><span id="ver">최신 버전</span> · Windows 10 / 11 (64비트) · ASIO 오디오 인터페이스</p>
-      <figure class="screen">
-        <!-- the app in the page's light or dark (style.css shows the one) -->
-        <img class="shot-img shot-dark" src="/img/room-ko-dark-1280.webp?v=09b7d35a6c" srcset="/img/room-ko-dark-1280.webp?v=09b7d35a6c 1280w, /img/room-ko-dark.webp?v=5bb2ba88f1 2560w" sizes="(max-width: 1180px) calc(100vw - 32px), 1120px" width="2560" height="1600" alt="gachi 합주실 화면: 여섯 명의 카드에 이름, 악기, 소리 크기, 볼륨과 팬, 지연 시간이 보여요" decoding="async">
-        <img class="shot-img shot-light" src="/img/room-ko-light-1280.webp?v=c8a611e7f8" srcset="/img/room-ko-light-1280.webp?v=c8a611e7f8 1280w, /img/room-ko-light.webp?v=a77ace5d23 2560w" sizes="(max-width: 1180px) calc(100vw - 32px), 1120px" width="2560" height="1600" alt="gachi 합주실 화면: 여섯 명의 카드에 이름, 악기, 소리 크기, 볼륨과 팬, 지연 시간이 보여요" loading="lazy" decoding="async">
+      <figure class="window" style="margin-inline:0;margin-bottom:0">
+        <img class="shot-dark" src="/img/mixer-ko-dark-1280.webp?v=f7711c94eb" srcset="/img/mixer-ko-dark-1280.webp?v=f7711c94eb 1280w, /img/mixer-ko-dark.webp?v=9e197460da 2560w" sizes="(max-width: 1180px) calc(100vw - 48px), 1132px" width="2560" height="1600" alt="gachi 합주방 믹서 화면: 여덟 명의 트랙에 이름 칸, 지연 시간, 소리 크기 미터, 볼륨 페이더가 보여요" decoding="async">
+        <img class="shot-light" src="/img/mixer-ko-light-1280.webp?v=9c85937ccb" srcset="/img/mixer-ko-light-1280.webp?v=9c85937ccb 1280w, /img/mixer-ko-light.webp?v=da33f5a951 2560w" sizes="(max-width: 1180px) calc(100vw - 48px), 1132px" width="2560" height="1600" alt="gachi 합주방 믹서 화면: 여덟 명의 트랙에 이름 칸, 지연 시간, 소리 크기 미터, 볼륨 페이더가 보여요" loading="lazy" decoding="async">
+      </figure>
+      <p class="window-cap"><span>믹서 보기 · 여덟 명이 함께하는 방</span><span>화면 속 이름과 코드는 예시예요</span></p>
+    </div>
+  </section>
+
+  <section class="band views" id="views">
+    <div class="wrap views-in">
+      <div class="views-copy">
+        <div class="sec-head">
+          <p class="eyebrow">Two views</p>
+          <h2>넓은 창엔 믹서,<br>좁은 창엔 트랙</h2>
+          <p>창 모양에 맞춰 처음 보기를 고르고, 그다음부터는 마지막에 쓴 보기를 기억해요.</p>
+        </div>
+        <div class="seg" role="group" aria-label="보기">
+          <button type="button" data-view="mixer" aria-pressed="false">믹서</button>
+          <button type="button" data-view="tracks" aria-pressed="true">트랙</button>
+        </div>
+        <ul class="points">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>들어온 순서대로 트랙 색.</b> 이름 칸을 끌어서 순서를 바꾸고, 누르면 색을 바꿔요. 내 화면에서만 바뀌어요.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>트랙마다 지연 시간.</b> 누르면 상대 장치, 네트워크, 버퍼, 내 장치로 나눠서 보여 줘요.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>녹음 중인 트랙은 빨갛게.</b> 누가 녹음되고 있는지 한눈에 보여요.</span></li>
+        </ul>
+      </div>
+      <figure class="window" data-view="tracks" style="margin-inline:0;margin-bottom:0">
+        <img class="v-tracks shot-dark" src="/img/tracks-ko-dark.webp?v=5fd68b3be6" width="1240" height="1560" alt="트랙 보기: 여섯 명이 한 줄씩, 이름 칸과 미터, 볼륨, 팬 노브가 보여요" loading="lazy" decoding="async">
+        <img class="v-tracks shot-light" src="/img/tracks-ko-light.webp?v=2259696b1b" width="1240" height="1560" alt="트랙 보기: 여섯 명이 한 줄씩, 이름 칸과 미터, 볼륨, 팬 노브가 보여요" loading="lazy" decoding="async">
+        <img class="v-mixer shot-dark" src="/img/mixer-ko-dark.webp?v=9e197460da" width="2560" height="1600" alt="믹서 보기: 사람마다 세로 채널 스트립" loading="lazy" decoding="async">
+        <img class="v-mixer shot-light" src="/img/mixer-ko-light.webp?v=da33f5a951" width="2560" height="1600" alt="믹서 보기: 사람마다 세로 채널 스트립" loading="lazy" decoding="async">
       </figure>
     </div>
   </section>
 
-  <!-- the numbers -->
-  <section class="specs">
-    <svg class="wave" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="wg" x1="0" x2="1"><stop offset="0" stop-color="var(--c1)"/><stop offset=".5" stop-color="var(--c2)"/><stop offset="1" stop-color="var(--c3)"/></linearGradient></defs><polyline points="0.0,60.0 5.5,59.9 10.9,60.1 16.4,59.7 21.8,60.0 27.3,59.8 32.7,58.9 38.2,60.0 43.6,58.0 49.1,59.6 54.5,57.2 60.0,56.9 65.5,59.3 70.9,63.3 76.4,55.8 81.8,56.6 87.3,61.7 92.7,66.3 98.2,61.1 103.6,58.4 109.1,67.3 114.5,53.0 120.0,65.5 125.5,56.8 130.9,54.6 136.4,54.3 141.8,57.1 147.3,64.9 152.7,54.9 158.2,61.4 163.6,62.5 169.1,57.5 174.5,61.0 180.0,49.6 185.5,48.4 190.9,51.4 196.4,65.8 201.8,57.4 207.3,52.8 212.7,63.6 218.2,57.9 223.6,50.7 229.1,74.3 234.5,69.9 240.0,47.0 245.5,63.8 250.9,61.3 256.4,78.6 261.8,71.1 267.3,50.1 272.7,81.5 278.2,43.7 283.6,56.6 289.1,70.1 294.5,46.7 300.0,59.6 305.5,42.8 310.9,66.4 316.4,70.5 321.8,63.1 327.3,76.8 332.7,51.0 338.2,70.3 343.6,65.4 349.1,64.9 354.5,57.1 360.0,84.3 365.5,93.6 370.9,57.9 376.4,73.5 381.8,22.8 387.3,77.3 392.7,72.7 398.2,102.1 403.6,87.0 409.1,42.5 414.5,51.1 420.0,72.6 425.5,26.2 430.9,57.4 436.4,39.0 441.8,37.1 447.3,34.8 452.7,74.8 458.2,39.9 463.6,46.3 469.1,54.0 474.5,81.4 480.0,34.5 485.5,56.7 490.9,63.4 496.4,88.7 501.8,85.7 507.3,91.3 512.7,39.8 518.2,51.9 523.6,45.9 529.1,99.6 534.5,108.2 540.0,22.9 545.5,25.7 550.9,32.0 556.4,32.9 561.8,58.5 567.3,68.4 572.7,38.9 578.2,18.5 583.6,53.6 589.1,50.4 594.5,64.6 600.0,89.4 605.5,71.8 610.9,60.9 616.4,67.0 621.8,70.5 627.3,32.7 632.7,85.6 638.2,78.9 643.6,86.9 649.1,82.8 654.5,51.2 660.0,51.2 665.5,23.8 670.9,72.8 676.4,16.6 681.8,16.0 687.3,29.9 692.7,25.0 698.2,43.6 703.6,14.9 709.1,11.2 714.5,27.3 720.0,24.5 725.5,48.6 730.9,22.8 736.4,87.3 741.8,67.7 747.3,37.9 752.7,45.4 758.2,51.5 763.6,52.8 769.1,40.5 774.5,77.9 780.0,85.6 785.5,58.2 790.9,59.1 796.4,35.7 801.8,35.4 807.3,49.7 812.7,43.8 818.2,83.7 823.6,34.6 829.1,23.2 834.5,95.5 840.0,62.2 845.5,32.1 850.9,63.4 856.4,24.2 861.8,62.1 867.3,93.2 872.7,83.8 878.2,72.0 883.6,46.5 889.1,53.1 894.5,44.1 900.0,71.9 905.5,61.3 910.9,70.5 916.4,54.0 921.8,50.7 927.3,70.2 932.7,75.8 938.2,71.6 943.6,70.4 949.1,71.2 954.5,68.7 960.0,49.6 965.5,60.7 970.9,54.1 976.4,40.4 981.8,40.1 987.3,50.6 992.7,49.9 998.2,67.9 1003.6,78.2 1009.1,58.0 1014.5,75.8 1020.0,76.5 1025.5,74.2 1030.9,56.1 1036.4,52.8 1041.8,53.7 1047.3,53.7 1052.7,54.5 1058.2,62.0 1063.6,65.9 1069.1,64.6 1074.5,59.7 1080.0,61.8 1085.5,63.3 1090.9,55.6 1096.4,61.6 1101.8,64.1 1107.3,62.8 1112.7,62.5 1118.2,59.8 1123.6,57.0 1129.1,62.6 1134.5,58.6 1140.0,62.3 1145.5,63.2 1150.9,59.4 1156.4,59.5 1161.8,61.9 1167.3,60.8 1172.7,59.2 1178.2,59.3 1183.6,59.6 1189.1,60.3 1194.5,60.1 1200.0,60.0"/></svg>
+  <section class="band" id="features" style="padding-top:0">
     <div class="wrap">
-      <ul class="spec-list">
-        <li><b>16</b><span>한 방 최대 인원</span></li>
-        <li><b>24bit</b><span>무압축 오디오</span></li>
-        <li><b>P2P</b><span>서버 없이 직접</span></li>
-        <li><b>E2E</b><span>종단 간 암호화</span></li>
-      </ul>
+      <div class="sec-head">
+        <p class="eyebrow">Features</p>
+        <h2>합주에 필요한 것만, 제대로</h2>
+      </div>
+      <div class="bento">
+        <article class="card tile wide">
+          <span class="tag">P2P</span>
+          <h3>서버 없이 직접 연결</h3>
+          <p>소리는 중계 서버를 거치지 않고 서로에게 바로 가요. 무압축 16·24비트로 보내고, 연결 상태에 맞춰 버퍼를 스스로 조절해요.</p>
+          <div class="demo">
+            <div class="panel">
+              <div class="lat-total"><b>14.8</b><span>ms · 지민에게서 나까지</span></div>
+              <div class="lat-bar" aria-hidden="true"><i style="flex:2.4;background:var(--seg-in)"></i><i style="flex:6.1;background:var(--seg-net)"></i><i style="flex:4;background:var(--seg-jit)"></i><i style="flex:2.3;background:var(--seg-out)"></i></div>
+              <ul class="legend">
+                <li><i style="background:var(--seg-in)"></i>상대 장치<span class="num">2.4</span></li>
+                <li><i style="background:var(--seg-net)"></i>네트워크<span class="num">6.1</span></li>
+                <li><i style="background:var(--seg-jit)"></i>버퍼<span class="num">4.0</span></li>
+                <li><i style="background:var(--seg-out)"></i>내 장치<span class="num">2.3</span></li>
+              </ul>
+            </div>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">Invite</span>
+          <h3>코드 하나로 최대 16명</h3>
+          <p>6자리 코드, 초대 링크, QR 코드로 들어와요.</p>
+          <div class="demo">
+            <div class="code mono" aria-label="방 코드 예시 K7M-Q2X"><span>K</span><span>7</span><span>M</span><em></em><span>Q</span><span>2</span><span>X</span></div>
+            <div class="chips"><span class="chip">초대 링크</span><span class="chip">QR 코드</span></div>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">Record</span>
+          <h3>트랙별 녹음</h3>
+          <p>사람마다 따로 저장하고, 내가 들은 믹스도 함께 남겨요.</p>
+          <div class="demo">
+            <ul class="radio panel">
+              <li>WAV 16bit</li>
+              <li class="on">WAV 24bit</li>
+              <li>WAV 32bit float</li>
+              <li>FLAC 24bit<small>무손실 압축</small></li>
+            </ul>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">Metronome</span>
+          <h3>모두 같은 박자</h3>
+          <p>BPM, 박자, 카운트인을 정하면 방 전체에 같은 순간에 울려요.</p>
+          <div class="demo">
+            <div class="panel">
+              <div class="metro"><span class="bpm">120<small>BPM</small></span><span class="beats" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span></div>
+              <div class="metro-row"><span class="chip mono">4/4</span><span class="chip">카운트인 1마디</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="card tile wide">
+          <span class="tag">VST3</span>
+          <h3>DAW와 함께</h3>
+          <p>VST3 플러그인을 DAW 트랙 끝에 넣으면 이펙트를 거친 소리로 합주하고, 다른 사람 소리가 그 자리에서 섞여 나와요. DAW에 지연을 더하지 않아요.</p>
+          <div class="demo">
+            <div class="chain">
+              <span class="node">기타 트랙<small>앰프 · 리버브</small></span>
+              <span class="arrow" aria-hidden="true">→</span>
+              <span class="node me">gachi VST3<small>합주방으로 보내고 받기</small></span>
+              <span class="arrow" aria-hidden="true">→</span>
+              <span class="node">DAW 출력<small>내 소리 + 모두의 소리</small></span>
+            </div>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">E2E</span>
+          <h3>종단 간 암호화</h3>
+          <p>소리와 채팅은 같은 방 사람끼리만 열어 볼 수 있어요. 방 비밀번호도 서버에 보내지 않아요.</p>
+          <div class="demo">
+            <div class="panel">
+              <div class="safety"><span>3231</span><span>4173</span><span>8947</span></div>
+              <p class="safety-note">모두의 화면에 같은 숫자가 보이면 중간에 엿듣는 사람이 없어요.</p>
+            </div>
+          </div>
+        </article>
+        <article class="card tile wide">
+          <span class="tag">Reconnect</span>
+          <h3>잠깐 끊겨도 이어서</h3>
+          <p>인터넷이 잠깐 끊겨도 저절로 다시 들어가요. 방장이 나가면 다음 사람이 방장을 이어받아요.</p>
+          <div class="demo">
+            <ul class="nearby">
+              <li><i style="background:var(--warn)"></i><span>연결이 잠깐 끊겼어요. 다시 들어가는 중…</span></li>
+              <li><i></i><b>다시 들어왔어요</b><span class="num">0:03</span></li>
+            </ul>
+          </div>
+        </article>
+        <article class="card tile wide">
+          <span class="tag">Nearby</span>
+          <h3>같은 공유기의 방</h3>
+          <p>같은 공유기에 연결된 친구가 방을 열면 첫 화면에 떠요. 코드를 입력하지 않고 눌러서 바로 들어가요.</p>
+          <div class="demo">
+            <ul class="nearby">
+              <li><i></i><b>목요일 연습</b><span class="num">2/4</span></li>
+              <li><i></i><b>밴드 합주</b><span class="num">3/8</span></li>
+            </ul>
+          </div>
+        </article>
+      </div>
     </div>
   </section>
 
-  <!-- features, as a setlist -->
-  <section class="setlist" id="features">
+  <section class="band" id="start" style="padding-top:0">
     <div class="wrap">
-      <p class="kicker" aria-hidden="true">Setlist</p>
-      <h2>합주에 필요한 것만, 제대로</h2>
-      <ol class="tracks">
-        <li class="track">
-          <span class="no" aria-hidden="true">01</span>
-          <div class="tx"><h3>서버 없이 직접 연결</h3><p>소리는 중계 서버 없이 서로에게 바로 가요. 무압축 16·24비트로 보내고, 연결 상태에 맞춰 버퍼를 스스로 조절해요. 사람마다 지연이 어디서 생기는지 나눠서 보여 줘요.</p></div>
-          <span class="tag" aria-hidden="true">P2P</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">02</span>
-          <div class="tx"><h3>최대 16명</h3><p>6자리 코드, 초대 링크, QR 코드로 들어와요. 방장이 나가도 다음 사람이 이어받고, 인터넷이 잠깐 끊겨도 저절로 다시 들어가요.</p></div>
-          <span class="tag" aria-hidden="true">16</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">03</span>
-          <div class="tx"><h3>트랙별 녹음</h3><p>사람마다 따로 WAV·FLAC 파일로 저장하고, 내가 들은 그대로의 믹스도 함께 남겨요. 녹음할 사람만 골라 켤 수 있어요.</p></div>
-          <span class="tag" aria-hidden="true">WAV · FLAC</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">04</span>
-          <div class="tx"><h3>모두 같은 박자의 메트로놈</h3><p>방 전체가 같은 순간에 클릭을 들어요. BPM, 박자, 카운트인을 정하면 모두에게 똑같이 울려요.</p></div>
-          <span class="tag" aria-hidden="true">BPM</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">05</span>
-          <div class="tx"><h3>DAW와 함께</h3><p>VST3 플러그인을 DAW 트랙 끝에 넣으면, 이펙트를 거친 소리로 합주하고 다른 사람 소리가 그 자리에서 섞여 나와요. DAW에 지연을 더하지 않아요.</p></div>
-          <span class="tag" aria-hidden="true">VST3</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">06</span>
-          <div class="tx"><h3>종단 간 암호화</h3><p>소리와 채팅은 서로만 열어 볼 수 있게 암호화돼요. 방 비밀번호도 서버에 보내지 않아요.</p></div>
-          <span class="tag" aria-hidden="true">E2E</span>
-        </li>
-      </ol>
-    </div>
-  </section>
-
-  <!-- get started: a count-in -->
-  <section class="count" id="start">
-    <div class="wrap">
-      <p class="kicker" aria-hidden="true">Count-in</p>
-      <h2>세 단계면 시작해요</h2>
+      <div class="sec-head">
+        <p class="eyebrow">Get started</p>
+        <h2>세 단계면 시작해요</h2>
+      </div>
       <ol class="steps">
-        <li><span class="n" aria-hidden="true">1</span><h3>설치하기</h3><p>설치 파일을 받아 실행하고, 설정에서 오디오 인터페이스를 골라요.</p></li>
-        <li><span class="n" aria-hidden="true">2</span><h3>방 만들기</h3><p>이름을 정하고 방을 만든 뒤, 코드나 초대 링크를 친구에게 보내요.</p></li>
-        <li><span class="n" aria-hidden="true">3</span><h3>같이 연주하기</h3><p>친구가 코드로 들어오면 바로 서로의 소리가 들려요.</p></li>
+        <li class="card"><span class="n">01</span><h3>설치하기</h3><p>설치 파일을 받아 실행하고, 설정에서 오디오 인터페이스를 골라요.</p></li>
+        <li class="card"><span class="n">02</span><h3>방 만들기</h3><p>방을 만들고, 코드나 초대 링크를 함께할 사람에게 보내요.</p></li>
+        <li class="card"><span class="n">03</span><h3>같이 연주하기</h3><p>친구가 코드로 들어오면 바로 서로의 소리가 들려요.</p></li>
       </ol>
-      <div class="rider">
-        <p class="kicker" aria-hidden="true">Tech rider</p>
+      <div class="card needs">
         <h3>필요한 것</h3>
         <ul>
           <li>Windows 10 / 11 (64비트)</li>
@@ -209,16 +297,15 @@
     </div>
   </section>
 
-  <!-- open source: the liner notes -->
-  <section class="notes">
-    <div class="wrap notes-in">
-      <div>
-        <p class="kicker" aria-hidden="true">Liner notes</p>
+  <section class="band" style="padding-top:0">
+    <div class="wrap open-in">
+      <div class="sec-head">
+        <p class="eyebrow">Open source</p>
         <h2>모든 코드가 공개돼 있어요</h2>
-        <p>앱, VST3 플러그인, 연결 서버까지 전부 GitHub에 공개돼 있어요. 누구나 어떻게 동작하는지 확인하고, 고쳐서 쓰고, 자기 연결 서버를 띄울 수 있어요. 라이선스는 GPLv3예요.</p>
-        <a class="link" href="https://github.com/aape133/gachi">github.com/aape133/gachi →</a>
+        <p>앱, VST3 플러그인, 연결 서버까지 전부 GitHub에 공개돼 있어요. 누구나 어떻게 동작하는지 확인하고, 고쳐서 쓰고, 자기 연결 서버를 띄울 수 있어요.</p>
+        <a href="https://github.com/aape133/gachi">github.com/aape133/gachi →</a>
       </div>
-      <dl class="credits">
+      <dl class="card credits">
         <div><dt>앱</dt><dd>Rust · Tauri</dd></div>
         <div><dt>VST3 플러그인</dt><dd>Rust</dd></div>
         <div><dt>연결 서버</dt><dd>Cloudflare Workers</dd></div>
@@ -227,53 +314,71 @@
     </div>
   </section>
 
-  <!-- faq -->
-  <section class="faq" id="faq">
+  <section class="band" id="faq" style="padding-top:0">
     <div class="wrap narrow">
-      <p class="kicker" aria-hidden="true">Q &amp; A</p>
-      <h2>자주 묻는 질문</h2>
-      <details>
-        <summary>지연은 얼마나 돼요?</summary>
-        <p>거리, 인터넷, 오디오 장치에 따라 달라요. 같은 도시처럼 가까운 거리에 유선 인터넷이면 서로 듣고 맞출 수 있을 만큼 짧아요. 앱이 사람마다 지연을 상대 장치, 네트워크, 버퍼, 내 장치로 나눠서 보여 줘서 어디를 개선하면 되는지 알 수 있어요.</p>
-      </details>
-      <details>
-        <summary>무료예요?</summary>
-        <p>네, 무료예요. 광고도 없고, 소스 코드도 모두 공개돼 있어요.</p>
-      </details>
-      <details>
-        <summary>연결이 안 돼요</summary>
-        <p>gachi는 중계 서버 없이 직접 연결해요. 양쪽이 모두 모바일 핫스팟이거나, 회사·학교망처럼 직접 연결을 막는 곳이면 연결이 안 될 수 있어요. 그럴 땐 앱이 이유와 해결 방법을 알려 줘요. 공유기에 UPnP가 없다면 설정의 고정 포트를 공유기에서 포워딩해 보세요.</p>
-      </details>
-      <details>
-        <summary>개인정보는 어떻게 다뤄요?</summary>
-        <p>소리와 채팅은 서버를 거치지 않고 암호화돼서 오가요. 연결 서버는 처음에 서로를 이어 주는 일만 하고, 누가 접속했는지 저장하지 않아요.</p>
-        <p>앱 화면에는 다른 사람의 IP 주소가 나오지 않고, 문제를 찾기 위한 기록(로그)에도 주소를 일부만 남겨요. 다만 소리를 서로에게 바로 보내려면 컴퓨터끼리 상대의 주소를 알아야 해서, 네트워크 분석 도구를 쓰면 같은 방 사람의 IP를 확인할 수는 있어요. 모르는 사람과 함께할 때는 이 점을 알아 두세요.</p>
-      </details>
+      <div class="sec-head">
+        <p class="eyebrow">FAQ</p>
+        <h2>자주 묻는 질문</h2>
+      </div>
+      <div class="faq-list">
+        <details class="card">
+          <summary>지연은 얼마나 돼요?</summary>
+          <p>거리, 인터넷, 오디오 장치에 따라 달라요. 같은 도시처럼 가까운 거리에 유선 인터넷이면 서로 듣고 맞출 수 있을 만큼 짧아요. 앱이 사람마다 지연을 상대 장치, 네트워크, 버퍼, 내 장치로 나눠서 보여 줘서 어디를 개선하면 되는지 알 수 있어요.</p>
+        </details>
+        <details class="card">
+          <summary>무료예요?</summary>
+          <p>네, 무료예요. 광고도 없고, 소스 코드도 모두 공개돼 있어요.</p>
+        </details>
+        <details class="card">
+          <summary>연결이 안 돼요</summary>
+          <p>gachi는 중계 서버 없이 직접 연결해요. 양쪽이 모두 모바일 핫스팟이거나, 회사·학교망처럼 직접 연결을 막는 곳이면 연결이 안 될 수 있어요. 그럴 땐 앱이 이유와 해결 방법을 알려 줘요. 공유기에 UPnP가 없다면 설정의 고정 포트를 공유기에서 포워딩해 보세요.</p>
+        </details>
+        <details class="card">
+          <summary>개인정보는 어떻게 다뤄요?</summary>
+          <p>소리와 채팅은 서버를 거치지 않고 암호화돼서 오가요. 연결 서버는 처음에 서로를 이어 주는 일만 하고, 누가 접속했는지 저장하지 않아요.</p>
+          <p>앱 화면에는 다른 사람의 IP 주소가 나오지 않고, 문제를 찾기 위한 기록(로그)에도 주소를 일부만 남겨요. 다만 소리를 서로에게 바로 보내려면 컴퓨터끼리 상대의 주소를 알아야 해서, 네트워크 분석 도구를 쓰면 같은 방 사람의 IP를 확인할 수는 있어요. 모르는 사람과 함께할 때는 이 점을 알아 두세요.</p>
+        </details>
+      </div>
     </div>
   </section>
 
-  <!-- encore -->
-  <section class="encore">
-    <div class="lights" aria-hidden="true"><i class="beam b"></i><i class="haze"></i></div>
+  <section class="band final">
     <div class="wrap">
-      <p class="kicker" aria-hidden="true">Encore</p>
+      <p class="eyebrow">Encore</p>
       <h2>지금 같이 연주해 보세요</h2>
+      <div class="cta">
+        <a class="btn primary" data-dl="app" href="https://github.com/aape133/gachi/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+          Windows용 내려받기
+        </a>
+        <a class="btn" data-dl="vst" href="https://github.com/aape133/gachi/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+          VST3 플러그인 받기
+        </a>
+      </div>
+      <p class="meta"><span class="num" data-ver>최신 버전</span> · 무료 · GPLv3</p>
     </div>
   </section>
 </main>
 
 <footer class="foot">
   <div class="wrap foot-in">
-    <div class="brand sm">
-      <svg class="mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/><path d="M15 3.76 A8 8 0 0 1 15 16.24 A8 8 0 0 1 15 3.76Z"/></svg>
-      gachi
+    <div class="foot-row">
+      <div class="brand sm">
+        <svg class="mark" viewBox="-5.6 -5.6 35.2 35.2" aria-hidden="true"><rect x="-5.6" y="-5.6" width="35.2" height="35.2" rx="9.6"/><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4"/></svg>
+        gachi
+      </div>
+      <p><a href="https://github.com/aape133/gachi/blob/main/LICENSE">GPLv3</a> 오픈소스 · <a href="https://github.com/aape133/gachi">GitHub</a> · <a href="https://github.com/aape133/gachi/releases">모든 버전</a></p>
     </div>
-    <p><a href="https://github.com/aape133/gachi/blob/main/LICENSE">GPLv3</a> 오픈소스 · <a href="https://github.com/aape133/gachi">GitHub</a> · <a href="https://github.com/aape133/gachi/releases">모든 버전</a></p>
     <p class="fine">gachi는 GPLv3에 따라 ‘있는 그대로’ 제공되는 무료 소프트웨어로, 어떤 보증도 하지 않아요. 사용하면서 생기는 일에 대한 책임은 사용자 본인에게 있어요. 소중한 녹음은 꼭 따로 백업해 두세요.</p>
-    <p class="tm">ASIO® is a registered trademark of Steinberg Media Technologies GmbH. VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
+    <div class="compat">
+      <img src="/img/asio-compatible-bw.svg?v=eed7e2dbd5" alt="ASIO Compatible" width="78" height="72" loading="lazy">
+      <img src="/img/vst-compatible.svg?v=d1f44b0858" alt="VST Compatible" width="78" height="72" loading="lazy">
+      <p class="tm">ASIO® is a registered trademark of Steinberg Media Technologies GmbH.<br>VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
+    </div>
   </div>
 </footer>
 
-<script src="/main.js?v=20b530f1b9" defer></script>
+<script src="/main.js?v=e09ab05d1a" defer></script>
 </body>
 </html>

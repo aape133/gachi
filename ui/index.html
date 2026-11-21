@@ -12,143 +12,135 @@
 
 <!-- ───────────────────────── HOME ───────────────────────── -->
 <section class="screen home active" id="screen-home">
-  <header class="home-top">
+  <header class="appbar">
     <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/></svg>
+      <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4"/></svg></span>
       gachi
     </div>
-    <div class="top-actions">
-      <button class="update-pill" id="update-pill" type="button" hidden><span data-i18n="home.new_version">New version</span> <span class="num" id="update-pill-v"></span></button>
-      <button class="icon-btn" data-act="theme" title="Light/dark mode" data-i18n-title="home.light_dark_mode"></button>
-      <button class="icon-btn" data-open="settings" title="Settings" data-icon="sliders" data-i18n-title="home.settings"></button>
-    </div>
+    <span class="spacer"></span>
+    <button class="update-pill" id="update-pill" type="button" hidden><span data-i18n="home.new_version">New version</span> <span class="num" id="update-pill-v"></span></button>
+    <button class="ibtn" data-act="theme" title="Light/dark mode" data-i18n-title="home.light_dark_mode" data-i18n-aria="home.light_dark_mode"></button>
+    <button class="ibtn" data-open="settings" title="Settings" data-icon="sliders" data-i18n-title="home.settings" data-i18n-aria="home.settings"></button>
   </header>
+  <div class="home-scroll">
+    <main class="home-main">
+      <section class="card me-row loading" id="me-row" aria-label="Me" data-i18n-aria="home.my_name">
+        <label class="me-field"><span data-i18n="input.name">Name</span>
+          <input class="input" id="home-name" maxlength="12" placeholder="Pick a name" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.pick_name"></label>
+        <label class="me-field"><span data-i18n="home.instrument">Instrument</span>
+          <input class="input" id="home-inst" maxlength="12" placeholder="e.g. guitar, cello" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.e_g_guitar"></label>
+        <span class="me-hint" id="me-hint"></span>
+      </section>
 
-  <main class="home-main">
+      <section class="notice-card" id="no-asio" hidden>
+        <h2 data-i18n="home.asio_audio_device">An ASIO audio device is needed</h2>
+        <p data-i18n-html="home.keep_latency_low">gachi sends and receives sound through <b>ASIO</b> only. No ASIO driver was found on this PC.</p>
+        <p data-i18n-html="home.install_asio_driver">Install the ASIO driver from your audio interface maker's website, then check again.</p>
+        <div class="row">
+          <button class="btn primary" id="no-asio-retry" data-i18n="home.installed_check_again">Installed it, check again</button>
+          <button class="btn" data-open="settings" data-i18n="home.use_vst_link">Use VST link</button>
+        </div>
+      </section>
 
-    <div class="me-row loading" id="me-row">
-      <button class="avatar" id="home-avatar" type="button" data-act="color" title="Change my color" style="--hue:255" data-i18n-title="home.change_my_color"></button>
-      <label class="me-name">
-        <span class="me-label" data-i18n="home.my_name">My name</span>
-        <input id="home-name" maxlength="12" placeholder="Pick a name" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.pick_name">
-      </label>
-      <span class="me-sep" aria-hidden="true"></span>
-      <label class="me-inst">
-        <span class="me-label" data-i18n="home.instrument">Instrument</span>
-        <input id="home-inst" maxlength="12" placeholder="e.g. guitar, cello" autocomplete="off" spellcheck="false" aria-label="Instrument" data-i18n-placeholder="home.e_g_guitar" data-i18n-aria="home.instrument">
-      </label>
-    </div>
+      <!-- the room left last, while the app runs (kept in memory only): one click back in -->
+      <button class="recent-bar" id="recent" type="button" hidden></button>
 
-    <div class="no-asio card" id="no-asio" hidden>
-      <h2 data-i18n="home.asio_audio_device">An ASIO audio device is needed</h2>
-      <p data-i18n-html="home.keep_latency_low">To keep latency low, gachi sends and receives sound through <b>ASIO</b> only. No ASIO driver was found on this PC.</p>
-      <p data-i18n-html="home.install_asio_driver">Install the ASIO driver from your audio interface maker's website, then check again. If you use a DAW, choose <b>VST link</b> in Settings → Audio, and the app needs no ASIO device of its own.</p>
-      <div class="no-asio-actions">
-        <button class="btn primary" id="no-asio-retry" data-i18n="home.installed_check_again">Installed it, check again</button>
-      </div>
-    </div>
-
-    <!-- the room left last, while the app runs (kept in memory only): one click back in -->
-    <button class="recent-bar" id="recent" type="button" hidden></button>
-
-    <div class="home-cards" id="home-cards">
-      <!-- create -->
-      <div class="card action-card">
-        <h2 data-i18n="home.create_room">Create room</h2>
-        <label class="field">
-          <span class="label" data-i18n="home.room_name">Room name</span>
-          <input class="input" id="create-name" placeholder="e.g. Friday jam" maxlength="24" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.e_g_friday">
-        </label>
-        <div class="field">
-          <span class="label" data-i18n="home.max_people">Max people</span>
-          <div class="seg" id="create-max">
-            <button data-v="2">2</button><button data-v="4">4</button><button data-v="6">6</button><button data-v="8" class="on">8</button><button data-v="10">10</button><button data-v="12">12</button><button data-v="14">14</button><button data-v="16">16</button>
+      <div class="home-cards" id="home-cards">
+        <section class="card action-card" aria-labelledby="join-title">
+          <div class="card-head">
+            <h2 id="join-title" data-i18n="home.join">Join</h2>
+            <p class="note" data-i18n="home.enter_code_host">Enter the 6-character room code from the host.</p>
           </div>
-        </div>
-        <div class="field">
-          <label class="row">
-            <span class="label" data-i18n="home.password">Password</span>
-            <input type="checkbox" class="switch" id="create-pw-on">
-          </label>
-          <input class="input" id="create-pw" type="password" placeholder="Password for people joining" hidden autocomplete="new-password" spellcheck="false" maxlength="64" data-i18n-placeholder="home.password_people_joining">
-        </div>
-        <div class="spacer"></div>
-        <button class="btn primary lg" id="btn-create" data-i18n="home.create_room">Create room</button>
+          <div class="code-wrap" id="code-wrap">
+            <div class="code-boxes" aria-hidden="true">
+              <span class="box"></span><span class="box"></span><span class="box"></span>
+              <span class="code-dash"></span>
+              <span class="box"></span><span class="box"></span><span class="box"></span>
+            </div>
+            <input id="code-real" autocomplete="off" spellcheck="false" aria-label="Room code" maxlength="12" data-i18n-aria="home.room_code">
+          </div>
+          <p class="join-hint" id="join-hint" data-i18n="home.paste_too_ctrl">You can paste it too (Ctrl+V)</p>
+          <button class="btn primary lg" id="btn-join" disabled data-i18n="home.join_2">Join</button>
+          <div class="nearby" id="nearby">
+            <div class="nearby-head">
+              <span class="label" data-i18n="home.rooms_router">Rooms on your router</span>
+              <button class="ibtn sm nearby-refresh" id="nearby-refresh" type="button" title="Refresh" data-icon="refresh" data-i18n-title="home.refresh" data-i18n-aria="home.refresh"></button>
+            </div>
+            <div class="nearby-list" id="nearby-list"></div>
+            <p class="nearby-empty" id="nearby-empty"><span data-i18n="home.rooms_open_same">Rooms open on the same router show up here</span>. <span data-i18n="home.dont_see_room">Don't see a room that was just made? Press refresh</span></p>
+          </div>
+        </section>
+
+        <section class="card action-card" aria-labelledby="create-title">
+          <div class="card-head">
+            <h2 id="create-title" data-i18n="home.create_room">Create room</h2>
+            <p class="note" data-i18n="home.room_makes_code">A room gets a code. Send it to the people you play with.</p>
+          </div>
+          <label class="field"><span data-i18n="home.room_name">Room name</span>
+            <input class="input" id="create-name" placeholder="e.g. Friday jam" maxlength="24" autocomplete="off" spellcheck="false" data-i18n-placeholder="home.e_g_friday"></label>
+          <div class="field">
+            <span data-i18n="dialog.max_people">Max people</span>
+            <div class="seg fill mono" id="create-max">
+              <button data-v="2">2</button><button data-v="4">4</button><button data-v="6">6</button><button data-v="8" class="on">8</button><button data-v="10">10</button><button data-v="12">12</button><button data-v="14">14</button><button data-v="16">16</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-row"><span data-i18n="home.password">Password</span><input type="checkbox" class="switch" id="create-pw-on"></label>
+            <input class="input" id="create-pw" type="password" placeholder="Password for people joining" hidden autocomplete="new-password" spellcheck="false" maxlength="64" data-i18n-placeholder="home.password_people_joining">
+          </div>
+          <button class="btn primary lg push" id="btn-create"><span data-icon="plus"></span><span data-i18n="home.create_room">Create room</span></button>
+        </section>
       </div>
 
-      <!-- join -->
-      <div class="card action-card">
-        <h2 data-i18n="home.join">Join</h2>
-        <div class="code-wrap" id="code-wrap">
-          <div class="code-boxes" aria-hidden="true">
-            <span class="box"></span><span class="box"></span><span class="box"></span>
-            <span class="code-dash"></span>
-            <span class="box"></span><span class="box"></span><span class="box"></span>
-          </div>
-          <input id="code-real" autocomplete="off" spellcheck="false" aria-label="Room code" maxlength="12" data-i18n-aria="home.room_code">
-        </div>
-        <p class="hint" id="join-hint" data-i18n="home.paste_too_ctrl">You can paste it too (Ctrl+V)</p>
-        <div class="nearby" id="nearby">
-          <div class="nearby-head">
-            <span class="label" data-i18n="home.rooms_router">Rooms on your router</span>
-            <button class="icon-btn sm" id="nearby-refresh" type="button" title="Refresh" data-icon="refresh" data-i18n-title="home.refresh"></button>
-          </div>
-          <div class="nearby-list" id="nearby-list"></div>
-          <p class="nearby-empty" id="nearby-empty"><span data-i18n="home.rooms_open_same">Rooms open on the same router show up here</span><br><span data-i18n="home.dont_see_room">Don't see a room that was just made? Press refresh</span></p>
-        </div>
-        <button class="btn primary lg" id="btn-join" disabled data-i18n="home.join_2">Join</button>
-      </div>
-    </div>
-
-    <button class="status-strip" data-open="settings">
-      <div class="status-item"><span class="dot" id="st-audio-dot"></span><div><b data-i18n="home.audio">Audio</b><span class="v" id="st-audio"></span></div></div>
-      <div class="status-item"><span class="dot pending" id="st-net-dot"></span><div><b data-i18n="home.network">Network</b><span class="v" id="st-net" data-i18n="home.checking">Checking…</span></div></div>
-      <div class="status-item"><div><b data-i18n="home.my_device_latency">My device latency</b><span class="v num" id="st-local"></span></div></div>
-      <span class="status-more" data-i18n="home.settings_2">Settings ›</span>
-    </button>
-  </main>
+      <button class="status-strip" data-open="settings" type="button">
+        <span class="status-item"><span class="dot" id="st-audio-dot"></span><span class="k" data-i18n="home.audio">Audio</span><span class="v" id="st-audio"></span></span>
+        <span class="status-item"><span class="dot pending" id="st-net-dot"></span><span class="k" data-i18n="home.network">Network</span><span class="v" id="st-net" data-i18n="home.checking">Checking…</span></span>
+        <span class="status-item"><span class="k" data-i18n="home.my_device_latency">My device latency</span><span class="v num" id="st-local"></span></span>
+        <span class="status-more" data-i18n="home.settings_2">Settings ›</span>
+      </button>
+    </main>
+  </div>
 </section>
 
 <!-- ───────────────────────── CONNECTING ───────────────────────── -->
 <section class="screen connecting" id="screen-connecting">
   <div class="connect-box">
-    <div class="connect-label" data-i18n="connect.connecting">Connecting</div>
-    <div class="connect-code mono" id="connect-code"></div>
+    <div>
+      <div class="connect-label" data-i18n="connect.connecting">Connecting</div>
+      <div class="connect-code" id="connect-code"></div>
+    </div>
     <ol class="steps" id="connect-steps"></ol>
-    <button class="btn ghost" id="btn-cancel-connect" data-i18n="connect.cancel">Cancel</button>
+    <button class="btn" id="btn-cancel-connect" data-i18n="connect.cancel">Cancel</button>
   </div>
 </section>
 
 <!-- ───────────────────────── ROOM ───────────────────────── -->
 <section class="screen room" id="screen-room">
   <header class="topbar">
-    <div class="room-meta">
+    <div class="tb-room">
       <span class="room-name" id="room-name"></span>
-      <button class="code-chip" id="btn-room" title="Invite · room code · size" data-i18n-title="room.invite_room_code">
-        <span class="code-text" id="room-code"></span>
-        <span class="chip-sep"></span>
-        <span class="num" id="room-count"></span>
+      <button class="code-chip" id="btn-room" title="Invite · room code · size" data-i18n-title="room.invite_room_code" data-i18n-aria="room.invite_room_code">
+        <span class="code-text mono" id="room-code"></span><i></i><span data-icon="users"></span><span class="num" id="room-count"></span>
       </button>
     </div>
-
-    <div class="topbar-center">
+    <div class="tb-tools">
       <!-- two buttons in two parts each: the main part switches the thing on and off, the
            small arrow opens its menu -->
       <div class="split" id="metro">
-        <button class="split-main" id="metro-toggle" title="Metronome on/off (whole room)" data-icon="metronome" data-i18n-title="room.metronome_off_whole"><i class="beat" id="metro-beat"></i></button>
-        <button class="split-more" id="metro-more" title="Metronome settings" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down" data-i18n-title="room.metronome_settings"></button>
+        <button class="split-main" id="metro-toggle" title="Metronome on/off (whole room)" data-i18n-title="room.metronome_off_whole"><span data-icon="metronome"></span><i class="beat" id="metro-beat"></i></button>
+        <button class="split-more" id="metro-more" title="Metronome settings" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down" data-i18n-title="room.metronome_settings" data-i18n-aria="room.metronome_settings"></button>
         <div class="menu" id="metro-menu" hidden>
           <div class="menu-row"><span class="label" data-i18n="room.metronome">Metronome</span><input type="checkbox" class="switch" id="metro-on" aria-label="Turn on the metronome" data-i18n-aria="room.turn_metronome"></div>
           <div class="menu-row">
             <span class="label">BPM</span>
-            <div class="bpm">
-              <button class="step-btn" id="bpm-dec" title="BPM -1" data-icon="minus"></button>
-              <input id="bpm" type="number" min="30" max="300" value="120" aria-label="BPM">
-              <button class="step-btn" id="bpm-inc" title="BPM +1" data-icon="plus"></button>
+            <div class="stepper">
+              <button class="ibtn sm" id="bpm-dec" title="BPM -1" aria-label="BPM -1" data-icon="minus"></button>
+              <input class="bpm-input" id="bpm" type="text" inputmode="numeric" maxlength="3" value="120" aria-label="BPM">
+              <button class="ibtn sm" id="bpm-inc" title="BPM +1" aria-label="BPM +1" data-icon="plus"></button>
             </div>
           </div>
           <div class="menu-row"><span class="label" data-i18n="room.time">Time</span>
-            <div class="seg" id="metro-sig" title="The first beat is accented" data-i18n-title="room.first_beat_accented">
+            <div class="seg mono" id="metro-sig" title="The first beat is accented" data-i18n-title="room.first_beat_accented">
               <button data-v="2">2/4</button><button data-v="3">3/4</button><button data-v="4">4/4</button><button data-v="6">6/8</button>
             </div>
           </div>
@@ -157,358 +149,318 @@
               <button data-v="0" data-i18n="room.none">None</button><button data-v="1" data-i18n="room.1_bar">1 bar</button><button data-v="2" data-i18n="room.2_bars">2 bars</button>
             </div>
           </div>
-          <div class="menu-sep"></div>
-          <div class="menu-row"><span class="label" data-i18n="room.my_click_volume">My click volume</span><input type="range" id="metro-vol" min="0" max="100" step="1"><span class="val num" id="metro-vol-menu-val"></span></div>
+          <div class="hr"></div>
+          <div class="menu-row"><span class="label" data-i18n="room.my_click_volume">My click volume</span><input type="range" id="metro-vol" min="0" max="100" step="1" style="flex:1"><span class="num" id="metro-vol-menu-val" style="width:36px;text-align:right;font-size:12px"></span></div>
           <p class="note" data-i18n="room.off_bpm_time">On/off, BPM, time and count-in apply to the whole room. The volume is yours alone.</p>
         </div>
       </div>
+      <span class="vsep"></span>
       <div class="split" id="rec">
         <button class="split-main" id="rec-btn" title="Start/stop recording" data-i18n-title="room.start_stop_recording"><span class="rec-dot"></span><span id="rec-label" data-i18n="room.record">Record</span></button>
-        <button class="split-more" id="rec-more" title="Recording settings" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down" data-i18n-title="room.recording_settings"></button>
+        <button class="split-more" id="rec-more" title="Recording settings" aria-haspopup="true" aria-expanded="false" data-icon="chevron-down" data-i18n-title="room.recording_settings" data-i18n-aria="room.recording_settings"></button>
         <div class="menu" id="rec-menu" hidden>
-          <div class="menu-row lockable"><span class="label" data-i18n="room.format">Format</span>
-            <div class="seg" id="rec-format">
-              <button data-v="wav">WAV</button><button data-v="flac">FLAC</button>
-            </div>
-          </div>
-          <div class="menu-row lockable" id="rec-bits-row"><span class="label" data-i18n="room.bit_depth">Bit depth</span>
-            <div class="seg" id="rec-bits">
-              <button data-v="16">16bit</button><button data-v="24">24bit</button><button data-v="32">32bit float</button>
-            </div>
-          </div>
-          <div class="menu-row lockable"><span class="label" data-i18n="room.also_save_full">Also save the full mix</span><input type="checkbox" class="switch" id="rec-mix" aria-label="Also save the full mix" data-i18n-aria="room.also_save_full"></div>
+          <div class="menu-title" data-i18n="room.format">Format</div>
+          <div id="rec-formats"></div>
+          <div class="menu-sep"></div>
+          <label class="menu-switch"><span data-i18n="room.also_save_full">Also save the full mix</span><input type="checkbox" class="switch" id="rec-mix"></label>
           <p class="note" id="rec-note"></p>
           <p class="note" id="rec-locked" hidden data-i18n="room.format_cant_change">The format can't change while recording.</p>
-          <div class="menu-sep"></div>
           <button class="btn" id="rec-open" data-i18n="room.open_recordings_folder">Open recordings folder</button>
         </div>
       </div>
+      <span class="vsep"></span>
+      <div class="seg" id="view-seg" role="group" aria-label="View" data-i18n-aria="room.view">
+        <button data-v="mixer" data-i18n="room.mixer">Mixer</button><button data-v="tracks" data-i18n="room.tracks">Tracks</button>
+      </div>
     </div>
-
-    <div class="topbar-right">
-      <span class="session-time num" id="session-time">00:00</span>
-      <button class="icon-btn" data-act="theme" title="Light/dark mode" data-i18n-title="home.light_dark_mode"></button>
-      <button class="icon-btn" id="btn-chat" title="Chat" data-icon="chat" data-i18n-title="room.chat"><span class="badge" id="chat-badge" hidden></span></button>
-      <button class="icon-btn" data-open="settings" title="Settings" data-icon="sliders" data-i18n-title="home.settings"></button>
+    <div class="tb-icons">
+      <span class="vsep wide-only"></span>
+      <span class="session-time num wide-only" id="session-time" title="Session time" data-i18n-title="room.session_time">00:00</span>
+      <button class="ibtn" data-act="theme" title="Light/dark mode" data-i18n-title="home.light_dark_mode" data-i18n-aria="home.light_dark_mode"></button>
+      <button class="ibtn" id="btn-chat" title="Chat" data-icon="chat" data-i18n-title="room.chat" data-i18n-aria="room.chat"><span class="badge" id="chat-badge" hidden></span></button>
+      <button class="ibtn" data-open="settings" title="Settings" data-icon="sliders" data-i18n-title="home.settings" data-i18n-aria="home.settings"></button>
+      <button class="btn leave" id="btn-leave" title="Leave" data-i18n-title="room.leave"><span data-icon="log-out"></span><span class="leave-label" data-i18n="room.leave">Leave</span></button>
     </div>
   </header>
-  <div class="feedback-warn" id="feedback-warn" role="alert" hidden><span data-i18n="room.sound_going_back">Their sound is going back to them: the others hear themselves again. Please check your input connections.</span><button class="warn-close" id="feedback-close" title="Close" aria-label="Close" data-icon="x" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
-
+  <div class="feedback-warn" id="feedback-warn" role="alert" hidden><span data-icon="alert"></span><span data-i18n="room.sound_going_back">Their sound is going back to them: the others hear themselves again. Please check your input connections.</span><button class="ibtn sm bare" id="feedback-close" title="Close" aria-label="Close" data-icon="x" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
   <div class="room-body">
-    <main class="stage" id="stage"></main>
-
+    <div class="room-col">
+      <main class="stage mixer" id="stage">
+        <div class="stage-me" id="stage-me"></div>
+        <div class="stage-others" id="stage-others"></div>
+      </main>
+      <footer class="dock">
+        <!-- left, what I send; right, what I hear -->
+        <div class="dock-me">
+          <button class="dbtn mic" id="dock-mic"><span data-icon="mic"></span><span class="wide-label" data-i18n="card.mic">Mic</span></button>
+          <button class="dbtn mon" id="dock-mon"><span data-icon="headphones"></span><span class="wide-label" data-i18n="card.monitor">Monitor</span></button>
+          <label class="input-pick" id="room-input-pick" title="Input channel" data-i18n-title="settings.input_channel">
+            <span data-icon="input"></span><span class="wide-label" data-i18n="card.input">Input</span>
+            <select class="select" id="room-input" aria-label="Input channel" data-i18n-aria="settings.input_channel"></select>
+          </label>
+          <span class="daw-chip" id="room-daw" hidden><span class="dot" id="room-daw-dot"></span><span id="room-daw-text"></span></span>
+        </div>
+        <div class="master">
+          <span class="label" data-i18n="room.master">Master</span>
+          <div class="master-in">
+            <div class="meter" id="master-meter" aria-hidden="true"><i></i><i></i></div>
+            <input type="range" id="master-vol" min="-40" max="6" step="0.5" value="0" aria-label="Master" data-i18n-aria="room.master">
+          </div>
+          <span class="val num" id="master-val">0.0 dB</span>
+        </div>
+      </footer>
+    </div>
+    <button class="chat-veil" id="chat-veil" tabindex="-1" aria-label="Close" data-i18n-aria="room.close"></button>
     <aside class="chat" id="chat">
-      <div class="chat-head"><span data-i18n="room.chat">Chat</span><button class="icon-btn sm" id="btn-chat-close" data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
+      <div class="chat-head"><span data-i18n="room.chat">Chat</span><button class="ibtn sm bare" id="btn-chat-close" data-icon="x" title="Close" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
       <div class="chat-list" id="chat-list"></div>
       <form class="chat-form" id="chat-form" autocomplete="off">
         <input class="input" id="chat-input" placeholder="Type a message" maxlength="300" autocomplete="off" spellcheck="false" data-i18n-placeholder="room.type_message">
-        <button class="icon-btn send" title="Send" data-icon="send" data-i18n-title="room.send"></button>
+        <button class="btn" data-i18n="room.send">Send</button>
       </form>
     </aside>
   </div>
-
-  <footer class="bottombar">
-    <!-- left, what I send: the input of the device (the mic and my level are on my card; M
-         still mutes; DAW mode: the DAW's track decides, nothing to pick). Right, what I hear:
-         the master, and the way out. (Each one's latency is on their own card.) -->
-    <div class="self-quick">
-      <label class="input-pick" id="room-input-pick" title="Input channel" data-i18n-title="settings.input_channel">
-        <span data-icon="mic"></span>
-        <select class="select" id="room-input" aria-label="Input channel" data-i18n-aria="settings.input_channel"></select>
-      </label>
-    </div>
-
-    <div class="master">
-      <span class="ctrl-label" data-i18n="room.master">Master</span>
-      <input type="range" id="master-vol" min="-40" max="6" step="0.5" value="0">
-      <span class="val num" id="master-val">0.0 dB</span>
-      <button class="btn leave" id="btn-leave"><span data-icon="log-out"></span><span class="leave-label" data-i18n="room.leave">Leave</span></button>
-    </div>
-  </footer>
 </section>
 
 <!-- ───────────────────────── LATENCY POPOVER ───────────────────────── -->
-<div class="popover" id="lat-pop" role="dialog" aria-label="Latency details" data-i18n-aria="room.latency_details"></div>
+<div class="pop lat-pop" id="lat-pop" role="dialog" aria-label="Latency details" data-i18n-aria="room.latency_details"></div>
 
-
+<!-- ───────────────────────── WINDOWS ───────────────────────── -->
 <div class="modal-backdrop" id="modal-pw">
   <div class="modal sm" role="dialog" aria-labelledby="pw-title">
-    <div class="modal-head"><h3 id="pw-title" data-i18n="home.password">Password</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
+    <div class="modal-head"><h3 id="pw-title" data-i18n="home.password">Password</h3><button class="ibtn sm" data-close data-icon="x" title="Close" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
     <form class="modal-body" id="pw-form">
       <p class="note" id="pw-note" data-i18n="dialog.room_has_password">This room has a password. Enter the one the host gave you.</p>
       <input class="input" id="pw-input" type="password" autocomplete="new-password" maxlength="64" placeholder="Password" data-i18n-placeholder="home.password">
-      <button class="btn primary" type="submit" style="width:100%;margin-top:12px" data-i18n="home.join_2">Join</button>
+      <button class="btn primary lg" type="submit" data-i18n="home.join_2">Join</button>
     </form>
   </div>
 </div>
-
 <div class="modal-backdrop" id="modal-link">
   <div class="modal sm" role="dialog" aria-labelledby="link-title">
-    <div class="modal-head"><h3 id="link-title" data-i18n="dialog.invite_link">Invite link</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
+    <div class="modal-head"><h3 id="link-title" data-i18n="dialog.invite_link">Invite link</h3><button class="ibtn sm" data-close data-icon="x" title="Close" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
     <div class="modal-body">
-      <p class="note"><span data-i18n="dialog.join_room">Join room</span> <b id="link-code"></b> <span data-i18n="dialog.invite_link_once">from this invite link? Once you join, the people in the room hear you. If you don't know this link, close this.</span></p>
-      <button class="btn primary" id="link-join" style="width:100%;margin-top:12px" data-i18n="home.join_2">Join</button>
+      <p class="note"><span data-i18n="dialog.join_room">Join room</span> <b class="mono" id="link-code"></b> <span data-i18n="dialog.invite_link_once">from this invite link? Once you join, the people in the room hear you. If you don't know this link, close this.</span></p>
+      <button class="btn primary lg" id="link-join" data-i18n="home.join_2">Join</button>
     </div>
   </div>
 </div>
-
-<!-- ───────────────────────── A NEWER VERSION ───────────────────────── -->
 <div class="modal-backdrop" id="modal-update">
   <div class="modal sm" role="dialog" aria-labelledby="update-title">
-    <div class="modal-head"><h3 id="update-title" data-i18n="dialog.new_version_out">A new version is out</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
+    <div class="modal-head"><h3 id="update-title" data-i18n="dialog.new_version_out">A new version is out</h3><button class="ibtn sm" data-close data-icon="x" title="Close" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
     <div class="modal-body">
-      <p class="update-versions"><span class="num" id="update-from"></span> → <b class="num" id="update-to"></b></p>
+      <p class="update-versions"><span id="update-from"></span> → <b id="update-to"></b></p>
       <p class="note" data-i18n="dialog.get_installer_download">Get the installer from the download page and run it: you'll have the new version with your settings as they are.</p>
-      <button class="btn primary" id="update-open" style="width:100%;margin-top:12px" data-i18n="dialog.open_download_page">Open download page</button>
+      <button class="btn primary lg" id="update-open" data-i18n="dialog.open_download_page">Open download page</button>
     </div>
   </div>
 </div>
 
-<!-- ───────────────────────── ROOM PANEL: invite + code + size ───────────────────────── -->
+<!-- the room: invite + code + size -->
 <div class="modal-backdrop" id="modal-invite">
   <div class="modal sm" role="dialog" aria-labelledby="invite-title">
-    <div class="modal-head"><h3 id="invite-title" data-i18n="dialog.room">Room</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
+    <div class="modal-head"><h3 id="invite-title" data-i18n="dialog.room">Room</h3><button class="ibtn sm" data-close data-icon="x" title="Close" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
     <div class="modal-body">
       <div class="invite" id="invite-open">
         <div class="invite-main">
-          <div class="label" data-i18n="dialog.room_code">Room code</div>
+          <span class="label" data-i18n="dialog.room_code">Room code</span>
           <div class="invite-code" id="invite-code"></div>
           <div class="link-box mono" id="invite-link"></div>
         </div>
         <div class="qr" id="qr"></div>
       </div>
       <div class="copy-row" id="copy-row">
-        <button class="btn" id="copy-code"><span data-icon="copy"></span><span data-i18n="dialog.copy_code">Copy code</span></button>
-        <button class="btn" id="copy-link"><span data-icon="link"></span><span data-i18n="dialog.copy_link">Copy link</span></button>
-        <button class="btn primary" id="copy-msg"><span data-icon="chat"></span><span data-i18n="dialog.copy_invite">Copy invite</span></button>
+        <button class="btn" id="copy-code" data-i18n="dialog.copy_code">Copy code</button>
+        <button class="btn" id="copy-link" data-i18n="dialog.copy_link">Copy link</button>
+        <button class="btn primary" id="copy-msg" data-i18n="dialog.copy_invite">Copy invite</button>
       </div>
       <p class="invite-closed" id="invite-closed" hidden></p>
-
-      <div class="room-settings">
-        <label class="rs-row">
-          <div><div class="rs-title" data-i18n="dialog.room_code">Room code</div><div class="rs-note" id="rm-code-note"></div></div>
-          <input type="checkbox" class="switch" id="rm-open">
-        </label>
-        <div class="rs-row">
-          <div><div class="rs-title" data-i18n="dialog.max_people">Max people</div><div class="rs-note" id="rm-size-note"></div></div>
-          <div class="stepper">
-            <button class="step-btn" id="rm-dec" title="Fewer" data-icon="minus" data-i18n-title="dialog.fewer"></button>
-            <span class="num" id="rm-size"></span>
-            <button class="step-btn" id="rm-inc" title="More" data-icon="plus" data-i18n-title="dialog.more"></button>
-          </div>
+      <div class="hr"></div>
+      <label class="rs-row">
+        <span><span class="rs-title" data-i18n="dialog.room_code">Room code</span><br><span class="rs-note" id="rm-code-note"></span></span>
+        <input type="checkbox" class="switch" id="rm-open">
+      </label>
+      <div class="rs-row">
+        <span><span class="rs-title" data-i18n="dialog.max_people">Max people</span><br><span class="rs-note" id="rm-size-note"></span></span>
+        <div class="stepper">
+          <button class="ibtn sm" id="rm-dec" title="Fewer" aria-label="Fewer" data-icon="minus" data-i18n-title="dialog.fewer" data-i18n-aria="dialog.fewer"></button>
+          <span class="num" id="rm-size"></span>
+          <button class="ibtn sm" id="rm-inc" title="More" aria-label="More" data-icon="plus" data-i18n-title="dialog.more" data-i18n-aria="dialog.more"></button>
         </div>
-        <div class="rs-row">
-          <div><div class="rs-title" data-i18n="dialog.new_code">New code</div><div class="rs-note" data-i18n="dialog.old_code_stops">The old code stops working</div></div>
-          <button class="btn sm" id="rm-new"><span data-icon="refresh"></span><span data-i18n="dialog.make_new">Make new</span></button>
-        </div>
-        <p class="rm-guest" id="rm-guest" data-i18n="dialog.only_host_change">Only the host can change these.</p>
       </div>
-
-      <div class="safety">
-        <div class="safety-head"><span class="label" data-i18n="dialog.security_check_code">Security check code</span><span class="safety-code mono" id="safety-code"></span></div>
-        <p class="note" data-i18n="dialog.if_everyone_sees">If everyone sees the same numbers, no one is listening in between.</p>
+      <div class="rs-row">
+        <span><span class="rs-title" data-i18n="dialog.new_code">New code</span><br><span class="rs-note" data-i18n="dialog.old_code_stops">The old code stops working</span></span>
+        <button class="btn" id="rm-new"><span data-icon="refresh"></span><span data-i18n="dialog.make_new">Make new</span></button>
       </div>
+      <p class="note" id="rm-guest" data-i18n="dialog.only_host_change">Only the host can change these.</p>
+      <div class="hr"></div>
+      <div class="safety-head"><span class="label" data-i18n="dialog.security_check_code">Security check code</span><span class="safety-code mono" id="safety-code"></span></div>
+      <p class="note faint" data-i18n="dialog.if_everyone_sees">If everyone sees the same numbers, no one is listening in between.</p>
     </div>
   </div>
 </div>
 
-<!-- ───────────────────────── SETTINGS MODAL ───────────────────────── -->
+<!-- ───────────────────────── SETTINGS ───────────────────────── -->
 <div class="modal-backdrop" id="modal-settings">
-  <div class="modal" role="dialog" aria-labelledby="settings-title">
-    <div class="modal-head"><h3 id="settings-title" data-i18n="home.settings">Settings</h3><button class="icon-btn" data-close data-icon="x" title="Close" data-i18n-title="room.close"></button></div>
-    <nav class="tabs" id="settings-tabs">
-      <button data-tab="audio" class="on" data-i18n="home.audio">Audio</button>
-      <button data-tab="network" data-i18n="home.network">Network</button>
-      <button data-tab="display" data-i18n="settings.general">General</button>
-      <button data-tab="about" data-i18n="settings.about">About</button>
+  <div class="modal settings" role="dialog" aria-labelledby="settings-title">
+    <div class="modal-head"><h3 id="settings-title" data-i18n="home.settings">Settings</h3><button class="ibtn sm bare" data-close data-icon="x" title="Close" data-i18n-title="room.close" data-i18n-aria="room.close"></button></div>
+    <nav class="tabs" id="settings-tabs" role="tablist">
+      <button data-tab="audio" class="on" role="tab"><span data-icon="wave"></span><span data-i18n="home.audio">Audio</span></button>
+      <button data-tab="network" role="tab"><span data-icon="globe"></span><span data-i18n="home.network">Network</span></button>
+      <button data-tab="display" role="tab"><span data-icon="sliders"></span><span data-i18n="settings.general">General</span></button>
+      <button data-tab="about" role="tab"><span data-icon="info"></span><span data-i18n="settings.about">About</span></button>
     </nav>
-    <div class="modal-body">
-
+    <div class="tab-scroll">
       <!-- AUDIO -->
       <div class="tab-panel on" data-panel="audio">
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.connection">Connection</span><span class="aside" id="daw-status"></span></div>
-          <div class="seg" data-key="connection">
-            <button data-v="device" data-i18n="settings.audio_interface">Audio interface</button><button data-v="daw" data-i18n="settings.vst_link">VST link</button>
+        <div class="tab-main">
+          <div class="form">
+            <h4 data-i18n="settings.g_device">Device</h4>
+            <span class="k" data-i18n="settings.connection">Connection</span>
+            <div class="v"><div class="seg" data-key="connection"><button data-v="device" data-i18n="settings.audio_interface">Audio interface</button><button data-v="daw" data-i18n="settings.vst_link">VST link</button></div></div>
+            <p class="note" id="conn-note"></p>
+            <span class="k" data-device-only data-i18n="settings.asio_device">ASIO device</span>
+            <div class="v" data-device-only>
+              <select class="select grow" id="set-device" aria-label="ASIO device" data-i18n-aria="settings.asio_device"></select>
+              <button class="btn" id="open-panel" style="height:34px" title="The audio interface driver's settings (buffer size, sample rate)" data-i18n-title="settings.audio_interface_drivers" data-i18n="settings.control_panel">Control panel</button>
+            </div>
+            <p class="note q-warn" id="device-warn" data-device-only hidden></p>
+            <span class="k" data-daw-only data-i18n="settings.plugin">Plugin</span>
+            <div class="v" data-daw-only><span id="daw-status"></span></div>
           </div>
-          <p class="note" id="conn-note"></p>
+          <div class="form" data-device-only>
+            <h4 data-i18n="card.input">Input</h4>
+            <span class="k" data-i18n="settings.input_channel">Input channel</span>
+            <div class="v"><select class="select grow" id="set-input" aria-label="Input channel" data-i18n-aria="settings.input_channel"></select></div>
+            <span class="k top" id="ch-k" data-i18n="settings.channel_signal">Channel signal</span>
+            <div class="v"><div class="ch-meters" id="ch-meters"></div></div>
+            <p class="note" id="ch-note" data-i18n-html="settings.make_sound_bar">Make a sound and a bar rises on the channel the signal comes in on.</p>
+          </div>
+          <div class="form">
+            <h4 data-i18n="settings.g_listen">Listening</h4>
+            <span class="k" data-i18n="settings.metronome_volume">Metronome volume</span>
+            <div class="v"><input type="range" id="set-metro-vol" min="0" max="100" step="1" class="grow" aria-label="Metronome volume" data-i18n-aria="settings.metronome_volume"><span class="num" id="metro-vol-val" style="width:40px;text-align:right;font-size:12px"></span></div>
+            <p class="note" data-i18n="settings.only_hear_click">Only you hear the click; it isn't sent to the others.</p>
+            <span class="k" data-i18n="settings.test">Test</span>
+            <div class="v"><div class="test-meter" id="set-meter"><i></i></div><button class="btn" id="test-tone" style="height:34px"><span data-icon="headphones"></span><span data-i18n="settings.test_tone">Test tone</span></button></div>
+          </div>
         </div>
-        <div class="setting" data-device-only>
-          <div class="setting-head"><span class="label" data-i18n="settings.asio_device">ASIO device</span></div>
-          <div class="row">
-            <select class="select grow" id="set-device"></select>
-            <button class="btn" id="open-panel" title="The audio interface driver's settings (buffer size, sample rate)" data-i18n-title="settings.audio_interface_drivers"><span data-icon="sliders"></span><span data-i18n="settings.control_panel">Control panel</span></button>
-          </div>
-          <p class="note warn" id="device-warn" hidden></p>
-        </div>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.device_format">Device format</span></div>
-          <div class="fmt-boxes">
-            <div class="fmt-box"><span class="k" data-i18n="settings.sample_rate">Sample rate</span><span class="v num" id="fmt-rate">-</span></div>
-            <div class="fmt-box"><span class="k" data-i18n="settings.buffer_size">Buffer size</span><span class="v num" id="fmt-buf">-</span></div>
-            <div class="fmt-box wide" title="The real latency: the buffer plus USB transfer and the driver's safety margin" data-i18n-title="settings.real_latency_buffer"><span class="k" id="fmt-lat-k" data-i18n="settings.device_latency">Device latency</span><span class="v num" id="fmt-lat">-</span></div>
-          </div>
+        <aside class="tab-aside">
+          <span class="aside-title" id="fmt-lat-k" data-i18n="settings.device_latency">Device latency</span>
+          <div class="big"><span class="n" id="fmt-lat-n">-</span><span class="u">ms</span></div>
+          <div class="lat-bar"><div class="lat-fill" id="fmt-lat-bar"></div></div>
+          <div class="legend" id="fmt-lat-legend"></div>
+          <div class="hr"></div>
+          <div class="stat"><span class="k" data-i18n="settings.sample_rate">Sample rate</span><span class="num" id="fmt-rate">-</span></div>
+          <div class="stat"><span class="k" data-i18n="settings.buffer_size">Buffer size</span><span class="num" id="fmt-buf">-</span></div>
           <p class="note" id="fmt-note"></p>
-        </div>
-        <div class="setting" data-device-only>
-          <div class="setting-head"><span class="label" data-i18n="settings.input_channel">Input channel</span></div>
-          <select class="select" id="set-input"></select>
-          <div class="ch-meters" id="ch-meters" hidden></div>
-          <p class="note" id="ch-note" hidden data-i18n-html="settings.make_sound_bar">Make a sound and a bar rises on the channel the signal comes in on. With 'Mic + stereo' you can send your mic and a loopback (PC sound) together. <b>Don't pick a loopback whose bar rises with the test tone</b>: that channel carries this app's output (the others' sound), so they would hear themselves back.</p>
-        </div>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.metronome_volume">Metronome volume</span><span class="aside num" id="metro-vol-val"></span></div>
-          <input type="range" id="set-metro-vol" min="0" max="100" step="1">
-          <p class="note" data-i18n="settings.only_hear_click">Only you hear the click; it isn't sent to the others.</p>
-        </div>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.test">Test</span></div>
-          <div class="row">
-            <div class="meter grow" id="set-meter"><i></i><i></i></div>
-            <button class="btn" id="test-tone"><span data-icon="headphones"></span><span data-i18n="settings.test_tone">Test tone</span></button>
-          </div>
-        </div>
+        </aside>
       </div>
 
       <!-- NETWORK -->
       <div class="tab-panel" data-panel="network">
-        <div class="setting">
-          <label class="row">
-            <span class="label" data-i18n="settings.show_my_room">Show my room on the same network</span>
-            <input type="checkbox" class="switch" id="set-nearby">
-          </label>
-          <p class="note" data-i18n="settings.when_host_room">When you host, your room appears on the home screen of people on the same router (Wi-Fi or wired). Only while the code is on, and never on other networks.</p>
-        </div>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.sound_quality">Sound quality</span><span class="aside num" id="q-bw"></span></div>
-          <div class="seg" data-key="quality">
-            <button data-v="pcm16">16bit</button><button data-v="pcm24">24bit</button>
+        <div class="tab-main">
+          <div class="form">
+            <h4 data-i18n="card.sending">Sending</h4>
+            <span class="k" data-i18n="settings.sound_quality">Sound quality</span>
+            <div class="v"><div class="seg mono" data-key="quality"><button data-v="pcm16">16bit</button><button data-v="pcm24">24bit</button></div><span class="num note" id="q-bw"></span></div>
+            <p class="note" id="q-note"></p>
           </div>
-          <p class="note" id="q-note"></p>
-        </div>
-        <details class="advanced">
-          <summary data-i18n="settings.advanced">Advanced</summary>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.packet_size">Packet size</span><span class="aside num" id="pkt-ms"></span></div>
-          <div class="seg" data-key="packetSize" data-num>
-            <button data-v="0" data-i18n="settings.auto_recommended">Auto (recommended)</button><button data-v="16">16</button><button data-v="32">32</button><button data-v="64">64</button>
+          <div class="form">
+            <h4 data-i18n="settings.g_my_room">My room</h4>
+            <span class="k" data-i18n="settings.show_nearby">Show nearby</span>
+            <div class="v"><input type="checkbox" class="switch" id="set-nearby" aria-label="Show my room on the same network" data-i18n-aria="settings.show_my_room"></div>
+            <p class="note" data-i18n="settings.when_host_room">When you host, your room appears on the home screen of people on the same router.</p>
           </div>
-          <p class="note" data-i18n="settings.auto_sends_one">Auto sends one packet per device buffer (split evenly above 64). Picking by hand, smaller is faster but means more upload packets, and going below the device buffer doesn't make it faster.</p>
-        </div>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.jitter_buffer">Jitter buffer</span></div>
-          <div class="seg" data-key="jitterMode">
-            <button data-v="auto" data-i18n="settings.auto_recommended">Auto (recommended)</button><button data-v="manual" data-i18n="settings.manual">Manual</button>
-          </div>
-          <div id="jb-style">
-            <div class="seg" data-key="jitterStyle">
-              <button data-v="fast" data-i18n="settings.fast">Fast</button><button data-v="balanced" data-i18n="settings.balanced_recommended">Balanced (recommended)</button><button data-v="steady" data-i18n="settings.steady">Steady</button>
+          <div class="form">
+            <h4 data-i18n="settings.advanced">Advanced</h4>
+            <span class="k" data-i18n="settings.jitter_buffer">Jitter buffer</span>
+            <div class="v">
+              <div class="seg" data-key="jitterMode"><button data-v="auto" data-i18n="settings.auto_recommended">Auto (recommended)</button><button data-v="manual" data-i18n="settings.manual">Manual</button></div>
+              <div class="seg" id="jb-style" data-key="jitterStyle"><button data-v="fast" data-i18n="settings.fast">Fast</button><button data-v="balanced" data-i18n="settings.balanced_recommended">Balanced (recommended)</button><button data-v="steady" data-i18n="settings.steady">Steady</button></div>
+              <label class="v grow" id="jb-manual" hidden><input type="range" min="1" max="12" step="1" data-key-range="jitterPackets" class="grow" aria-label="Packets" data-i18n-aria="settings.packets"><span class="num note" id="jb-val"></span></label>
             </div>
-            <p class="note" data-i18n="settings.what_favor_when">What to favor when the connection stalls now and then. 'Fast' keeps the buffer small and fills the stalls by patching the sound (latency ↓, short gaps ↑). 'Steady' grows the buffer to prevent them (latency ↑, gaps ↓). On an even connection all three are the same.</p>
+            <p class="note" id="jb-note"></p>
+            <span class="k" data-i18n="settings.packet_size">Packet size</span>
+            <div class="v"><div class="seg" data-key="packetSize" data-num><button data-v="0" data-i18n="settings.auto_recommended">Auto (recommended)</button><button class="mono" data-v="16">16</button><button class="mono" data-v="32">32</button><button class="mono" data-v="64">64</button></div><span class="num note" id="pkt-ms"></span></div>
+            <p class="note" data-i18n="settings.auto_sends_one">Auto sends one packet per device buffer.</p>
+            <span class="k" data-i18n="settings.fixed_port">Fixed port</span>
+            <div class="v">
+              <input type="checkbox" class="switch" id="set-fixed-port" aria-label="Fixed port for direct connections" data-i18n-aria="settings.fixed_port_direct">
+              <input class="input num" id="set-port" type="text" inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false" style="width:84px" aria-label="UDP port (1024–65535)" data-i18n-aria="settings.udp_port_1024" hidden>
+            </div>
+            <p class="note" data-i18n-html="settings.turn_when_router">Turn this on when your router has no UPnP or it's off.</p>
           </div>
-          <label class="ctrl wide" id="jb-manual" hidden>
-            <span data-i18n="settings.packets">packets</span>
-            <input type="range" min="1" max="12" step="1" data-key-range="jitterPackets">
-            <span class="val num" id="jb-val"></span>
-          </label>
-          <p class="note" data-i18n="settings.auto_keeps_each">Auto keeps each person at the smallest size without dropouts. You can also press the latency number on someone's card to adjust theirs.</p>
         </div>
-        <div class="setting">
-          <label class="row">
-            <span class="label" data-i18n="settings.fixed_port_direct">Fixed port for direct connections</span>
-            <input type="checkbox" class="switch" id="set-fixed-port">
-          </label>
-          <label class="row port-row" id="port-row" hidden>
-            <span class="label" data-i18n="settings.udp_port">UDP port</span>
-            <input class="input num port-input" id="set-port" type="text" inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false" aria-label="UDP port (1024–65535)" data-i18n-aria="settings.udp_port_1024">
-          </label>
-          <p class="note" data-i18n-html="settings.turn_when_router">Turn this on when your router has no UPnP or it's off. On the router's admin page, forward this <b>UDP</b> port to this PC. Other PCs on the same router need different numbers. Applies from the next room you join.</p>
-        </div>
-        </details>
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.connection_status">Connection status</span><button class="link-btn" id="net-recheck" data-i18n="settings.check_again">Check again</button></div>
-          <div class="check-list" id="net-checks"></div>
-        </div>
+        <aside class="tab-aside">
+          <div class="stat"><span class="aside-title" data-i18n="settings.connection_status">Connection status</span><button class="btn sm" id="net-recheck" data-i18n="settings.check_again">Check again</button></div>
+          <div id="net-checks"></div>
+        </aside>
       </div>
 
-      <!-- DISPLAY -->
+      <!-- GENERAL -->
       <div class="tab-panel" data-panel="display">
-        <div class="setting">
-          <div class="setting-head"><span class="label" data-i18n="settings.language">Language</span></div>
-          <div class="row">
-            <select class="select grow" id="set-language" aria-label="Language" data-i18n-aria="settings.language">
-              <option value="auto" data-i18n="settings.auto_windows_language">Auto</option>
-            </select>
+        <div class="tab-main" style="max-width:640px">
+          <div class="form">
+            <h4 data-i18n="settings.g_display">Display</h4>
+            <span class="k" data-i18n="settings.language">Language</span>
+            <div class="v"><select class="select" id="set-language" style="width:240px" aria-label="Language" data-i18n-aria="settings.language"><option value="auto" data-i18n="settings.auto_windows_language">Auto</option></select></div>
+            <span class="k" data-i18n="settings.theme">Theme</span>
+            <div class="v"><div class="seg" id="set-theme"><button data-v="dark" data-i18n="settings.dark">Dark</button><button data-v="light" data-i18n="settings.light">Light</button></div></div>
           </div>
-        </div>
-        <div class="setting">
-          <label class="row">
-            <span class="label" data-i18n="settings.hardware_acceleration_gpu">Hardware acceleration (GPU)</span>
-            <input type="checkbox" class="switch" id="set-gpu">
-          </label>
-          <p class="note" data-i18n="settings.draws_window_graphics">Draws the window with the graphics card. If the screen flickers or breaks up, turn it off. Sound and encryption (AES-256) are not affected. Applies after a restart.</p>
-          <div class="row" id="gpu-restart" hidden>
-            <span class="note" data-i18n="settings.applies_after_restart">Applies after a restart.</span>
-            <button class="btn primary" id="gpu-restart-btn" data-i18n="settings.restart_now">Restart now</button>
+          <div class="form">
+            <h4 data-i18n="settings.g_performance">Performance</h4>
+            <span class="k" data-i18n="settings.hardware_acceleration">Hardware acceleration</span>
+            <div class="v"><input type="checkbox" class="switch" id="set-gpu" aria-label="Hardware acceleration (GPU)" data-i18n-aria="settings.hardware_acceleration_gpu"><span class="note" data-i18n="settings.hardware_acceleration_gpu">Hardware acceleration (GPU)</span></div>
+            <p class="note" data-i18n="settings.draws_window_graphics">Draws the window with the graphics card.</p>
+            <div class="restart-box" id="gpu-restart" hidden><span data-i18n="settings.applies_after_restart">Applies after a restart.</span><button class="btn primary sm" id="gpu-restart-btn" data-i18n="settings.restart_now">Restart now</button></div>
           </div>
-        </div>
-        <div class="setting">
-          <label class="row">
-            <span class="label" data-i18n="settings.check_new_version">Check for a new version at start</span>
-            <input type="checkbox" class="switch" id="set-updates">
-          </label>
-          <p class="note" data-i18n="settings.start_app_asks">At start, the app asks GitHub once whether a new version is out. If there is one, the home screen only says so; nothing is downloaded or installed by itself. While asking, GitHub can see your internet address (IP).</p>
-        </div>
-        <div class="setting">
-          <label class="row">
-            <span class="label" data-i18n="settings.detailed_diagnostic_log">Detailed diagnostic log</span>
-            <input type="checkbox" class="switch" id="set-verbose">
-          </label>
-          <p class="note" data-i18n="settings.turn_only_when">Turn on only when looking into a problem. Off, the log keeps brief events; on, it records the connection in detail every 2 seconds. Logs stay on this PC (the last 5) and are never sent anywhere. Names, chat and passwords are never logged.</p>
-          <div class="row"><span></span><button class="btn sm" id="open-logs" data-i18n="settings.open_log_folder">Open log folder</button></div>
+          <div class="form">
+            <h4 data-i18n="settings.g_updates">Updates and troubleshooting</h4>
+            <span class="k" data-i18n="settings.check_updates">Check for updates</span>
+            <div class="v"><input type="checkbox" class="switch" id="set-updates" aria-label="Check for a new version at start" data-i18n-aria="settings.check_new_version"><span class="note" data-i18n="settings.check_new_version">Check for a new version at start</span></div>
+            <p class="note" data-i18n="settings.start_app_asks">At start, the app asks GitHub once whether a new version is out.</p>
+            <span class="k" data-i18n="settings.diag_log">Diagnostic log</span>
+            <div class="v"><input type="checkbox" class="switch" id="set-verbose" aria-label="Detailed diagnostic log" data-i18n-aria="settings.detailed_diagnostic_log"><span class="note" data-i18n="settings.detailed_diagnostic_log">Detailed diagnostic log</span><span class="spacer"></span><button class="btn sm" id="open-logs" data-i18n="settings.open_log_folder">Open log folder</button></div>
+            <p class="note" data-i18n="settings.turn_only_when">Turn on only when looking into a problem.</p>
+          </div>
         </div>
       </div>
 
+      <!-- ABOUT -->
       <div class="tab-panel" data-panel="about">
-        <div class="about-head">
-          <svg class="brand-mark about-mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/></svg>
-          <div class="about-name">gachi</div>
-          <div class="about-version"><span data-i18n="settings.version">Version</span> <span class="num" id="about-version"></span></div>
-          <div class="about-update">
-            <button class="btn sm" id="update-check" type="button" data-i18n="settings.check_updates">Check for updates</button>
-            <span class="note" id="update-result" hidden></span>
+        <div class="tab-main" style="max-width:660px;margin:0 auto">
+          <div class="form">
+            <span class="k about-logo"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4"/></svg></span></span>
+            <div class="v about-head">
+              <div><div class="about-name">gachi</div><div class="about-ver"><span data-i18n="settings.version">Version</span> <span id="about-version"></span></div></div>
+              <div class="right"><span class="note" id="update-result" hidden></span><button class="btn" id="update-check" type="button" data-i18n="settings.check_updates">Check for updates</button></div>
+            </div>
+            <p class="note about-tag" data-i18n="settings.tagline">Play together with friends over the internet, peer to peer.</p>
+            <span class="k" data-i18n="settings.license">License</span>
+            <p class="note" style="grid-column:2;margin:0" data-i18n="settings.gachi_free_software">gachi is free software.</p>
+            <span class="k" data-i18n="settings.source_code">Source code</span>
+            <div class="v"><span class="num note">github.com/aape133/gachi</span><span class="spacer"></span><button class="btn sm" id="open-repo" data-i18n="settings.open_repository">Open repository</button></div>
+            <span class="k" data-i18n="settings.privacy">Privacy</span>
+            <p class="note" style="grid-column:2;margin:0" data-i18n="settings.sound_chat_go">Sound and chat go encrypted directly (P2P) between the people in a room.</p>
+            <span class="k top" data-i18n="settings.notices">Notices</span>
+            <div class="v" style="flex-direction:column;align-items:flex-start;gap:8px">
+              <div class="compat-logos">
+                <img src="steinberg/asio-compatible-bw.svg" alt="ASIO Compatible. ASIO is a registered trademark of Steinberg Media Technologies GmbH" width="110">
+                <img src="steinberg/vst-compatible.svg" alt="VST Compatible. VST is a registered trademark of Steinberg Media Technologies GmbH" width="110">
+              </div>
+              <p class="note">ASIO® is a registered trademark of Steinberg Media Technologies GmbH.<br>VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
+              <p class="note" data-i18n="settings.font_pretendard_sil">Font: Pretendard (SIL Open Font License 1.1).</p>
+            </div>
           </div>
-          <p class="about-tag" data-i18n="settings.low_latency_p2p">Low-latency P2P jamming with friends over the internet</p>
-        </div>
-        <div class="setting">
-          <span class="label" data-i18n="settings.license">License</span>
-          <p class="note" data-i18n="settings.gachi_free_software">gachi is free software. Under the GNU General Public License version 3 (GPLv3), anyone may use, change and redistribute it. It comes as is, without any warranty. The full license is in the LICENSE file installed with the program.</p>
-          <div class="row">
-            <span class="note"><span data-i18n="settings.source_code">Source code:</span> <span class="repo-url">github.com/aape133/gachi</span></span>
-            <button class="btn sm" id="open-repo" data-i18n="settings.open_repository">Open repository</button>
-          </div>
-        </div>
-        <div class="setting">
-          <span class="label" data-i18n="settings.privacy">Privacy</span>
-          <p class="note" data-i18n="settings.sound_chat_go">Sound and chat go encrypted directly (P2P) between the people in a room, never through a server. The connection server only introduces rooms and doesn't keep who connected (internet addresses included). While connecting, though, the connection server, its operator and Cloudflare, which hosts it, can see your internet address (IP). And since the connection is direct, people in the same room can find each other's IP.</p>
-        </div>
-        <div class="setting">
-          <span class="label" data-i18n="settings.notices">Notices</span>
-          <div class="compat-logos">
-            <img src="steinberg/asio-compatible-bw.svg" alt="ASIO Compatible. ASIO is a registered trademark of Steinberg Media Technologies GmbH" width="120">
-            <img src="steinberg/vst-compatible.svg" alt="VST Compatible. VST is a registered trademark of Steinberg Media Technologies GmbH" width="120">
-          </div>
-          <p class="note">ASIO® is a registered trademark of Steinberg Media Technologies GmbH.<br>VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
-          <p class="note" data-i18n="settings.font_pretendard_sil">Font: Pretendard (SIL Open Font License 1.1). gachi also uses open source libraries under the MIT and Apache-2.0 licenses, such as Tauri, cpal, Tokio, rustls, RustCrypto (ChaCha20-Poly1305, AES-GCM, X25519) and vst3.</p>
         </div>
       </div>
-
     </div>
     <div class="modal-foot" data-i18n="settings.changes_apply_right">Changes apply right away</div>
   </div>
 </div>
 
-<div class="toasts" id="toasts"></div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
 <script src="preview.js"></script>
 <script src="backend.js"></script>

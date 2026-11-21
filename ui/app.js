@@ -20,21 +20,8 @@
   const put = (el, text) => { if (el && el.textContent !== text) el.textContent = text; };
   const putAttr = (el, name, v) => { if (el && el.getAttribute(name) !== v) el.setAttribute(name, v); };
   const fmtCode = (c) => `${c.slice(0, 3)}-${c.slice(3)}`;
-  const initial = (name) => [...(name || '?')][0];
-  /** a stable avatar color for a name */
-  const hue = (name) => [...String(name)].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
-  // the colours people pick from (as in gachi_proto::signal::COLOR_HUES): the room shows
-  // everyone in the one they picked
-  // (1000 + hue: a soft, less saturated colour of that hue; sixteen plain hues are too
-  // close together to tell apart)
-  const HUES = [255, 215, 190, 165, 135, 90, 48, 25, 355, 320, 288, 236, 1028, 1078, 1212, 1305];
-  const COLOR_NAMES = ['color.purple', 'color.blue', 'color.sky', 'color.teal', 'color.green', 'color.lime', 'color.yellow', 'color.orange', 'color.red', 'color.pink', 'color.magenta', 'color.indigo', 'color.brown', 'color.olive', 'color.slate', 'color.lilac'];
   // the name a first run gets, in each language (the home screen asks for a real one)
   const DEFAULT_NAMES = i18n.everywhere('settings.default_name');
-  const myHue = () => HUES[backend.getSettings().color] ?? HUES[0];
-  /** a colour (as in HUES) as the two properties the styles draw it from */
-  const hueCss = (v) => `--hue:${v % 1000};--sat:${v >= 1000 ? 0.42 : 1}`;
-  const setHue = (el, v) => { el.style.setProperty('--hue', v % 1000); el.style.setProperty('--sat', v >= 1000 ? 0.42 : 1); };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const dbText = (db) => (db <= -40 ? '-∞' : (db > 0 ? '+' : '') + f1(db));
   const panText = (v) => (v === 0 ? 'C' : (v < 0 ? 'L' : 'R') + Math.abs(v));
@@ -72,6 +59,12 @@
     moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
     pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    users: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 5.5a3 3 0 0 1 0 5.5M17 14.5a6 6 0 0 1 4 5.5"/>',
+    input: '<path d="M3 12h7M14 5v14M10 9l4 3-4 3M18 8v8M21 10v4"/>',
+    wave: '<path d="M3 12h3l2-6 4 12 3-9 2 3h4"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   };
   const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
   const hydrateIcons = (root = document) => $$('[data-icon]', root).forEach((el) => {
@@ -105,13 +98,7 @@
     const clip = !!el._clipAt && performance.now() - el._clipAt < 1000;
     if (clip !== !!el._clip) { el._clip = clip; el.classList.toggle('clip', clip); }
   }
-  /** the avatar's glow with the sound (same rule: only when it changes) */
-  function avatarLevel(el, peak) {
-    if (!el) return;
-    const v = clamp(meterPos(peak) * 1.3 - 0.3, 0, 1);
-    if (v !== el._lv) { el._lv = v; el.style.setProperty('--lv', v.toFixed(3)); }
-  }
-  const setMeter = (el, lv) => { if (!el) return; meterBar(el.children[0], lv[0]); meterBar(el.children[1], lv[1]); };
+  const setMeter = (el, lv) => { if (!el) return; meterBar(el.children[0], lv[0]); if (el.children[1]) meterBar(el.children[1], lv[1]); };
 
   /* a slider clicked once follows the mouse wheel while the pointer is on it (until
      something else is clicked; the wheel scrolls as usual everywhere else): a notch moves
@@ -154,18 +141,30 @@
   document.addEventListener('pointerdown', hookWheel, true);
   document.addEventListener('focusin', hookWheel);
 
-  function toast(text) {
-    const el = h(`<div class="toast" title="${esc(tr('app.click_close'))}">${esc(text)}</div>`);
-    $('#toasts').append(el);
+  /** A note in the corner: 5 s (8 s with a button), held while the pointer is on it, three
+   *  at most (the oldest goes). `kind`: 'info' (blue), 'ok' (green), 'warn' (yellow). */
+  const TOAST_MAX = 3;
+  function toast(text, { kind = 'info', action, onAction } = {}) {
+    const el = h(`<div class="toast"><span class="dot ${kind === 'warn' ? 'warn' : kind === 'ok' ? '' : 'idle'}"></span><span class="t">${esc(text)}</span>`
+      + (action ? `<button class="btn sm act" type="button">${esc(action)}</button>` : '')
+      + `<button class="ibtn sm bare" type="button" title="${esc(tr('app.click_close'))}" aria-label="${esc(tr('app.click_close'))}">${icon('x')}</button></div>`);
+    if (kind === 'info') el.querySelector('.dot').style.background = 'var(--accent)';
+    const box = $('#toasts');
+    box.append(el);
+    while (box.childElementCount > TOAST_MAX) box.firstElementChild.remove();
+    let timer = 0, left = action ? 8000 : 5000, since = 0;
     const close = () => {
       if (el.classList.contains('out')) return;
+      clearTimeout(timer);
       el.classList.add('out');
-      setTimeout(() => el.remove(), 300);
+      setTimeout(() => el.remove(), 260);
     };
-    el.addEventListener('click', close);
-    // long messages stay long enough to read (about 15 characters a second)
-    const ms = Math.min(8000, Math.max(2200, text.length * 65));
-    setTimeout(close, ms);
+    const run = () => { since = Date.now(); timer = setTimeout(close, left); };
+    el.addEventListener('pointerenter', () => { clearTimeout(timer); left -= Date.now() - since; });
+    el.addEventListener('pointerleave', run);
+    el.querySelector('.ibtn').addEventListener('click', close);
+    el.querySelector('.act')?.addEventListener('click', () => { close(); onAction?.(); });
+    run();
   }
   async function copy(text, msg) {
     try { await navigator.clipboard.writeText(text); }
@@ -178,6 +177,8 @@
 
   function show(name) {
     $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + name));
+    // (the toasts sit above the room's bottom bar, in the corner elsewhere)
+    document.body.classList.toggle('screen-home-on', name !== 'room');
   }
 
   /* ─────────────── latency segments ─────────────── */
@@ -210,17 +211,21 @@
   });
 
   $('#btn-create').addEventListener('click', async () => {
-    const btn = $('#btn-create');
-    btn.disabled = true; btn.textContent = tr('app.creating');
+    const btn = $('#btn-create'), label = $('span:last-child', btn);
+    btn.disabled = true; label.textContent = tr('app.creating');
     try {
       const password = $('#create-pw-on').checked ? $('#create-pw').value : '';
-      const r = await backend.createRoom({ name: $('#create-name').value.trim(), maxPeers: createMax, password });
+      // (left empty: the room is called what the field said it would be)
+      const named = $('#create-name').value.trim();
+      const me = backend.getSettings().name;
+      const name = named || (me && !DEFAULT_NAMES.includes(me) ? tr('home.names_room', { name: me }) : '');
+      const r = await backend.createRoom({ name, maxPeers: createMax, password });
       enterRoom(r, password);
       openInvite();
     } catch (err) {
       toast(err.message);
     } finally {
-      btn.disabled = false; btn.textContent = tr('home.create_room');
+      btn.disabled = false; label.textContent = tr('home.create_room');
     }
   });
 
@@ -347,12 +352,12 @@
     room = r;
     clearInterval(recentTimer);
     room.pw = password || '';
-    peers.clear(); strips.clear();
+    peers.clear(); strips.clear(); slots.clear(); nextSlot = 1;
     $('#room-name').textContent = r.name; $('#room-name').title = r.name; // (a long name is cut short in the bar)
     $('#room-code').textContent = fmtCode(r.code);
-    const stage = $('#stage');
-    stage.innerHTML = '';
-    stage.append(buildSelfStrip());
+    $('#stage-me').innerHTML = ''; $('#stage-others').innerHTML = '';
+    $('#stage-me').append(buildSelfStrip());
+    applyView();
     $('#chat-list').innerHTML = '';
     sysMsg(r.isHost ? tr('app.room_created_share') : tr('app.joined_name', { name: r.name }));
     r.peers.forEach((p) => addPeer(p));
@@ -364,7 +369,7 @@
     const tick = () => { $('#session-time').textContent = mmss(Date.now() - r.startedAt); };
     tick(); clockTimer = setInterval(tick, 1000);
     show('room');
-    // (the cards' size and labels, now that the room has a size: before it was hidden)
+    // (the strips' size and labels, now that the room has a size: before it was hidden)
     fitStage();
   }
 
@@ -378,7 +383,9 @@
     renderRecent();
     room = null;
     clearInterval(clockTimer);
-    closePop();
+    closePop(); closeColorPop();
+    // (the room's own window: its buttons speak of a room that is no more)
+    closeModal($('#modal-invite'));
     setMetro(false, { send: false });
     if (rec.on) { setRecUi(false); toast(tr('app.recording_saved_left')); }
     closeMenus();
@@ -392,112 +399,201 @@
     toast(tr('app.left_room'));
   }
 
-  /* ── self strip ── */
+  /* ── the people's colours: given out in the order they come in, on this screen (each one
+     sees it from their own side, themselves first), stepping through the palette so that
+     people next to each other get colours far apart. A colour picked by hand is kept by the
+     person's name on this PC ── */
+  const PALETTE = ['#E06A6E', '#E8845A', '#E8A04A', '#D9B84A', '#B5C45A', '#86C46A', '#5DBE7E', '#46B89A', '#4AC4C0', '#4AB0D8', '#5C9CF0', '#7A7CF0', '#9C7BE6', '#C77BD9', '#D46AB4', '#E07A98', '#C9A27A', '#A9ADB8'];
+  const PALETTE_NAMES = ['color.red', 'color.vermilion', 'color.orange', 'color.yellow', 'color.olive', 'color.lime', 'color.green', 'color.teal', 'color.mint', 'color.sky', 'color.blue', 'color.indigo', 'color.purple', 'color.magenta', 'color.pink', 'color.rose', 'color.brown', 'color.gray'];
+  const GIVE_ORDER = [10, 0, 6, 2, 12, 3, 8, 15, 5, 11, 1, 7, 14, 4, 9, 13, 16, 17];
+  const slots = new Map();
+  let nextSlot = 1;
+  const stored = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+  const store = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* fine without */ } };
+  /** (the last 200 people only: the list is never let grow without end) */
+  const KEEP_PEOPLE = 200;
+  let pickedColors = stored('gachi-track-colors', {});
+  const nameOf = (id) => (id === 'self' ? backend.getSettings().name : peers.get(id)?.name) || '';
+  const slotOf = (id) => { if (id === 'self') return 0; if (!slots.has(id)) slots.set(id, nextSlot++); return slots.get(id); };
+  const colorOf = (id) => pickedColors[nameOf(id)] || PALETTE[GIVE_ORDER[slotOf(id) % GIVE_ORDER.length]];
+  function setColor(id, c) {
+    const name = nameOf(id); if (!name) return;
+    const next = { ...pickedColors };
+    delete next[name];
+    next[name] = c;
+    const names = Object.keys(next);
+    names.slice(0, Math.max(0, names.length - KEEP_PEOPLE)).forEach((n) => delete next[n]);
+    pickedColors = next;
+    store('gachi-track-colors', pickedColors);
+    paintColor(id);
+  }
+  function paintColor(id) {
+    strips.get(id)?.el.style.setProperty('--tc', colorOf(id));
+    $$(`.msg[data-from="${CSS.escape(id)}"]`, $('#chat-list')).forEach((m) => m.style.setProperty('--tc', colorOf(id)));
+    if (popFor === id) pop.style.setProperty('--tc', colorOf(id));
+  }
+
+  /* ── the others' order: as this viewer arranged them (by name, on this PC), the ones not
+     arranged yet in the order they came in ── */
+  let savedOrder = stored('gachi-track-order', []);
+  function placeStrip(el, name) {
+    const box = $('#stage-others');
+    const at = savedOrder.indexOf(name);
+    if (at >= 0) {
+      const before = $$('.strip', box).find((s) => { const i = savedOrder.indexOf(peers.get(s.dataset.id)?.name); return i < 0 || i > at; });
+      if (before) { box.insertBefore(el, before); return; }
+    }
+    const slot = $('.invite-slot', box);
+    slot ? slot.before(el) : box.append(el);
+  }
+  function saveOrder() {
+    const now = $$('#stage-others .strip').map((s) => peers.get(s.dataset.id)?.name).filter(Boolean);
+    savedOrder = [...now, ...savedOrder.filter((n) => !now.includes(n))].slice(0, KEEP_PEOPLE);
+    store('gachi-track-order', savedOrder);
+  }
+
+  /* ── the view: a mixer (strips side by side) or tracks (a row each). The first time by
+     the window's shape (tall: tracks), after that as last picked ── */
+  let view = stored('gachi-view', null);
+  function applyView() {
+    const v = view || (innerHeight > innerWidth ? 'tracks' : 'mixer');
+    const st = $('#stage');
+    st.classList.toggle('mixer', v === 'mixer');
+    st.classList.toggle('tracks', v === 'tracks');
+    $$('#view-seg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+    fitStage();
+  }
+  $('#view-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    view = b.dataset.v;
+    store('gachi-view', view);
+    closePop(); closeColorPop();
+    applyView();
+  });
+
+  /* ── a person: the same parts in both views (the styles lay them out) ── */
+  const KNOB_DEG = 135; // the pan knob turns this far either way
+  /** the fader's scale: where each mark sits, from the bottom (`min`) to the top (`max`) */
+  const scaleHtml = (marks, min, max) => marks.map((d) => `<span style="bottom:${((d - min) / (max - min)) * 100}%">${d === min && min <= -40 ? '-∞' : d > 0 ? '+' + d : d}</span>`).join('');
+  const PEER_MARKS = [6, 0, -6, -12, -24, -40];
+  const GAIN_MARKS = [24, 12, 0, -12, -24];
+
   function buildSelfStrip() {
-    const s = backend.getSettings();
     const el = h(`
       <article class="strip self" data-id="self">
-        <div class="strip-top">
-          <span class="top-tags"><span class="tag me-tag">${tr('card.me')}</span><span class="tag host-tag" hidden>${tr('card.host')}</span></span>
-          <button class="net-chip q-accent" data-act="local" title="${esc(tr('card.open_audio_settings'))}"><i class="dot"></i><span><span data-f="local"></span> ms</span></button>
+        <button class="lat q-accent" data-act="local"><i class="dot"></i><span class="t" data-f="local"></span></button>
+        <div class="knob-box" aria-hidden="true"><div class="knob"><div class="knob-face"></div></div><span class="knob-val"></span></div>
+        <div class="msr">
+          <button class="ms mic" data-act="mute">M</button>
+          <button class="ms mon" data-act="monitor">MON</button>
+          <button class="ms r" data-act="rec" title="${esc(tr('card.include_recording_only'))}" aria-label="${esc(tr('card.include_recording_only'))}"><i></i></button>
         </div>
-        <div class="who-big">
-          <button class="avatar lg" type="button" data-act="color" title="${esc(tr('home.change_my_color'))}" style="${hueCss(myHue())}">${esc(initial(s.name))}</button>
-          <div class="who">
-            <div class="name"><button class="name-edit" data-act="rename" title="${esc(tr('card.change_name'))}"><span class="nm" data-f="name">${esc(s.name)}</span>${icon('pencil')}</button></div>
-            <button class="name-edit inst-edit" data-act="reinst" title="${esc(tr('card.change_instrument'))}"><span class="inst" data-f="inst">${esc(s.instrument)}</span>${icon('pencil')}</button>
-          </div>
+        <div class="lane">
+          <div class="meter" data-f="meter"><i></i><i></i></div>
+          <div class="scale" data-f="scale"></div>
+          <div class="fader"><input type="range" step="0.5" data-act="fader"></div>
+          <span class="db" data-f="db"></span>
         </div>
-        <div class="meter" data-f="meter"><i></i><i></i></div>
-        <label class="ctrl"><span>${tr('card.input')}</span><input type="range" min="-24" max="24" step="0.5" value="${backend.self.gain}" data-act="gain"><span class="val" data-f="gain"></span></label>
-        <label class="ctrl" data-f="own" hidden title="${esc(tr('card.how_loud_hear'))}"><span>${tr('card.self')}</span><input type="range" min="-40" max="6" step="0.5" value="${backend.self.monitorDb ?? 0}" data-act="monitor-db"><span class="val" data-f="monitor-db"></span></label>
-        <div class="strip-foot">
-          <button class="pill" data-act="mute"></button>
-          <button class="pill" data-act="monitor" title="${esc(tr('card.hear_yourself_directly'))}">${icon('headphones')}<span>${tr('card.monitor')}</span></button>
-          <span class="spacer"></span>
-          <button class="ms r" data-act="rec" title="${esc(tr('card.include_recording_only'))}"><i></i></button>
-        </div>
+        <button class="plate" data-act="color" title="${esc(tr('card.my_track'))}"><b class="nm" data-f="name"></b><span class="inst" data-f="inst"></span></button>
       </article>`);
-    strips.set('self', { el, meter: $('[data-f=meter]', el), avatar: $('.avatar', el) });
+    strips.set('self', { el, meter: $('[data-f=meter]', el) });
     return el;
   }
 
+  /** what changes on my own strip and the bottom bar (the settings, my buttons) */
   function syncSelfControls() {
-    const st = strips.get('self'); if (!st) return;
-    const el = st.el, s = backend.getSettings(), self = backend.self;
-    $('[data-f=name]', el).textContent = s.name;
-    setHue(st.avatar, myHue());
-    $('.host-tag', el).hidden = !room?.isHost;
-    $('[data-f=inst]', el).textContent = s.instrument || tr('card.add_instrument');
-    $('[data-f=inst]', el).title = s.instrument;
-    $('.avatar', el).textContent = initial(s.name);
-    $('[data-f=local]', el).textContent = f1(backend.localMs());
-    const g = $('[data-act=gain]', el); g.value = self.gain; paintRange(g);
-    $('[data-f=gain]', el).textContent = dbText(self.gain) + ' dB';
-    fillInputSelect($('#room-input'), s);
-    // DAW mode: the DAW track decides what is sent, and the plugin plays your own sound
-    // (no delay) at the level set here. The monitor button switches that on and off there
-    // (in device mode it is the app's own software monitor)
+    const s = backend.getSettings(), self = backend.self;
     const daw = s.connection === 'daw';
+    // the bottom bar: the mic, the monitor (VST mode: my own sound through the plugin), the input
+    const mic = $('#dock-mic');
+    mic.classList.toggle('off', !!self.muted);
+    mic.setAttribute('aria-pressed', String(!self.muted));
+    mic.innerHTML = icon(self.muted ? 'mic-off' : 'mic') + `<span class="wide-label">${esc(tr('card.mic'))}</span>`;
+    mic.title = self.muted ? tr('card.muted_click_unmute') : tr('card.mute_mic');
+    const mon = $('#dock-mon'), monOn = daw ? self.own !== false : !!self.monitor;
+    mon.classList.toggle('on', monOn);
+    mon.setAttribute('aria-pressed', String(monOn));
+    mon.title = daw ? tr('card.hear_yourself_daw') : tr('card.hear_yourself_directly');
     $('#room-input-pick').hidden = daw;
-    $('[data-act=monitor]', el).title = daw ? tr('card.hear_yourself_daw') : tr('card.hear_yourself_directly');
-    $('[data-f=own]', el).hidden = !daw;
-    const own = $('[data-act=monitor-db]', el); own.value = self.monitorDb ?? 0; paintRange(own);
-    $('[data-f=monitor-db]', el).textContent = dbText(self.monitorDb ?? 0) + ' dB';
+    syncDawChip();
+    fillInputSelect($('#room-input'), s);
+    const st = strips.get('self'); if (!st) return;
+    const el = st.el;
+    el.style.setProperty('--tc', colorOf('self'));
+    put($('[data-f=local]', el), f1(backend.localMs()) + 'ms');
     $('[data-act=local]', el).title = (daw
-      ? tr('card.input_output_daws') + ` · ${s.bufferSize} samples · ${s.sampleRate / 1000}kHz`
-      : tr('card.my_device_input') + ` · ${s.bufferSize} samples · ${s.sampleRate / 1000}kHz`) + ` · ${tr('card.sending')}: ${streamText(myStream())} · ${tr('card.click_audio_settings')}`;
-    const mute = $('[data-act=mute]', el);
-    mute.classList.toggle('muted', self.muted); // (toggled: the fit's classes stay)
-    mute.innerHTML = icon(self.muted ? 'mic-off' : 'mic') + `<span>${self.muted ? tr('card.muted') : tr('card.mic')}</span>`;
-    mute.title = self.muted ? tr('card.muted_click_unmute') : tr('card.mute_mic'); // (small cards show the icon only)
-    $('[data-act=monitor]', el).classList.toggle('on', daw ? self.own !== false : self.monitor);
+      ? tr('card.input_output_daws') + ` · ${tr('settings.n_samples', { n: s.bufferSize })} · ${s.sampleRate / 1000}kHz`
+      : tr('card.my_device_input') + ` · ${tr('settings.n_samples', { n: s.bufferSize })} · ${s.sampleRate / 1000}kHz`) +` · ${tr('card.sending')}: ${streamText(myStream())} · ${tr('card.click_audio_settings')}`;
+    const m = $('[data-act=mute]', el);
+    m.classList.toggle('on', !!self.muted);
+    m.title = self.muted ? tr('card.muted_click_unmute') : tr('card.mute_mic');
+    m.setAttribute('aria-label', m.title);
+    const mo = $('[data-act=monitor]', el);
+    mo.classList.toggle('on', monOn);
+    mo.title = mon.title; mo.setAttribute('aria-label', mon.title);
     $('[data-act=rec]', el).classList.toggle('on', self.rec !== false);
-    // (off: the level has nothing to act on)
-    $('[data-f=own]', el).classList.toggle('off', daw && self.own === false);
-    // ("Muted" is longer than "Mic": the card's labels may need to give way now)
+    el.classList.toggle('rec-on', self.rec !== false);
+    // the fader: what I send (device mode), or how loud I hear myself in the DAW (VST mode)
+    const f = $('[data-act=fader]', el);
+    const [min, max, v] = daw ? [-40, 6, self.monitorDb ?? 0] : [-24, 24, self.gain];
+    if (+f.min !== min) { f.min = min; f.max = max; $('[data-f=scale]', el).innerHTML = scaleHtml(daw ? PEER_MARKS : GAIN_MARKS, min, max); }
+    f.value = v; paintRange(f);
+    f.title = daw ? tr('card.how_loud_hear') : tr('card.input');
+    f.setAttribute('aria-label', f.title);
+    put($('[data-f=db]', el), dbText(v));
+    put($('[data-f=name]', el), s.name);
+    put($('[data-f=inst]', el), (room?.isHost ? tr('card.host') + ' · ' : '') + (s.instrument || tr('card.add_instrument')));
+    st.meter.classList.toggle('mono', myStream().channels === 1);
     i18n.fit(el);
+  }
+  /** VST mode, the bottom bar: the plugin's state where the input would be */
+  function syncDawChip() {
+    const daw = backend.getSettings().connection === 'daw';
+    $('#room-daw').hidden = !daw;
+    if (!daw) return;
+    put($('#room-daw-text'), tr('settings.vst_link') + ' · ' + (backend._plugin ? tr('netcheck.plugin_connected') : tr('netcheck.waiting_plugin')));
+    $('#room-daw-dot').className = 'dot' + (backend._plugin && !backend._pluginWaiting ? '' : ' warn');
   }
 
   function toggleMute() {
     backend.setSelf({ muted: !backend.self.muted });
     syncSelfControls();
-    toast(backend.self.muted ? tr('card.mute_mic') : tr('card.mic_2'));
+    toast(backend.self.muted ? tr('card.mute_mic') : tr('card.mic_2'), { kind: backend.self.muted ? 'warn' : 'ok' });
   }
+  function toggleMonitor() {
+    // VST mode: your own sound through the plugin; else the app's software monitor
+    if (backend.getSettings().connection === 'daw') backend.setSelf({ own: backend.self.own === false });
+    else backend.setSelf({ monitor: !backend.self.monitor });
+    syncSelfControls();
+  }
+  $('#dock-mic').addEventListener('click', toggleMute);
+  $('#dock-mon').addEventListener('click', toggleMonitor);
 
-  /* ── peer strips ── */
   function addPeer(p, announce = false) {
     peers.set(p.id, p);
+    slotOf(p.id);
     const el = h(`
-      <article class="strip" data-id="${p.id}">
-        <div class="strip-top">
-          <span class="top-tags">${p.isHost ? '<span class="tag">' + tr('card.host') + '</span>' : ''}</span>
-          <button class="net-chip" data-act="lat" title="${esc(tr('card.connection_latency_details'))}"><i class="dot"></i><span data-f="total"></span><span class="warn-ic" data-f="warn" hidden>${icon('alert')}</span></button>
+      <article class="strip" data-id="${esc(p.id)}">
+        <button class="lat" data-act="lat" title="${esc(tr('card.connection_latency_details'))}"><i class="dot"></i><span class="t" data-f="total"></span><span data-f="warn" hidden>${icon('alert')}</span></button>
+        <div class="knob-box"><div class="knob" title="${esc(tr('card.pan'))}"><div class="knob-face" data-f="knob"></div><input type="range" min="-100" max="100" step="1" value="${p.pan}" data-act="pan" aria-label="${esc(tr('card.pan'))}"></div><span class="knob-val" data-f="pan"></span></div>
+        <div class="msr">
+          <button class="ms m" data-act="mute" title="${esc(tr('card.mute_silence_person'))}" aria-label="${esc(tr('card.mute_silence_person'))}">M</button>
+          <button class="ms s" data-act="solo" title="${esc(tr('card.solo_hear_only'))}" aria-label="${esc(tr('card.solo_hear_only'))}">S</button>
+          <button class="ms r" data-act="rec" title="${esc(tr('card.include_recording_only'))}" aria-label="${esc(tr('card.include_recording_only'))}"><i></i></button>
         </div>
-        <div class="who-big">
-          <div class="avatar lg" style="${hueCss(p.hue)}">${esc(initial(p.name))}</div>
-          <div class="who">
-            <div class="name"><span class="nm" title="${esc(p.name)}">${esc(p.name)}</span></div>
-            <div class="inst" title="${esc(p.instrument)}">${esc(p.instrument)}</div>
-          </div>
+        <div class="lane">
+          <div class="meter" data-f="meter"><i></i><i></i></div>
+          <div class="scale">${scaleHtml(PEER_MARKS, -40, 6)}</div>
+          <div class="fader"><input type="range" min="-40" max="6" step="0.5" value="${p.volume}" data-act="vol" title="${esc(tr('card.vol'))}" aria-label="${esc(tr('card.vol'))}"></div>
+          <span class="db" data-f="vol"></span>
         </div>
-        <div class="meter" data-f="meter"><i></i><i></i></div>
-        <label class="ctrl"><span>${tr('card.vol')}</span><input type="range" min="-40" max="6" step="0.5" value="${p.volume}" data-act="vol"><span class="val" data-f="vol"></span></label>
-        <label class="ctrl"><span>${tr('card.pan')}</span><input type="range" class="pan" min="-100" max="100" step="1" value="${p.pan}" data-act="pan"><span class="val" data-f="pan"></span></label>
-        <div class="strip-foot">
-          <button class="ms m" data-act="mute" title="${esc(tr('card.mute_silence_person'))}">M</button>
-          <button class="ms s" data-act="solo" title="${esc(tr('card.solo_hear_only'))}">S</button>
-          <button class="ms r" data-act="rec" title="${esc(tr('card.include_recording_only'))}"><i></i></button>
-          <span class="spacer"></span>
-          <button class="ms kick" data-act="kick" title="${esc(tr('card.remove_room_cant'))}" hidden>${icon('log-out')}<span class="kick-label">${tr('card.again')}</span></button>
-        </div>
+        <button class="plate" data-act="color" draggable="true" title="${esc(tr('card.drag_or_color'))}"><b class="nm" data-f="name"></b><span class="inst" data-f="inst"></span></button>
       </article>`);
-    strips.set(p.id, { el, meter: $('[data-f=meter]', el), avatar: $('.avatar', el) });
-    const slot = $('#stage .invite-slot');
-    slot ? slot.before(el) : $('#stage').append(el);
+    strips.set(p.id, { el, meter: $('[data-f=meter]', el) });
+    placeStrip(el, p.name);
     $$('input[type=range]', el).forEach(paintRange);
     updatePeer(p);
-    if (announce) { const m = tr('card.name_joined', { name: p.name }); sysMsg(m); toast(m); }
+    if (announce) { const m = tr('card.name_joined', { name: p.name }); sysMsg(m); toast(m, { kind: 'ok' }); }
     updateRoomChrome();
   }
 
@@ -505,6 +601,7 @@
     const p = peers.get(id), st = strips.get(id);
     peers.delete(id); strips.delete(id);
     if (popFor === id) closePop();
+    if (colorPopFor === id) closeColorPop();
     if (st) { st.el.classList.add('leaving'); setTimeout(() => st.el.remove(), 250); }
     if (p) sysMsg(tr('card.name_left', { name: p.name }));
     setTimeout(updateRoomChrome, 260);
@@ -514,44 +611,62 @@
     peers.set(p.id, p);
     const st = strips.get(p.id); if (!st) return;
     const el = st.el;
+    el.style.setProperty('--tc', colorOf(p.id));
+    put($('[data-f=name]', el), p.name);
+    put($('[data-f=inst]', el), (p.isHost ? tr('card.host') + ' · ' : '') + (p.instrument || ''));
+    putAttr($('.plate', el), 'aria-label', `${p.name} · ${tr('card.drag_or_color')}`);
     const connecting = p.connected === false;
     // until the round trip and the stream's timing are measured the figure is an estimate
-    const [qc, ql] = connecting ? ['accent', tr('card.connecting')] : p.measured === false ? ['accent', tr('card.measuring')] : quality(p.total);
-    // the connection is a small chip: playing together is what the card is about. It
-    // speaks up (colour, a warning mark) only when something needs attention
+    const [qc, ql] = connecting ? ['idle', tr('card.connecting')] : p.measured === false ? ['idle', tr('card.measuring')] : quality(p.total);
     const chip = $('[data-act=lat]', el);
-    putAttr(chip, 'class', 'net-chip q-' + qc + (chip.classList.contains('active') ? ' active' : ''));
-    put($('[data-f=total]', el), connecting || p.measured === false ? ql : `${f1(p.total)} ms`);
+    putAttr(chip, 'class', 'lat q-' + qc + (chip.classList.contains('active') ? ' active' : ''));
+    put($('[data-f=total]', el), connecting || p.measured === false ? ql : `${f1(p.total)}ms`);
     const issues = [p.conn.link === 'wifi' && 'Wi-Fi', p.loss >= 1 && tr('card.loss_n', { n: f1(p.loss) }), p.outageMs > 0 && tr('card.brief_dropout')].filter(Boolean);
     $('[data-f=warn]', el).hidden = !issues.length;
     putAttr(chip, 'title', `P2P${p.conn.ipv6 ? ' · IPv6' : ''} · ${tr('card.latency')} ${f1(p.total)} ms (${ql})`
       + (issues.length ? ' · ' + issues.join(' · ') : '') + ' · ' + tr('card.click_details'));
-    put($('[data-f=vol]', el), dbText(p.volume) + ' dB');
+    put($('[data-f=vol]', el), dbText(p.volume));
     put($('[data-f=pan]', el), panText(p.pan));
-    $('[data-act=mute]', el).classList.toggle('on', p.mute);
-    $('[data-act=solo]', el).classList.toggle('on', p.solo);
+    $('[data-f=knob]', el).style.transform = `rotate(${(p.pan / 100) * KNOB_DEG}deg)`;
+    const vol = $('[data-act=vol]', el), pan = $('[data-act=pan]', el);
+    if (document.activeElement !== vol && +vol.value !== p.volume) { vol.value = p.volume; paintRange(vol); }
+    if (document.activeElement !== pan && +pan.value !== p.pan) pan.value = p.pan;
+    $('[data-act=mute]', el).classList.toggle('on', !!p.mute);
+    $('[data-act=solo]', el).classList.toggle('on', !!p.solo);
     $('[data-act=rec]', el).classList.toggle('on', p.rec !== false);
+    el.classList.toggle('rec-on', p.rec !== false);
+    el.classList.toggle('away', connecting);
+    st.meter.classList.toggle('mono', p.stream?.channels === 1);
   }
 
   function updateDim() {
     const anySolo = [...peers.values()].some((p) => p.solo);
-    peers.forEach((p) => strips.get(p.id)?.el.classList.toggle('dim', p.mute || (anySolo && !p.solo)));
+    peers.forEach((p) => strips.get(p.id)?.el.classList.toggle('dim', !!p.mute || (anySolo && !p.solo)));
   }
 
-  /** The biggest cards with which everyone fits the window without scrolling: big, medium
-   *  (8 people in the default window), small (a full room of 16 in it); if not even the
-   *  small ones fit, the stage scrolls. Looked at again whenever the people or the window
-   *  change. */
+  /** The strips as wide as fit the window (64-132), the rows as tall (40-72; 58 at least
+   *  when narrow, where each row holds its meter over its volume). Looked at again whenever
+   *  the people, the window or the view change. */
   function fitStage() {
-    const stage = $('#stage');
-    const fits = () => stage.scrollHeight <= stage.clientHeight + 1;
-    stage.classList.remove('mid', 'many');
-    if (!fits()) {
-      stage.classList.add('mid');
-      if (!fits()) stage.classList.replace('mid', 'many');
+    if (!room) return;
+    const stage = $('#stage'), n = peers.size + 1;
+    if (stage.classList.contains('mixer')) {
+      // (a strip is its width + 14 of padding and border, 4 between two; the stage around
+      // them, mine set apart, takes 69)
+      const w = stage.clientWidth;
+      const sw = clamp(Math.floor((w - 69 - 4 * Math.max(0, n - 2)) / n) - 14, 64, 132);
+      stage.style.setProperty('--strip-w', sw + 'px');
+      stage.style.setProperty('--meter-w', (sw >= 100 ? 8 : 6) + 'px');
+      stage.style.setProperty('--name-size', (sw >= 100 ? 14 : 12) + 'px');
+    } else {
+      // (a row is its height + 2 of border + 4 below it)
+      const rh = clamp(Math.floor((stage.clientHeight - 24) / n) - 6, innerWidth < 900 ? 58 : 40, 72);
+      stage.style.setProperty('--row-h', rh + 'px');
+      stage.style.setProperty('--meter-h', (rh >= 60 ? 4 : 3) + 'px');
+      stage.style.setProperty('--name-size', (rh >= 60 ? 14 : 12) + 'px');
     }
-    // the cards' labels for their size now (also the first time the room shows: this runs
-    // whenever the stage changes size, and before that the room is hidden and measures 0)
+    // the labels for their size now (also the first time the room shows: this runs whenever
+    // the stage changes size, and before that the room is hidden and measures 0)
     i18n.fit(stage);
   }
   // (the stage's own size: the window, the chat panel opening; and the window itself, which
@@ -562,81 +677,101 @@
   window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(() => { if (room) fitStage(); }, 60); });
   function updateRoomChrome() {
     if (!room) return;
-    // only the host can put people out
-    $$('#stage [data-act=kick]').forEach((b) => { b.hidden = !room.isHost; });
     const count = peers.size + 1;
     const open = room.open !== false;
-    $('#room-count').textContent = tr('card.n_max', { n: count, max: room.maxPeers });
+    $('#room-count').textContent = `${count}/${room.maxPeers}`;
     const code = $('#room-code');
     code.textContent = open ? fmtCode(room.code) : tr('card.code_off');
-    code.classList.toggle('mono', open); // the code in mono; Korean text in the normal font
     $('#btn-room').classList.toggle('closed', !open);
     if (roomPanel.classList.contains('open')) fillRoomPanel();
-    let slot = $('#stage .invite-slot');
+    const box = $('#stage-others');
+    let slot = $('.invite-slot', box);
     if (slot && !open) { slot.remove(); slot = null; }
     if (open && count < room.maxPeers) {
       if (!slot) {
-        slot = h(`<button class="invite-slot"><span class="plus">${icon('user-plus')}</span>${tr('card.invite_friends')}<span class="mono">${fmtCode(room.code)}</span></button>`);
+        slot = h(`<button class="invite-slot">${icon('user-plus')}<span>${esc(tr('card.invite_friends'))}</span><span class="mono">${fmtCode(room.code)}</span></button>`);
         slot.addEventListener('click', openInvite);
-        $('#stage').append(slot);
+        box.append(slot);
       }
     } else slot?.remove();
+    syncSelfControls();
     fitStage();
     updateDim();
   }
 
-  /* ── stage interactions (delegated) ── */
+  /* ── on the stage (delegated) ── */
   const stage = $('#stage');
   stage.addEventListener('input', (e) => {
     const t = e.target, act = t.dataset.act; if (!act) return;
     const id = t.closest('.strip').dataset.id;
     if (t.type === 'range') paintRange(t);
     if (id === 'self') {
-      if (act === 'gain') { backend.setSelf({ gain: +t.value }); syncSelfControls(); }
-      if (act === 'monitor-db') { backend.setSelf({ monitorDb: +t.value }); syncSelfControls(); }
+      if (act === 'fader') {
+        if (backend.getSettings().connection === 'daw') backend.setSelf({ monitorDb: +t.value });
+        else backend.setSelf({ gain: +t.value });
+        syncSelfControls();
+      }
       return;
     }
-    if (act === 'vol') backend.setPeer(id, { volume: +t.value });
-    if (act === 'pan') backend.setPeer(id, { pan: +t.value });
+    const p = peers.get(id); if (!p) return;
+    // (shown at once: the figures that confirm it come back a moment later)
+    if (act === 'vol') { p.volume = +t.value; backend.setPeer(id, { volume: p.volume }); }
+    if (act === 'pan') { p.pan = +t.value; backend.setPeer(id, { pan: p.pan }); }
+    updatePeer(p);
   });
   $('#room-input').addEventListener('change', (e) => backend.updateSettings({ inputChannel: e.target.value }));
   stage.addEventListener('dblclick', (e) => {
     const t = e.target; if (t.type !== 'range') return;
-    t.value = ['gain', 'vol', 'pan', 'monitor-db'].includes(t.dataset.act) ? 0 : t.value;
+    t.value = 0;
     t.dispatchEvent(new Event('input', { bubbles: true }));
   });
   stage.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
-    const id = b.closest('.strip').dataset.id, act = b.dataset.act;
+    const id = b.closest('.strip')?.dataset.id, act = b.dataset.act; if (!id) return;
+    if (act === 'color') { colorPopFor === id ? closeColorPop() : openColorPop(id, b); return; }
     if (id === 'self') {
       if (act === 'mute') toggleMute();
-      if (act === 'monitor') {
-        // VST mode: your own sound through the plugin; else the app's software monitor
-        if (backend.getSettings().connection === 'daw') backend.setSelf({ own: backend.self.own === false });
-        else backend.setSelf({ monitor: !backend.self.monitor });
-        syncSelfControls();
-      }
+      if (act === 'monitor') toggleMonitor();
       if (act === 'rec') { backend.setSelf({ rec: backend.self.rec === false }); syncSelfControls(); }
       if (act === 'local') openSettings('audio');
       return;
     }
-    const p = peers.get(id);
-    if (act === 'mute') { backend.setPeer(id, { mute: !p.mute }); }
-    if (act === 'solo') { backend.setPeer(id, { solo: !p.solo }); }
-    // (shown at once: the figures that confirm it come back half a second later)
-    if (act === 'rec') { p.rec = p.rec === false; b.classList.toggle('on', p.rec); backend.setPeer(id, { rec: p.rec }); }
-    // put out of the room: asks once more (the button says so for a moment)
-    if (act === 'kick') {
-      if (!b.classList.contains('arm')) {
-        b.classList.add('arm');
-        setTimeout(() => b.classList.remove('arm'), 2500);
-      } else {
-        b.classList.remove('arm');
-        backend.kickPeer(id);
-      }
-    }
-    if (act === 'lat') { popFor === id ? closePop() : openPop(id, b); }
+    const p = peers.get(id); if (!p) return;
+    if (act === 'mute') { p.mute = !p.mute; backend.setPeer(id, { mute: p.mute }); }
+    if (act === 'solo') { p.solo = !p.solo; backend.setPeer(id, { solo: p.solo }); }
+    if (act === 'rec') { p.rec = p.rec === false; backend.setPeer(id, { rec: p.rec }); }
+    if (act === 'lat') { popFor === id ? closePop() : openPop(id, b); return; }
+    updatePeer(p);
+    updateDim();
   });
+
+  /* ── the others' order: a name plate dragged to another place ── */
+  let dragId = null;
+  const clearDrop = () => $$('#stage .drop-before, #stage .drop-after').forEach((s) => s.classList.remove('drop-before', 'drop-after'));
+  stage.addEventListener('dragstart', (e) => {
+    const plate = e.target.closest?.('.plate[draggable=true]'); if (!plate) return;
+    dragId = plate.closest('.strip').dataset.id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragId);
+    strips.get(dragId)?.el.classList.add('dragging');
+    closePop(); closeColorPop();
+  });
+  stage.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    const s = e.target.closest('#stage-others .strip'); if (!s || s.dataset.id === dragId) return;
+    e.preventDefault();
+    const all = $$('#stage-others .strip');
+    const after = all.indexOf(strips.get(dragId)?.el) < all.indexOf(s);
+    if (!s.classList.contains(after ? 'drop-after' : 'drop-before')) { clearDrop(); s.classList.add(after ? 'drop-after' : 'drop-before'); }
+  });
+  stage.addEventListener('drop', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    const s = e.target.closest('#stage-others .strip'), el = strips.get(dragId)?.el;
+    if (s && el && s !== el) { s.classList.contains('drop-after') ? s.after(el) : s.before(el); saveOrder(); }
+    clearDrop();
+  });
+  stage.addEventListener('dragend', () => { strips.get(dragId)?.el.classList.remove('dragging'); dragId = null; clearDrop(); });
 
   /* ── backend events ── */
   backend.on('peer-joined', ({ peer, silent }) => { if (room) { addPeer(peer, !silent); adviseQuality(); } });
@@ -645,7 +780,7 @@
   backend.on('kicked', () => {
     if (!room) return;
     leaveRoom(); // (put out: it would not let us back in, so not offered again)
-    toast(tr('card.host_removed_room'));
+    toast(tr('card.host_removed_room'), { kind: 'warn' });
   });
   backend.on('stats', ({ peers: list }) => {
     // settings screen: the real buffer as the device runs it
@@ -654,36 +789,35 @@
     // the home screen's status line follows the plugin as it connects / goes away
     if (!room) { renderHomeStatus(); return; }
     noteFeedback(!!backend._feedback);
+    syncDawChip();
     // our own buffers as the device really runs (changes with the ASIO panel)
     const self = strips.get('self');
-    if (self) put($('[data-f=local]', self.el), f1(backend.localMs()));
+    if (self) put($('[data-f=local]', self.el), f1(backend.localMs()) + 'ms');
     list.forEach(updatePeer);
     updateDim();
     if (popFor) updatePop();
   });
   const setMeterEl = $('#set-meter'), settingsModal = $('#modal-settings');
+  // the meters are asked for only while some are on screen: a room, or the settings
+  backend.levelsWanted = () => !!room || settingsModal.classList.contains('open');
   backend.on('levels', (lv) => {
     // nobody is looking (minimized): nothing to draw
     if (document.hidden) return;
     if (room) {
-      const self = strips.get('self');
-      setMeter(self?.meter, lv.self);
-      avatarLevel(self?.avatar, lv.self[0]);
+      setMeter(strips.get('self')?.meter, lv.self);
       for (const id in lv.peers) {
         const st = strips.get(id); if (!st) continue;
-        const l = lv.peers[id];
-        setMeter(st.meter, l);
-        avatarLevel(st.avatar, l[0]);
+        setMeter(st.meter, lv.peers[id]);
       }
+      if (lv.master) setMeter($('#master-meter'), lv.master);
     }
     if (settingsModal.classList.contains('open')) {
-      setMeter(setMeterEl, lv.self);
-      // by channel number (the bars are grouped by name, so position inside a group is not it)
+      meterBar(setMeterEl.children[0], Math.max(lv.self[0], lv.self[1]));
+      // by channel number
       (lv.inputs || []).forEach((v, i) => { const bar = chBars.get(i + 1); if (bar) meterBar(bar, v); });
     }
   });
   backend.on('chat', (m) => addMsg(m));
-  // system messages from the engine/network (settings applied, host changed …)
   // the app's own messages (host changed, someone dropped, code turned off…): always in the
   // chat log, and as a toast when the chat panel is closed so they are not missed
   backend.on('notice', ({ text }) => {
@@ -694,12 +828,11 @@
   backend.on('room', (r) => {
     if (!room) return;
     room.isHost = r.isHost;
-    syncSelfControls(); // my own "호스트" tag
     room.safetyCode = r.safetyCode;
     // code, on/off and size can change (host settings, a new host, a new code)
     if (r.code && r.code !== room.code) {
       room.code = r.code;
-      $('#stage .invite-slot')?.remove();
+      $('#stage-others .invite-slot')?.remove();
     }
     if (r.open !== undefined) room.open = r.open;
     // the room's own time, as the host tells it (the clock reads it every second)
@@ -709,31 +842,28 @@
     if ($('#modal-invite').classList.contains('open')) fillRoomPanel();
     renderSafety();
     r.peers.forEach((p) => {
-      const st = strips.get(p.id); if (!st) return;
-      const prev = peers.get(p.id); if (prev) prev.isHost = p.isHost;
-      $('.name', st.el).innerHTML = `<span class="nm" title="${esc(p.name)}">${esc(p.name)}</span>` + (p.isHost ? '<span class="tag">' + tr('card.host') + '</span>' : '');
-      $('.inst', st.el).textContent = p.instrument;
-      $('.inst', st.el).title = p.instrument;
-      setHue(st.avatar, p.hue);
-      if (prev) { prev.name = p.name; prev.instrument = p.instrument; prev.hue = p.hue; }
+      const prev = peers.get(p.id); if (!prev) return;
+      prev.isHost = p.isHost; prev.name = p.name; prev.instrument = p.instrument;
+      updatePeer(prev);
     });
     updateRoomChrome();
   });
-  backend.on('settings', () => { syncSelfControls(); syncSettings(); renderHomeStatus(); syncHomeProfile(); applyTheme(); syncIdleEngine(); });
+  backend.on('settings', () => { syncSelfControls(); syncSettings(); renderHomeStatus(); syncHomeProfile(); applyTheme(); syncIdleEngine(false); });
 
   /* ── latency popover ── */
   const pop = $('#lat-pop');
-  let popFor = null, popAnchor = null;
+  let popFor = null, popAnchor = null, kickTimer = 0;
 
   function openPop(id, anchor) {
-    closePop();
+    closePop(); closeColorPop();
     popFor = id; popAnchor = anchor;
     anchor.classList.add('active');
     const p = peers.get(id);
+    pop.style.setProperty('--tc', colorOf(id));
     pop.innerHTML = `
-      <div class="pop-title">${esc(p.name)} → ${tr('card.me')}</div>
+      <div class="pop-head"><span class="bar"></span><div class="who"><b>${esc(p.name)}</b><span data-f="sub"></span></div><span class="spacer"></span><button class="ibtn sm bare" data-pop="close" title="${esc(tr('room.close'))}" aria-label="${esc(tr('room.close'))}">${icon('x')}</button></div>
       <div class="pop-total"><span class="n" data-f="total"></span><span class="u">ms</span><span class="lat-q" data-f="q"></span></div>
-      <div class="lat-bar lg"><div class="lat-fill" data-f="bar"></div></div>
+      <div class="lat-bar"><div class="lat-fill" data-f="bar"></div></div>
       <div class="legend" data-f="legend"></div>
       <div class="pop-sep"></div>
       <dl class="kv">
@@ -741,19 +871,23 @@
         <dt>${tr('latency.link')}</dt><dd data-f="link"></dd>
         <dt>${tr('card.sending')}</dt><dd data-f="stream"></dd>
         <dt>${tr('latency.security')}</dt><dd data-f="sec"></dd>
-        <dt>${tr('latency.round_trip_rtt')}</dt><dd data-f="rtt"></dd>
-        <dt>${tr('latency.packet_loss')}</dt><dd data-f="loss"></dd>
+        <dt>${tr('latency.round_trip_rtt')}</dt><dd data-f="rtt" class="num"></dd>
+        <dt>${tr('latency.packet_loss')}</dt><dd data-f="loss" class="num"></dd>
       </dl>
       <div class="tip" data-f="tip" hidden></div>
       <div class="pop-sep"></div>
-      <div class="row">
+      <div class="pop-row">
         <div><div class="jb-title">${tr('settings.jitter_buffer')}</div><div class="note" data-f="jb-note"></div></div>
         <div class="stepper">
-          <button class="chip sm" data-pop="auto">${tr('latency.auto')}</button>
-          <button class="step-btn" data-pop="dec" title="${esc(tr('dialog.fewer'))}">${icon('minus')}</button>
+          <button class="ibtn sm" data-pop="dec" title="${esc(tr('dialog.fewer'))}" aria-label="${esc(tr('dialog.fewer'))}">${icon('minus')}</button>
           <span class="num" data-f="jb"></span>
-          <button class="step-btn" data-pop="inc" title="${esc(tr('dialog.more'))}">${icon('plus')}</button>
+          <button class="ibtn sm" data-pop="inc" title="${esc(tr('dialog.more'))}" aria-label="${esc(tr('dialog.more'))}">${icon('plus')}</button>
+          <button class="btn sm chip" data-pop="auto">${tr('latency.auto')}</button>
         </div>
+      </div>
+      <div data-f="kick" hidden>
+        <div class="pop-sep" style="margin-bottom:12px"></div>
+        <div class="pop-row"><span class="note">${esc(tr('card.removed_cant_return'))}</span><button class="btn sm danger" data-pop="kick">${esc(tr('card.remove'))}</button></div>
       </div>`;
     pop.classList.add('open');
     updatePop();
@@ -764,7 +898,7 @@
     const r = popAnchor.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
     let left = r.left + r.width / 2 - pw / 2, top = r.bottom + 8;
     if (top + ph > innerHeight - 12) {
-      // not enough room below → open beside the strip so it never covers its own card
+      // not enough room below → open beside the strip so it never covers its own one
       const s = popAnchor.closest('.strip').getBoundingClientRect();
       top = s.top;
       left = s.right + 10 + pw <= innerWidth - 12 ? s.right + 10 : s.left - pw - 10;
@@ -789,6 +923,7 @@
     const b = p.breakdown, [qc, ql] = p.measured === false ? ['accent', tr('card.measuring')] : quality(p.total);
     const n = $('[data-f=total]', pop); n.textContent = f1(p.total); n.className = 'n q-' + qc;
     const q = $('[data-f=q]', pop); q.textContent = ql; q.className = 'lat-q q-' + qc;
+    put($('[data-f=sub]', pop), [p.instrument, tr('latency.p2p_direct') + (p.conn.link === 'wifi' ? ' · Wi-Fi' : '')].filter(Boolean).join(' · '));
     paintBar($('[data-f=bar]', pop), b, p.total);
     $('[data-f=legend]', pop).innerHTML = SEG.filter(([k]) => b[k] > 0)
       // (a peer in DAW mode: its input is the DAW's block, without the DAW's own device)
@@ -818,26 +953,92 @@
     $('[data-f=jb-note]', pop).textContent = p.jitterAuto
       ? tr('latency.auto_n_packets', { n: (+p.packets).toFixed(1), ms: f1(b.jitter) })
       : tr('latency.manual_auto_would', { n: (+p.autoPackets).toFixed(1) });
+    // only the host can put people out (asked once more: the button says so for a moment)
+    $('[data-f=kick]', pop).hidden = !room?.isHost;
   }
   function closePop() {
     pop.classList.remove('open');
     popAnchor?.classList.remove('active');
     popFor = null; popAnchor = null;
+    clearTimeout(kickTimer);
   }
   pop.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pop]'); if (!b || !popFor) return;
     const p = peers.get(popFor);
     // manual sizes are whole packets
     const whole = Math.max(1, Math.round(p.packets));
+    if (b.dataset.pop === 'close') return closePop();
     if (b.dataset.pop === 'auto') backend.setPeer(popFor, { jitterAuto: !p.jitterAuto, jitterPackets: whole });
     if (b.dataset.pop === 'dec') backend.setPeer(popFor, { jitterAuto: false, jitterPackets: Math.max(1, whole - 1) });
     if (b.dataset.pop === 'inc') backend.setPeer(popFor, { jitterAuto: false, jitterPackets: whole + 1 });
+    if (b.dataset.pop === 'kick') {
+      if (!b.classList.contains('arm')) {
+        b.classList.add('arm');
+        b.textContent = tr('card.press_again_remove');
+        kickTimer = setTimeout(() => { b.classList.remove('arm'); b.textContent = tr('card.remove'); }, 2500);
+      } else {
+        backend.kickPeer(popFor);
+        closePop();
+      }
+    }
   });
   document.addEventListener('pointerdown', (e) => {
     if (popFor && !pop.contains(e.target) && !popAnchor?.contains(e.target)) closePop();
   });
   window.addEventListener('resize', placePop);
   stage.addEventListener('scroll', closePop);
+  $('#stage-others').addEventListener('scroll', closePop);
+
+  /* ── a track's colour (and, on my own, my name and instrument) ── */
+  const colorPop = h('<div class="pop color-pop" role="dialog"></div>');
+  document.body.append(colorPop);
+  let colorPopFor = null;
+  function closeColorPop() { colorPop.classList.remove('open'); colorPopFor = null; }
+  function openColorPop(id, anchor) {
+    closePop();
+    colorPopFor = id;
+    const me = id === 'self', s = backend.getSettings(), cur = colorOf(id);
+    const title = me ? tr('card.my_track') : tr('color.track_of', { name: nameOf(id) });
+    colorPop.setAttribute('aria-label', title);
+    colorPop.innerHTML = `<div class="color-title">${esc(title)}</div>`
+      + (me ? `<div class="me-edit">
+          <label><span>${esc(tr('input.name'))}</span><input class="input" data-me="name" maxlength="12" autocomplete="off" spellcheck="false" value="${esc(DEFAULT_NAMES.includes(s.name) ? '' : s.name)}" placeholder="${esc(tr('home.pick_name'))}"></label>
+          <label><span>${esc(tr('home.instrument'))}</span><input class="input" data-me="instrument" maxlength="12" autocomplete="off" spellcheck="false" value="${esc(s.instrument || '')}" placeholder="${esc(tr('home.e_g_guitar'))}"></label>
+        </div><div class="hr"></div>` : '')
+      + `<div class="swatches">${PALETTE.map((c, i) => `<button class="swatch${c === cur ? ' on' : ''}" type="button" data-color="${c}" style="--c:${c}" title="${esc(tr(PALETTE_NAMES[i]))}" aria-label="${esc(tr(PALETTE_NAMES[i]))}"></button>`).join('')}</div>`
+      + `<p class="note faint">${esc(tr('color.only_here'))}</p>`;
+    colorPop.classList.add('open');
+    colorPopSize = innerWidth + 'x' + innerHeight;
+    const a = anchor.getBoundingClientRect(), w = colorPop.offsetWidth, hgt = colorPop.offsetHeight;
+    const thin = a.width < 40;
+    const left = thin ? a.right + 8 : a.left + a.width / 2 - w / 2;
+    const top = a.top - hgt - 8 > 8 ? a.top - hgt - 8 : a.bottom + 8;
+    colorPop.style.left = `${clamp(left, 8, innerWidth - w - 8)}px`;
+    colorPop.style.top = `${clamp(top, 8, innerHeight - hgt - 8)}px`;
+  }
+  colorPop.addEventListener('click', (e) => {
+    const sw = e.target.closest('.swatch');
+    if (sw && colorPopFor) { setColor(colorPopFor, sw.dataset.color); closeColorPop(); }
+  });
+  // my name and instrument, as typed (everyone in the room sees them at once)
+  colorPop.addEventListener('change', (e) => {
+    const k = e.target.dataset.me; if (!k) return;
+    const v = e.target.value.trim();
+    if (k === 'name' && !v) return;
+    if (v === (backend.getSettings()[k] || '')) return;
+    // (my colour goes with my name)
+    const c = pickedColors[nameOf('self')];
+    backend.updateSettings({ [k]: v });
+    if (k === 'name' && c) setColor('self', c);
+    toast(k === 'name' ? tr('input.name_changed') : tr('input.instrument_changed'), { kind: 'ok' });
+  });
+  colorPop.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur?.(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (colorPopFor && !colorPop.contains(e.target) && !e.target.closest?.('[data-act=color]')) closeColorPop();
+  });
+  // (the window made another size: the place it was opened at is gone)
+  let colorPopSize = '';
+  window.addEventListener('resize', () => { const s = innerWidth + 'x' + innerHeight; if (s !== colorPopSize) { colorPopSize = s; closeColorPop(); } });
 
   /* ── mic / master / leave ── */
   const master = $('#master-vol');
@@ -904,7 +1105,7 @@
     metroOn = on;
     $('#metro').classList.toggle('on', on);
     syncMetroMenu();
-    clearInterval(beatTimer);
+    clearTimeout(beatTimer);
     clearTimeout(sendTimer);
     if (send) backend.setMetronome({ on, bpm, beats, countIn });
     if (!on) return;
@@ -914,15 +1115,21 @@
     const lead = (counted ?? (turnedOn && send ? countIn : 0)) * beats;
     let last = null;
     const d = $('#metro-beat');
-    beatTimer = setInterval(() => {
-      const n = Math.floor((Date.now() - origin) / period);
-      if (n < 0 || n === last) return;
-      last = n;
-      d.classList.add('flash');
-      d.classList.toggle('count', n < lead);
-      d.classList.toggle('down', n >= lead && (n - lead) % beats === 0);
-      setTimeout(() => d.classList.remove('flash'), 90);
-    }, 10);
+    // (woken at each beat, not looked at a hundred times a second; each beat's time is
+    // counted from the start, so the light does not drift from the click)
+    const beat = () => {
+      const now = Date.now();
+      const n = Math.floor((now - origin) / period);
+      if (n >= 0 && n !== last) {
+        last = n;
+        d.classList.add('flash');
+        d.classList.toggle('count', n < lead);
+        d.classList.toggle('down', n >= lead && (n - lead) % beats === 0);
+        setTimeout(() => d.classList.remove('flash'), 90);
+      }
+      beatTimer = setTimeout(beat, Math.max(1, origin + (Math.max(n, -1) + 1) * period - now));
+    };
+    beat();
   }
   function setBpm(v) {
     bpm = clamp(Math.round(v) || 120, 30, 300);
@@ -986,15 +1193,18 @@
     const bits = s.recFormat === 'flac' ? Math.min(24, s.recBits || 16) : (s.recBits || 16);
     return `${s.recFormat === 'flac' ? 'FLAC' : 'WAV'} ${bits === 32 ? '32bit float' : bits + 'bit'}`;
   }
+  const REC_FORMATS = [['wav', 16], ['wav', 24], ['wav', 32], ['flac', 16], ['flac', 24]];
   function syncRecMenu() {
     const s = backend.getSettings();
     const format = s.recFormat === 'flac' ? 'flac' : 'wav';
     const bits = format === 'flac' ? Math.min(24, s.recBits || 16) : (s.recBits || 16);
-    segSet($('#rec-format'), format);
-    segSet($('#rec-bits'), bits);
-    // (FLAC has no float)
-    $('#rec-bits button[data-v="32"]').hidden = format === 'flac';
+    $('#rec-formats').innerHTML = REC_FORMATS.map(([f, b], i) => {
+      const on = f === format && b === bits;
+      return (i === 3 ? '<div class="menu-sep"></div>' : '')
+        + `<button class="radio-row${on ? ' on' : ''}" type="button" role="menuitemradio" aria-checked="${on}" data-f="${f}" data-b="${b}" ${rec.on ? 'disabled' : ''}><i></i><span class="grow">${f.toUpperCase()} ${b === 32 ? '32bit float' : b + 'bit'}</span>${f === 'flac' ? `<span class="note">${esc(tr('rec.lossless'))}</span>` : ''}</button>`;
+    }).join('');
     $('#rec-mix').checked = s.recMix !== false;
+    $('#rec-mix').disabled = rec.on;
     $('#rec-menu').classList.toggle('locked', rec.on);
     $('#rec-locked').hidden = !rec.on;
     // what an hour of one stereo track comes to (a mono one: half)
@@ -1006,16 +1216,11 @@
       : tr('rec.one_stereo_track_about', { size: size(wav) });
     $('#rec-btn').title = rec.on ? tr('rec.stop_recording') : tr('rec.recording') + ` · ${recFormatText(s)}`;
   }
-  for (const [id, key, num] of [['rec-format', 'recFormat', false], ['rec-bits', 'recBits', true]]) {
-    $('#' + id).addEventListener('click', async (e) => {
-      const b = e.target.closest('button'); if (!b || rec.on) return;
-      const patch = { [key]: num ? +b.dataset.v : b.dataset.v };
-      // FLAC has no 32 bit float: 24 bit there
-      if (patch.recFormat === 'flac' && (backend.getSettings().recBits || 16) > 24) patch.recBits = 24;
-      await backend.updateSettings(patch);
-      syncRecMenu();
-    });
-  }
+  $('#rec-formats').addEventListener('click', async (e) => {
+    const b = e.target.closest('.radio-row'); if (!b || rec.on) return;
+    await backend.updateSettings({ recFormat: b.dataset.f, recBits: +b.dataset.b });
+    syncRecMenu();
+  });
   $('#rec-mix').addEventListener('change', async (e) => { await backend.updateSettings({ recMix: e.target.checked }); syncRecMenu(); });
   $('#rec-open').addEventListener('click', () => backend.openRecordings?.().catch((e) => toast(e.message)));
   function setRecUi(on) {
@@ -1110,13 +1315,15 @@
   }
   function sysMsg(text) { pushMsg(h(`<div class="msg sys">${esc(text)}</div>`)); }
   function addMsg({ from, text }) {
-    if (from === 'me') { pushMsg(h(`<div class="msg me"><div class="bubble">${esc(text)}</div></div>`)); return; }
+    if (from === 'me') { pushMsg(h(`<div class="msg me" data-from="self" style="--tc:${colorOf('self')}"><span class="from">${esc(backend.getSettings().name)}</span><div class="bubble">${esc(text)}</div></div>`)); return; }
     const p = peers.get(from);
-    pushMsg(h(`<div class="msg"><span class="from" style="${hueCss(p?.hue ?? 0)}">${esc(p?.name ?? '?')}</span><div class="bubble">${esc(text)}</div></div>`));
+    pushMsg(h(`<div class="msg" data-from="${esc(from)}" style="--tc:${p ? colorOf(from) : 'var(--text-2)'}"><span class="from">${esc(p?.name ?? '?')}</span><div class="bubble">${esc(text)}</div></div>`));
     if (!chatOpen()) { unread++; updateBadge(); }
   }
   $('#btn-chat').addEventListener('click', () => toggleChat());
   $('#btn-chat-close').addEventListener('click', () => toggleChat(false));
+  // (a narrow window: the chat lies over the room; a click beside it closes it)
+  $('#chat-veil').addEventListener('click', () => toggleChat(false));
   $('#chat-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const inp = $('#chat-input'), text = inp.value.trim();
@@ -1206,10 +1413,15 @@
   /** Outside a room the audio engine runs only while settings are open (it holds the ASIO
    *  device), except in DAW mode: there it holds no device, and it is what the gachi plugin
    *  connects to, so it stays up on the home screen too (and the plugin's state shows). */
-  function syncIdleEngine() {
-    if (room) return;
+  let idleAsked = null;
+  /** `again`: ask even if the same was asked last time (a room just left: its engine is
+   *  gone). Every setting changed comes through here, a slider many times a second. */
+  function syncIdleEngine(again = true) {
+    if (room) { idleAsked = null; return; }
     const want = backend.getSettings().connection === 'daw' || $('#modal-settings').classList.contains('open');
-    Promise.resolve(backend.setPreview?.(want)).catch((e) => { if (want) toast(e.message); });
+    if (!again && want === idleAsked) return;
+    idleAsked = want;
+    Promise.resolve(backend.setPreview?.(want)).catch((e) => { idleAsked = null; if (want) toast(e.message); });
   }
   /** Home screen: the device is closed there, so what its control panel changed (buffer,
    *  safe mode) is read anew when the window comes back (the panel is another window) and
@@ -1223,11 +1435,10 @@
   }
   window.addEventListener('focus', probeDevice);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) probeDevice(); });
-  // no animations while nothing is drawn (see `.page-hidden` in the styles)
-  // and no meters sent (see `commands::UI_HIDDEN`)
+  // no animations while nothing is drawn (see `.page-hidden` in the styles; no meters are
+  // asked for then either: see `backend.levelsWanted`)
   const syncHidden = () => {
     document.documentElement.classList.toggle('page-hidden', document.hidden);
-    backend.setUiVisible?.(!document.hidden);
   };
   document.addEventListener('visibilitychange', syncHidden);
   syncHidden();
@@ -1305,20 +1516,17 @@
   function buildChannelMeters(s) {
     const n = inputCount(s);
     const box = $('#ch-meters');
-    box.hidden = $('#ch-note').hidden = n <= 2;
+    box.parentElement.hidden = $('#ch-note').hidden = $('#ch-k').hidden = n <= 2;
     const names = inputNames(s);
     const key = `${n}|${names.join(',')}`;
     if (box.dataset.n !== key) {
       box.dataset.n = key;
-      box.innerHTML = channelGroups(names, n).map((g) => `<div class="ch-group">
-        <span class="g">${esc(g.name)}</span>
-        <div class="chs">${g.chans.map(([c, label]) => `<div class="ch" data-c="${c}" title="${esc(chName(names, c))}"><div class="bar"><i></i></div><span class="n">${esc(label)}</span></div>`).join('')}</div>
-      </div>`).join('');
+      box.innerHTML = Array.from({ length: n }, (_, i) => `<div class="ch-row" data-c="${i + 1}"><span class="n" title="${esc(chName(names, i + 1))}">${esc(chName(names, i + 1))}</span><div class="bar"><i></i></div></div>`).join('');
     }
     const used = usedChannels(s.inputChannel);
-    $$('.ch', box).forEach((el) => el.classList.toggle('used', used.has(+el.dataset.c)));
+    $$('.ch-row', box).forEach((el) => el.classList.toggle('used', used.has(+el.dataset.c)));
     chBars.clear();
-    $$('.ch', box).forEach((el) => chBars.set(+el.dataset.c, $('i', el)));
+    $$('.ch-row', box).forEach((el) => chBars.set(+el.dataset.c, $('i', el)));
   }
 
   /* ── theme: one button flips light/dark ("system" until first flipped) ── */
@@ -1327,14 +1535,24 @@
     const t = backend.getSettings().theme;
     return t === 'light' || t === 'dark' ? t : prefersDark.matches ? 'dark' : 'light';
   };
+  let themeShown = '';
   function applyTheme() {
     const t = backend.getSettings().theme;
+    // (every setting changed comes through here: nothing to do while the look stays)
+    const look = t + '|' + effectiveTheme();
+    if (look === themeShown) return;
+    themeShown = look;
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
     else delete document.documentElement.dataset.theme;
     try { localStorage.setItem('gachi-theme', t); } catch { /* fine without */ }
     // the button shows what you switch to
     $$('[data-act=theme]').forEach((b) => { b.innerHTML = icon(effectiveTheme() === 'dark' ? 'sun' : 'moon'); });
+    $$('#set-theme button').forEach((b) => b.classList.toggle('on', b.dataset.v === effectiveTheme()));
   }
+  $('#set-theme').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && b.dataset.v !== effectiveTheme()) backend.updateSettings({ theme: b.dataset.v });
+  });
   $$('[data-act=theme]').forEach((b) => b.addEventListener('click', () => {
     const flip = () => backend.updateSettings({ theme: effectiveTheme() === 'dark' ? 'light' : 'dark' });
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1343,62 +1561,6 @@
     else flip();
   }));
   prefersDark.addEventListener('change', applyTheme);
-
-  /* ── rename yourself / change your instrument (also inside a room: everyone sees it at once) ── */
-  function startRename(btn, key = 'name') {
-    const cur = backend.getSettings()[key] || '';
-    const input = h(`<input class="name-input" maxlength="12" autocomplete="off" spellcheck="false" placeholder="${esc(key === 'name' ? tr('input.name') : tr('home.instrument'))}">`);
-    input.value = key === 'name' && DEFAULT_NAMES.includes(cur) ? '' : cur;
-    btn.replaceWith(input);
-    input.focus(); input.select();
-    let done = false;
-    const finish = (save) => {
-      if (done) return; done = true;
-      const v = input.value.trim();
-      input.replaceWith(btn);
-      if (save && v !== cur && (v || key === 'instrument')) {
-        backend.updateSettings({ [key]: v });
-        toast(key === 'name' ? tr('input.name_changed') : tr('input.instrument_changed'));
-      }
-    };
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') finish(true);
-      if (e.key === 'Escape') finish(false);
-      e.stopPropagation();
-    });
-    input.addEventListener('blur', () => finish(true));
-  }
-  document.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-act=rename], [data-act=reinst]');
-    if (b) startRename(b, b.dataset.act === 'rename' ? 'name' : 'instrument');
-  });
-
-  /* ── my colour: click my own avatar, pick one of the presets ── */
-  const colorPop = h('<div class="color-pop" role="dialog"></div>');
-  document.body.append(colorPop);
-  function closeColorPop() { colorPop.classList.remove('open'); }
-  function openColorPop(anchor) {
-    const mine = backend.getSettings().color;
-    colorPop.setAttribute('aria-label', tr('input.my_color'));
-    colorPop.innerHTML = '<div class="color-title">' + esc(tr('input.my_color')) + '</div><div class="swatches">'
-      + HUES.map((hh, i) => `<button class="swatch${i === mine ? ' on' : ''}" type="button" data-color="${i}" style="${hueCss(hh)}" title="${esc(tr(COLOR_NAMES[i]))}" aria-label="${esc(tr(COLOR_NAMES[i]))}"></button>`).join('')
-      + '</div>';
-    colorPop.classList.add('open');
-    const a = anchor.getBoundingClientRect(), w = colorPop.offsetWidth, hgt = colorPop.offsetHeight;
-    const left = clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8);
-    const below = a.bottom + 10;
-    colorPop.style.left = `${left}px`;
-    colorPop.style.top = `${below + hgt > innerHeight - 8 ? a.top - hgt - 10 : below}px`;
-  }
-  document.addEventListener('click', (e) => {
-    const sw = e.target.closest('.swatch');
-    if (sw) { backend.updateSettings({ color: Number(sw.dataset.color) }); closeColorPop(); return; }
-    const av = e.target.closest('[data-act=color]');
-    if (av) { colorPop.classList.contains('open') ? closeColorPop() : openColorPop(av); return; }
-    if (!e.target.closest('.color-pop')) closeColorPop();
-  });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeColorPop(); });
-  window.addEventListener('resize', closeColorPop);
 
   /* ── home: my name and instrument ── */
   const homeName = $('#home-name');
@@ -1409,26 +1571,26 @@
     const s = backend.getSettings();
     const first = !s.name || DEFAULT_NAMES.includes(s.name);
     if (document.activeElement !== homeName) homeName.value = first ? '' : s.name;
-    $('#home-avatar').textContent = initial(first ? '?' : s.name);
-    setHue($('#home-avatar'), myHue());
-    $('#me-row').classList.toggle('first', first);
+    $('#me-row').classList.toggle('first', first && !homeName.value.trim());
     $('#me-row').classList.toggle('loading', !backend.ready);
+    put($('#me-hint'), first && !homeName.value.trim() ? tr('home.name_needed') : '');
     // first run: put the cursor in the name box (once the saved name is known)
     if (backend.ready && !homeFocused) {
       homeFocused = true;
       if (first && $('#screen-home').classList.contains('active')) homeName.focus();
     }
     if (document.activeElement !== homeInst) homeInst.value = s.instrument || '';
+    if (!$('#create-name').value) $('#create-name').placeholder = first ? tr('home.e_g_friday') : tr('home.names_room', { name: s.name });
   }
   homeName.addEventListener('input', () => {
     clearTimeout(nameTimer);
     const v = homeName.value.trim();
-    $('#home-avatar').textContent = initial(v || '?');
+    $('#me-row').classList.toggle('first', !v);
+    put($('#me-hint'), v ? '' : tr('home.name_needed'));
     nameTimer = setTimeout(() => { if (v) backend.updateSettings({ name: v }); }, 400);
   });
   homeName.addEventListener('blur', () => { if (!homeName.value.trim()) syncHomeProfile(); });
   // the instrument: whatever the player writes (a list could never hold them all)
-
   let instTimer = null;
   homeInst.addEventListener('input', () => {
     clearTimeout(instTimer);
@@ -1462,11 +1624,11 @@
     $('#nearby-empty').hidden = rooms.length > 0;
     $('#nearby-list').innerHTML = rooms.map((r) => {
       const full = r.members >= r.max_peers;
-      return `<button class="nearby-room" data-code="${esc(r.code)}" ${full ? 'disabled' : ''}>
-        <span class="avatar sm" style="--hue:${hue(r.host)}">${esc(initial(r.host))}</span>
-        <span class="nr-text"><b>${esc(r.name || tr('home.unnamed_room'))}</b><span>${esc(r.host)} · ${tr('card.n_max', { n: r.members, max: r.max_peers })}${full ? ' · ' + tr('invite.full') : ''}</span></span>
-        ${r.locked ? '<span class="nr-lock" data-icon="lock" title="' + esc(tr('home.password')) + '"></span>' : ''}
-        <span class="nr-go">${full ? '' : tr('home.join_2')}</span>
+      return `<button class="nearby-room" data-code="${esc(r.code)}" ${full ? 'disabled' : ''} title="${esc(r.host)}">
+        <span class="nr-name">${esc(r.name || tr('home.unnamed_room'))}</span>
+        ${r.locked ? '<span class="nr-lock" title="' + esc(tr('home.password')) + '">' + icon('lock') + '</span>' : ''}
+        <span class="nr-count">${r.members}/${r.max_peers}${full ? ' · ' + esc(tr('invite.full')) : ''}</span>
+        ${full ? '' : `<span class="nr-go">${tr('home.join_2')}</span>`}
       </button>`;
     }).join('');
     hydrateIcons($('#nearby-list'));
@@ -1487,15 +1649,15 @@
     clearInterval(recentTimer);
     box.hidden = !recent;
     if (!recent) { renderNearby(lastNearby); return; }
-    box.innerHTML = `
-      <span class="avatar sm" style="--hue:${hue(recent.name)}">${esc(initial(recent.name))}</span>
+    box.title = tr('home.last_room') + (recent.pw ? ' · ' + tr('home.password_room_rejoins') : '');
+    box.innerHTML = `${icon('clock')}
       <span class="rb-text">
-        <span class="rb-label">${tr('home.last_room')} · ${ago(Date.now() - recent.at)}</span>
-        <span class="rb-name"><b>${esc(recent.name || tr('home.unnamed_room'))}</b><span class="rb-code mono">${fmtCode(recent.code)}</span></span>
+        <span class="rb-name">${esc(recent.name || tr('home.unnamed_room'))}</span>
+        <span class="rb-code mono">${fmtCode(recent.code)}</span>
+        <span class="rb-ago">${tr('home.last_room')} · ${ago(Date.now() - recent.at)}</span>
       </span>
-      ${recent.pw ? '<span class="rb-lock" data-icon="lock" title="' + esc(tr('home.password_room_rejoins')) + '"></span>' : ''}
-      <span class="rb-go">${tr('home.join_2')}</span>`;
-    hydrateIcons(box);
+      ${recent.pw ? '<span class="nr-lock">' + icon('lock') + '</span>' : ''}
+      <span class="btn primary sm rb-go">${tr('home.rejoin')}</span>`;
     // ("방금" → "3분 전")
     recentTimer = setInterval(() => { if (recent && !room) renderRecent(); }, 30_000);
     renderNearby(lastNearby);
@@ -1549,7 +1711,7 @@
     syncSettings();
     openModal('modal-settings');
     // outside a room, open the audio device so the input meter and test tone work
-    if (!room) Promise.resolve(backend.setPreview?.(true)).catch((e) => toast(e.message));
+    if (!room) { idleAsked = true; Promise.resolve(backend.setPreview?.(true)).catch((e) => { idleAsked = null; toast(e.message); }); }
   }
   const metroVol = $('#set-metro-vol');
   metroVol.addEventListener('input', () => {
@@ -1582,7 +1744,7 @@
   // the fixed port: a number from 1024 to 65535, else back to what it was
   $('#set-fixed-port').addEventListener('change', (e) => {
     backend.updateSettings({ fixedPort: e.target.checked });
-    $('#port-row').hidden = !e.target.checked;
+    $('#set-port').hidden = !e.target.checked;
   });
   // digits only, never over 65535 (the last port there is) while typing; below 1024 (the
   // system's) is refused when the box is left
@@ -1620,9 +1782,9 @@
   function syncPluginStatus() {
     const daw = backend.getSettings().connection === 'daw';
     const st = $('#daw-status');
-    st.hidden = !daw;
+    if (!daw) return;
     st.textContent = (backend._plugin ? tr('settings.plugin_connected') : tr('settings.waiting_plugin')) + (backend._pluginWaiting ? ' · ' + tr('settings.1_more_track') : '');
-    st.className = 'aside ' + (backend._plugin && !backend._pluginWaiting ? 'q-good' : 'q-warn');
+    st.className = backend._plugin && !backend._pluginWaiting ? 'q-good' : 'q-warn';
   }
 
   /** The others' sound comes back in what we send: they hear themselves again. Said each
@@ -1694,7 +1856,10 @@
     const lat = backend._latency;
     const daw = s.connection === 'daw';
     $('#fmt-lat-k').textContent = !lat ? tr('settings.device_latency') : daw ? tr('settings.device_latency_estimated') : lat?.reported ? tr('settings.device_latency_driver') : tr('settings.device_latency_buffer');
-    $('#fmt-lat').textContent = lat ? tr('settings.ms_out_b', { a: f1(lat.inMs), b: f1(lat.outMs) }) : '-';
+    $('#fmt-lat-n').textContent = lat ? f1(lat.inMs + lat.outMs) : '-';
+    const bar = $('#fmt-lat-bar');
+    bar.innerHTML = lat ? `<i style="flex:${lat.inMs};background:var(--seg-in)"></i><i style="flex:${lat.outMs};background:var(--accent)"></i>` : '';
+    $('#fmt-lat-legend').textContent = lat ? tr('settings.ms_out_b', { a: f1(lat.inMs), b: f1(lat.outMs) }) : '';
     $('#fmt-note').textContent = s.connection === 'daw'
       ? tr('settings.change_daws_audio')
       : tr('settings.change_sample_rate');
@@ -1707,6 +1872,7 @@
     });
     const daw = s.connection === 'daw';
     $$('#modal-settings [data-device-only]').forEach((el) => { el.hidden = daw; });
+    $$('#modal-settings [data-daw-only]').forEach((el) => { el.hidden = !daw; });
     $('#conn-note').innerHTML = daw
       ? tr('settings.daw_uses_audio')
       : tr('settings.gachi_opens_asio');
@@ -1728,11 +1894,12 @@
     syncPacket(s);
     $('#jb-manual').hidden = s.jitterMode !== 'manual';
     $('#jb-style').hidden = s.jitterMode === 'manual';
+    $('#jb-note').textContent = s.jitterMode === 'manual' ? tr('settings.auto_keeps_each') : tr('settings.what_favor_when');
     jbRange.value = s.jitterPackets; paintRange(jbRange);
     $('#set-nearby').checked = s.showNearby !== false;
     $('#set-language').value = !s.language || s.language === 'auto' ? 'auto' : i18n.lang;
     $('#set-fixed-port').checked = !!s.fixedPort;
-    $('#port-row').hidden = !s.fixedPort;
+    $('#set-port').hidden = !s.fixedPort;
     if (document.activeElement !== $('#set-port')) $('#set-port').value = s.port ?? 24620;
     $('#set-gpu').checked = s.gpu !== false;
     $('#set-verbose').checked = s.verboseLog === true;
@@ -1752,7 +1919,7 @@
   function drawNetCheck() {
     const box = $('#net-checks');
     if (netChecking || !netInfo) {
-      box.innerHTML = `<div class="check"><span class="dot pending"></span><span class="v">${tr('home.checking')}</span></div>`;
+      box.innerHTML = `<div class="check"><span class="dot pending"></span><span>${tr('home.checking')}</span></div>`;
       return;
     }
     const n = netInfo;
@@ -1775,7 +1942,7 @@
       ['NAT', ...(NAT[n.nat] || NAT.unknown)],
       [tr('netcheck.port_opening'), ...port],
     ];
-    box.innerHTML = items.map(([k, v, c]) => `<div class="check"><span class="dot ${c}"></span><div><span class="k">${k}</span><span class="v">${v}</span></div></div>`).join('');
+    box.innerHTML = items.map(([k, v, c]) => `<div class="check"><span class="dot ${c}"></span><span>${k}</span><span class="v ${c}">${v}</span></div>`).join('');
     renderHomeStatus();
   }
 
@@ -1785,7 +1952,7 @@
     const daw = s.connection === 'daw';
     // (the plugin's state is known while an engine runs: in a room or with settings open)
     $('#st-audio').textContent = daw ? (backend._plugin == null ? tr('settings.vst_link') : tr('settings.vst_link') + ' · ' + (backend._plugin ? tr('netcheck.plugin_connected') : tr('netcheck.waiting_plugin')) + (backend._pluginWaiting ? ' · ' + tr('netcheck.several_tracks') : ''))
-      : backend.hasAsio() ? `${dev?.label ?? '-'} · ${s.bufferSize} samples` : tr('netcheck.no_asio_device');
+      : backend.hasAsio() ? `${dev?.label ?? '-'} · ${tr('settings.n_samples', { n: s.bufferSize })}` : tr('netcheck.no_asio_device');
     // no ASIO driver: the home screen explains what to install instead of the room cards
     // (DAW mode needs none: the DAW owns the interface)
     const noAsio = !daw && !backend.hasAsio();
@@ -1811,6 +1978,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (menuOpen()) return closeMenus();
+      if (colorPopFor) return closeColorPop();
       if (popFor) return closePop();
       const open = $('.modal-backdrop.open');
       if (open) return closeModal(open);
@@ -1865,11 +2033,11 @@
     syncRecMenu();
     if (room) {
       // the cards are rebuilt as they are (levels, controls and all come back with the next update)
-      const list = [...peers.values()];
-      const stage = $('#stage');
-      stage.innerHTML = ''; strips.clear(); peers.clear();
-      stage.append(buildSelfStrip());
+      const list = $$('#stage-others .strip').map((s) => peers.get(s.dataset.id)).filter(Boolean);
+      $('#stage-me').innerHTML = ''; $('#stage-others').innerHTML = ''; strips.clear(); peers.clear();
+      $('#stage-me').append(buildSelfStrip());
       list.forEach((p) => addPeer(p));
+      syncRecMenu();
       updateRoomChrome();
     }
     // (the network as last looked at, said anew: no need to ask the server again)

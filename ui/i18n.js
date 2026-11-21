@@ -63,10 +63,10 @@
 
   /* ── labels that must stay on one line: a little tighter if they don't fit, cut short
      (whole text on hover) if even that is not enough. Whatever a language's lengths. ── */
-  const ONE_LINE = 'button, .btn, .chip, .tag, .pill, [data-tab], .seg > *, .label, .k, .me-label, .rs-title';
-  const ROWS = '.strip-foot';
+  const ONE_LINE = 'button, .btn, .seg > *, .label, .k, .rs-title, .dbtn';
+  const ROWS = '.dock-me';
   // (controls made of several lines on purpose)
-  const MANY_LINES = '.nearby-room, .status-strip, .invite-slot, .recent-bar, .name-edit, .code-chip, .avatar, .swatch, .net-chip';
+  const MANY_LINES = '.nearby-room, .status-strip, .invite-slot, .recent-bar, .code-chip, .plate, .lat, .swatch, .ms, .radio-row, [data-tab], .toast';
   // (text only: an icon's shapes are not lines)
   const lines = (el) => {
     const tops = [], r = document.createRange(), walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -84,11 +84,15 @@
   function fit(root = document.body) {
     const els = [...root.querySelectorAll(ONE_LINE)].filter((el) => !el.closest(MANY_LINES));
     // all class changes, then all measuring: one layout per pass, not one per label
-    for (const el of els) el.classList.remove('fit-tight', 'fit-icon', 'fit-cut');
+    for (const el of els) {
+      el.classList.remove('fit-tight', 'fit-icon', 'fit-cut');
+      // (a tooltip given here last time: the words may be others now, or fit)
+      if (el.dataset.fitTitle != null) { el.removeAttribute('title'); delete el.dataset.fitTitle; }
+    }
     const tight = els.filter((el) => el.offsetWidth && el.textContent.trim() && tooLong(el));
     for (const el of tight) el.classList.add('fit-tight');
     for (const el of tight.filter(tooLong)) {
-      if (!el.title) el.title = el.textContent.trim();
+      if (!el.title) { el.title = el.textContent.trim(); el.dataset.fitTitle = ''; }
       el.classList.add(hasIcon(el) ? 'fit-icon' : 'fit-cut');
     }
     // rows of buttons that keep their size (a card's foot): if they don't fit side by side,
@@ -97,7 +101,7 @@
     for (const row of rows) {
       for (const el of row.children) {
         if (!hasIcon(el)) continue;
-        if (!el.title) el.title = el.textContent.trim();
+        if (!el.title) { el.title = el.textContent.trim(); el.dataset.fitTitle = ''; }
         el.classList.add('fit-icon');
       }
     }

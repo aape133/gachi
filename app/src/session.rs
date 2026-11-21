@@ -2163,7 +2163,8 @@ pub async fn start(app: AppHandle, intent: Intent, gen: u64) -> Result<RoomView,
     Ok(view)
 }
 
-/// ~30 Hz meters, ~2 Hz stats (immediately when a peer connects).
+/// ~2 Hz stats (immediately when a peer connects). (The meters are asked for by the page:
+/// see `commands::take_levels`.)
 async fn ticker(app: AppHandle) {
     let mut iv = tokio::time::interval(Duration::from_millis(33));
     // held up for a while (reopening a device takes a second, the PC slept): go on from now.
@@ -2180,10 +2181,6 @@ async fn ticker(app: AppHandle) {
         let changed = s.poll_net_events(&app) | s.drop_silent_peers(&app) | s.close_old_code(&app);
         if let Some(e) = s.engine.as_mut() {
             e.collect_garbage();
-        }
-        // (nobody is looking: see `commands::UI_HIDDEN`)
-        if !crate::commands::UI_HIDDEN.load(Ordering::Relaxed) {
-            let _ = app.emit("levels", s.levels());
         }
         // the figures in the log: every 2 s when the full log is on, else every 30 s (what
         // goes wrong is logged when it happens either way)

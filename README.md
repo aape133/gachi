@@ -1,17 +1,17 @@
 <div align="center">
 
-<img src="branding/gachi-icon-1024.png" alt="gachi" width="112">
+<img src="branding/gachi-icon-1024.png" alt="gachi" width="96">
 
 # gachi
 
 **멀리 있어도, 같이 합주해요**
 
-인터넷으로 함께 연주하는 합주 앱이에요.<br>
+인터넷으로 함께 연주하고 노래하는 P2P 합주 앱이에요.<br>
 소리는 서버를 거치지 않고 방에 있는 사람들끼리 직접 오가요.
 
-[![최신 버전](https://img.shields.io/github/v/release/aape133/gachi?style=flat-square&label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84&color=8b7cff)](https://github.com/aape133/gachi/releases/latest)
-[![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%2F%2011-3ddc97?style=flat-square)](https://github.com/aape133/gachi/releases/latest)
-[![GPLv3](https://img.shields.io/badge/license-GPLv3-6fd0ff?style=flat-square)](LICENSE)
+[![최신 버전](https://img.shields.io/github/v/release/aape133/gachi?style=flat-square&label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84&color=6e8bff)](https://github.com/aape133/gachi/releases/latest)
+[![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%2F%2011-2a2d35?style=flat-square)](https://github.com/aape133/gachi/releases/latest)
+[![GPLv3](https://img.shields.io/badge/license-GPLv3-2a2d35?style=flat-square)](LICENSE)
 
 **[⬇ 내려받기](https://github.com/aape133/gachi/releases/latest)** &nbsp;·&nbsp;
 [홈페이지](https://gachi.band) &nbsp;·&nbsp;
@@ -21,9 +21,11 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="worker/public/img/room-dark.webp">
-  <img src="worker/public/img/room-light.webp" alt="gachi 합주실 화면: 사람마다 이름과 악기, 소리 크기, 볼륨과 팬, 지연 시간이 카드로 보여요" width="860">
+  <source media="(prefers-color-scheme: dark)" srcset="worker/public/img/mixer-ko-dark.webp">
+  <img src="worker/public/img/mixer-ko-light.webp" alt="gachi 합주방의 믹서 보기: 사람마다 지연 시간, 팬, 음소거·솔로·녹음 버튼, 레벨 미터와 볼륨, 색이 입혀진 이름표가 세로 줄로 나란히 보여요" width="860">
 </picture>
+
+<sub>소개용으로 만든 화면이에요. 이름과 입장 코드는 지어낸 것이에요.</sub>
 
 </div>
 
@@ -31,35 +33,37 @@
 
 ## ✨ 한눈에
 
+| | |
+|---|---|
+| **🔗 서버 없이 직접 연결** | 소리와 채팅은 사람들끼리 직접(P2P) 오가요. 압축하지 않은 소리를 그대로 보내서 코덱 지연이 없어요. |
+| **👥 최대 16명** | 6자리 코드, 초대 링크, QR 코드 하나로 들어와요. 방장이 나가도 다음 사람이 이어받아요. |
+| **🎛 믹서와 트랙, 두 가지 보기** | 세로 줄로 나란히 보는 믹서와, 한 사람이 한 줄인 트랙 중에 골라요. 사람마다 색이 달라서 금방 찾아요. |
+| **🎚 DAW와 함께** | VST3 플러그인을 트랙 끝에 넣으면 이펙트를 거친 소리로 합주하고, 다른 사람 소리가 그 자리에서 섞여 나와요. |
+| **⏺ 트랙별 녹음** | 사람마다 따로 WAV·FLAC 파일로 남기고, 내가 들은 그대로의 믹스도 함께 저장해요. |
+| **🔒 종단 간 암호화** | 소리와 채팅은 방 사람들만 열어 볼 수 있어요. 방 비밀번호는 서버에 보내지 않아요. |
+| **🌐 한국어 · English · 日本語** | 처음에는 Windows 언어를 따르고, 설정에서 언제든 바꿀 수 있어요. |
+
+## 🎛 두 가지 보기
+
 <table>
   <tr>
-    <td width="50%" valign="top">
-      <h3>🔗 서버 없이 직접 연결</h3>
-      소리와 채팅은 사람들끼리 직접(P2P) 오가요. 압축하지 않은 소리를 그대로 보내서 코덱 지연이 없어요.
-    </td>
-    <td width="50%" valign="top">
-      <h3>👥 최대 16명</h3>
-      6자리 코드, 초대 링크, QR 코드 하나로 들어와요. 방장이 나가도 다음 사람이 이어받아요.
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <h3>🎚 DAW와 함께</h3>
-      VST3 플러그인을 트랙 끝에 넣으면 이펙트를 거친 소리로 합주하고, 다른 사람 소리가 그 자리에서 섞여 나와요.
+    <td width="46%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="worker/public/img/tracks-ko-dark.webp">
+        <img src="worker/public/img/tracks-ko-light.webp" alt="gachi 합주방의 트랙 보기: 한 사람이 한 줄이고, 이름표와 버튼, 레벨 미터, 볼륨, 지연 시간이 가로로 놓여요" width="380">
+      </picture>
     </td>
     <td valign="top">
-      <h3>⏺ 트랙별 녹음</h3>
-      사람마다 따로 WAV·FLAC 파일로 남기고, 내가 들은 그대로의 믹스도 함께 저장해요.
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <h3>🔒 종단 간 암호화</h3>
-      소리와 채팅은 방 사람들만 열어 볼 수 있어요. 방 비밀번호는 서버에 보내지 않아요.
-    </td>
-    <td valign="top">
-      <h3>🌐 한국어 · English · 日本語</h3>
-      처음에는 Windows 언어를 따르고, 설정에서 언제든 바꿀 수 있어요.
+
+**믹서 보기**는 사람마다 세로 줄 하나예요. 볼륨을 위아래로 움직이고, 여러 사람의 레벨을 한눈에 견줘요.
+
+**트랙 보기**는 한 사람이 한 줄이에요. 세로로 긴 창이나 좁은 창에서 보기 좋아요.
+
+- 처음에는 창 모양에 맞는 보기로 열리고, 한 번 고르면 그대로 기억해요.
+- 사람마다 들어온 순서대로 색이 정해져요. 이름표를 눌러 18가지 중에 바꿀 수 있고, 이 색은 내 화면에서만 보여요.
+- 이름표를 끌어다 놓으면 순서가 바뀌어요.
+- 줄과 칸의 크기는 인원수와 창 크기에 맞춰 저절로 정해져요. 창은 600×620까지 줄일 수 있어요.
+
     </td>
   </tr>
 </table>
@@ -99,7 +103,6 @@
 - 방 크기는 2명부터 16명까지예요. 만들 때 고르고, 방 안에서 방장이 바꿀 수 있어요.
 - 8명보다 큰 방은 모두가 0.2.0 이상이어야 해요. 예전 버전은 들어오지 못하고, 방 안에 예전 버전이 있으면 8명보다 크게 늘릴 수 없어요.
 - 사람이 많을수록 업로드가 많이 필요해요(모두가 모두에게 직접 보내요). 9명부터는 24비트로 보내고 있으면 16비트로 바꿔 보라고 한 번 알려 줘요. 자동으로 바꾸지는 않아요.
-- 사람 카드는 인원수와 창 크기에 맞춰 큰 카드, 중간 카드, 작은 카드로 저절로 바뀌어요.
 - 방 비밀번호, 입장 코드 켜고 끄기, 새 코드 만들기(예전 코드는 못 쓰게 돼요).
 - 입장 코드는 켠 지 12시간이 지나면 저절로 꺼져요. 합주는 그대로 계속되고, 방장이 다시 켤 수 있어요.
 - 방장은 사람을 내보낼 수 있고, 내보낸 사람은 다시 들어오지 못해요.
@@ -126,13 +129,13 @@
 </details>
 
 <details>
-<summary><b>믹서</b> — 사람별 볼륨·팬·뮤트·솔로, 입력 채널 고르기</summary>
+<summary><b>믹서</b> — 사람별 볼륨·팬·음소거·솔로, 입력 채널 고르기</summary>
 <br>
 
-- 사람별 볼륨, 팬, 뮤트, 솔로와 마스터 볼륨.
+- 사람별 볼륨, 팬, 음소거(M), 솔로(S)와 마스터 볼륨. 믹서 보기와 트랙 보기 어디서나 같아요.
 - 슬라이더는 한 번 클릭한 뒤 마우스 휠로도 조절해요(Shift를 누르면 더 세밀하게). 더블클릭하면 기본값으로 돌아가요.
-- 입력 게인, 입력 채널 선택(모노, 스테레오, 마이크 + 스테레오 섞기), 내 소리 모니터.
-- 사람별 레벨 미터와 입력 채널별 미터.
+- 입력 게인, 입력 채널 선택(모노, 스테레오, 마이크 + 스테레오 섞기), 내 소리 모니터. 마이크, 모니터, 입력 채널, 마스터 볼륨은 합주방 아래쪽 줄에 모여 있어요.
+- 사람별 레벨 미터와 입력 채널별 미터. 소리가 최대치에 닿으면 미터 끝이 1초 동안 빨갛게 보여요.
 
 </details>
 
@@ -186,7 +189,7 @@
 <br>
 
 - 방 전체가 같은 박자로 듣는 메트로놈(BPM, 박자, 켤 때 1~2마디 카운트인). 상단 메트로놈 버튼으로 켜고 끄고, 옆 화살표에서 설정해요.
-- 트랙별 녹음: 사람마다 따로 파일로 저장해요. 카드의 녹음 버튼(●)을 끄면 그 사람은 빼고 녹음해요(내 카드에도 있어요).
+- 트랙별 녹음: 사람마다 따로 파일로 저장해요. 트랙의 녹음 버튼(●)을 끄면 그 사람은 빼고 녹음해요(내 트랙에도 있어요).
 - 녹음 형식은 녹음 버튼 옆 화살표에서 골라요: WAV(16bit가 기본, 24bit, 32bit float) 또는 FLAC(무손실 압축, 16bit·24bit). 모노로 보내는 사람은 모노 파일로 저장돼요.
 - 모두의 소리를 내가 듣는 그대로 섞은 "믹스" 파일도 같이 저장할 수 있어요(메트로놈 소리는 들어가지 않아요).
 - 디스크가 가득 차는 등 녹음을 쓸 수 없게 되면 바로 알려 주고 멈춰요. 그때까지 녹음한 파일은 남아요.
@@ -200,7 +203,7 @@
 <summary><b>그 밖에</b> — 채팅, 색, 테마, 언어, 새 버전 알림</summary>
 <br>
 
-- 채팅, 사람마다 고르는 색(16가지), 라이트 / 다크 테마.
+- 채팅, 트랙 색(18가지, 내 화면에서만), 라이트 / 다크 테마.
 - 한국어·English·日本語 화면. 버튼 글자가 그 언어로 한 줄에 다 들어가지 않으면 알아서 줄이거나 아이콘만 보여 줘요.
 - 새 버전이 나오면 첫 화면에서 알려 줘요.
 - 상대 소리가 내 마이크로 되돌아가면 알려 줘요.
@@ -227,7 +230,7 @@ gachi는 사람들끼리 직접 연결하려고 네트워크 주소를 여러 �
 
 ## 🛠 소스에서 빌드하기
 
-이 저장소에 앱, VST3 플러그인, 연결 서버의 소스와 빌드·설치 스크립트가 모두 들어 있어요. 릴리스마다 같은 이름의 태그(`v0.6.1` 등)가 그 릴리스를 만든 소스예요.
+이 저장소에 앱, VST3 플러그인, 연결 서버의 소스와 빌드·설치 스크립트가 모두 들어 있어요. 릴리스마다 같은 이름의 태그(`v0.7.0` 등)가 그 릴리스를 만든 소스예요.
 
 <details>
 <summary><b>준비물</b> (Windows 10 / 11, 64비트)</summary>
@@ -292,7 +295,7 @@ gachi는 자유 소프트웨어예요. **GNU General Public License 버전 3**(G
 
 - 앱은 Steinberg ASIO SDK를 그 SDK의 GPLv3 선택지로 써서 빌드돼요. SDK 자체는 이 저장소에 없어요.
 - 녹음 파일은 WAV는 hound, FLAC은 flacenc 라이브러리로 써요(둘 다 Apache-2.0). FLAC 형식 자체는 누구나 자유롭게 쓸 수 있어요.
-- 같이 쓰는 오픈소스 라이브러리는 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)에, 글꼴 Pretendard·Pretendard JP의 라이선스(SIL OFL 1.1)는 [ui/fonts/LICENSE.txt](ui/fonts/LICENSE.txt)에 있어요.
+- 같이 쓰는 오픈소스 라이브러리의 목록과 라이선스 전문은 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)에 있어요(`python scripts/third_party_licenses.py`로 다시 만들어요). 설치 파일과 플러그인 묶음에도 함께 들어가요. 글꼴 Pretendard·Pretendard JP의 라이선스(SIL OFL 1.1)는 [ui/fonts/LICENSE.txt](ui/fonts/LICENSE.txt)에 있어요.
 
 <br>
 

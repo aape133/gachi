@@ -8,7 +8,8 @@
  *    tested in a plain browser.
  *
  * Events:
- *   levels       { self:[l,r], master:[l,r], peers:{ id:[l,r] } }   ~30 Hz
+ *   levels       { self:[l,r], master:[l,r], peers:{ id:[l,r] } }   ~30 Hz, while
+ *                `backend.levelsWanted()` says the page shows them (the app is asked)
  *   stats        { peers:[PeerView] }                                1 Hz (+ on change)
  *   peer-joined  { peer:PeerView, silent:boolean }
  *   peer-left    { id, name }
@@ -118,7 +119,7 @@
       this.self = { gain: 0, muted: false, monitor: false, monitorDb: 0, own: true, rec: true };
       this._devices = { devices: [], hasAsio: true };
       this.devicesLoaded = false;
-      ['levels', 'stats', 'peer-joined', 'peer-left', 'chat', 'settings', 'notice', 'room', 'room-lost', 'kicked', 'metronome', 'recording'].forEach((ev) =>
+      ['stats', 'peer-joined', 'peer-left', 'chat', 'settings', 'notice', 'room', 'room-lost', 'kicked', 'metronome', 'recording'].forEach((ev) =>
         listen(ev, (e) => {
           if (ev === 'settings') this.settings = e.payload;
           // in a room: our real input+output buffer (WASAPI often differs from the setting)
@@ -151,10 +152,32 @@
         invoke('take_pending_join').then((code) => code && window.gachiJoin?.(code));
       });
       this.refreshDevices();
+      this._pollLevels();
       listen('join-link', (e) => {
         invoke('take_pending_join');
         window.gachiJoin?.(e.payload.code);
       });
+    }
+    /** The meters, asked for ~30 times a second while the page shows them (`levelsWanted`,
+     *  set by the page: a room or the settings on screen), and given out as 'levels'. Asked
+     *  for, not listened to: every event is a script run in the page, and WebView2 kept
+     *  something of each (the page grew by ~30 KB a second in a room). One question at a
+     *  time: the next is asked when the last is answered. */
+    _pollLevels() {
+      const EVERY = 33, IDLE = 150;
+      const ask = async () => {
+        const t0 = performance.now();
+        let wanted = false;
+        try {
+          wanted = !document.hidden && !!this.levelsWanted?.();
+          if (wanted) {
+            const lv = await this._invoke('take_levels');
+            if (lv) this.emit('levels', lv);
+          }
+        } catch (e) { /* the next one may do better */ }
+        setTimeout(ask, wanted ? Math.max(0, EVERY - (performance.now() - t0)) : IDLE);
+      };
+      ask();
     }
     async call(cmd, args) {
       try { return await this._invoke(cmd, args); }
@@ -213,8 +236,6 @@
     setRecording(on) { return this.call('set_recording', { on }); }
     playTestTone() { return this.call('play_test_tone'); }
     openRecordings() { return this.call('open_recordings'); }
-    /** the window is shown or hidden: the app sends no meters while hidden */
-    setUiVisible(visible) { this.call('set_ui_visible', { visible }).catch(() => {}); }
     openLogs() { this.call('open_logs').catch(() => {}); }
     openRepo() { this.call('open_repo').catch(() => {}); }
     appVersion() { return this.call('app_version'); }
@@ -293,8 +314,9 @@
 
     async createRoom({ name, maxPeers = 4, password = '' } = {}) {
       await wait(SHOW ? 0 : 350);
-      let code = '';
-      for (let i = 0; i < 6; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+      // (a picture for the website: the same made-up code in every one)
+      let code = new URLSearchParams(location.search).get('shot') ? 'K7MQ2X' : '';
+      for (let i = code.length; i < 6; i++) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
       this._openRoom({ code, name: name || WORDS.room, maxPeers, isHost: true, hasPassword: !!password });
       // ?peers=15: a full room at once (to look at big rooms); ?peers=0: alone
       const asked = new URLSearchParams(location.search).get('peers');
@@ -408,10 +430,9 @@
     }
     async playTestTone() { /* native: plays a 1 kHz sine on the output */ }
     async openRecordings() {}
-    setUiVisible() {}
     openLogs() {}
     openRepo() {}
-    async appVersion() { return '0.6.1'; }
+    async appVersion() { return '0.7.0'; }
     // (preview: add ?update to the address to see a newer version announced)
     async checkUpdate() {
       await new Promise((r) => setTimeout(r, 300));

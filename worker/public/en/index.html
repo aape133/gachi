@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>gachi - Miles apart, jam together</title>
 <meta name="description" content="gachi is an app for jamming with others over the internet. Your sound goes straight to each other, never through a server. Free and open source (GPLv3), for Windows.">
 <meta name="color-scheme" content="dark light">
-<meta name="theme-color" content="#0b0a12" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f7f5f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0c0e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="canonical" href="https://gachi.band/en/">
 <link rel="alternate" hreflang="ko" href="https://gachi.band/">
@@ -21,7 +21,7 @@
 <meta property="og:locale:alternate" content="ja_JP">
 <meta property="og:title" content="gachi - Miles apart, jam together">
 <meta property="og:description" content="gachi is an app for jamming with others over the internet. Free and open source, for Windows.">
-<meta property="og:image" content="https://gachi.band/img/og-en.png?v=a5aed7256b">
+<meta property="og:image" content="https://gachi.band/img/og-en.png?v=14943d9340">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="https://gachi.band/en/">
@@ -39,7 +39,7 @@
   })();
 </script>
 <link rel="stylesheet" href="/fonts/pretendard.css?v=a164929fe4">
-<link rel="stylesheet" href="/style.css?v=248bf643af">
+<link rel="stylesheet" href="/style.css?v=46bf1a8cab">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -71,17 +71,17 @@
 <header class="top">
   <div class="wrap top-in">
     <a class="brand" href="/en/" aria-label="gachi home">
-      <svg class="mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/><path d="M15 3.76 A8 8 0 0 1 15 16.24 A8 8 0 0 1 15 3.76Z"/></svg>
+      <svg class="mark" viewBox="-5.6 -5.6 35.2 35.2" aria-hidden="true"><rect x="-5.6" y="-5.6" width="35.2" height="35.2" rx="9.6"/><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4"/></svg>
       gachi
     </a>
     <nav class="nav">
       <a href="#features">Features</a>
       <a href="#start">Get started</a>
       <a href="#faq">FAQ</a>
-      <a href="https://github.com/aape133/gachi" class="nav-gh">GitHub</a>
-      <button class="theme-btn" type="button" data-act="theme" title="Light/dark mode" aria-label="Light/dark mode"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg></button>
+      <a href="https://github.com/aape133/gachi">GitHub</a>
+      <button class="icon-btn theme-btn" type="button" data-act="theme" title="Light/dark mode" aria-label="Light/dark mode"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg></button>
       <details class="lang">
-        <summary aria-label="Choose a language"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>English</summary>
+        <summary aria-label="Choose a language"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="lang-name">English</span></summary>
         <ul>
           <li><a href="/" hreflang="ko" lang="ko" data-lang="ko">한국어</a></li>
           <li><a href="/en/" hreflang="en" lang="en" data-lang="en" aria-current="page">English</a></li>
@@ -93,99 +93,187 @@
 </header>
 
 <main>
-  <!-- the stage: spotlights on the headline, the app on the big screen -->
-  <section class="stage">
-    <div class="lights" aria-hidden="true"><i class="beam a"></i><i class="beam b"></i><i class="beam c"></i><i class="haze"></i></div>
+  <section class="hero">
     <div class="wrap">
-      <p class="eyebrow"><span class="dot"></span>Free · Open source · Windows</p>
-      <h1>Miles apart,<br><span class="grad">jam together</span></h1>
-      <p class="lead"><span>gachi is an app for jamming with others over the internet.</span>
-        <span>Your sound goes straight to each other, never through a server.</span>
-        <span>The app, the VST3 plugin and the connection server are <b>all open source</b>.</span></p>
-      <div class="cta">
-        <a class="btn primary" id="dl" href="https://github.com/aape133/gachi/releases/latest">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
-          Download for Windows
-        </a>
-        <a class="btn" id="vst" href="https://github.com/aape133/gachi/releases/latest">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-          Get the VST3 plugin
-        </a>
+      <div class="hero-top">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="led"></span>P2P jam app · Windows</p>
+          <h1>Miles apart,<br><span class="dim">jam together</span></h1>
+          <p class="lead">gachi is an app for jamming with others over the internet. Your sound goes straight to each other, never through a server. The app, the plugin and the connection server are <b>all free and open source</b>.</p>
+          <div class="cta">
+            <a class="btn primary" id="dl" data-dl="app" href="https://github.com/aape133/gachi/releases/latest">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+              Download for Windows
+            </a>
+            <a class="btn" id="vst" data-dl="vst" href="https://github.com/aape133/gachi/releases/latest">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+              Get the VST3 plugin
+            </a>
+          </div>
+          <p class="meta"><span class="num" data-ver>Latest version</span> · Windows 10 / 11 (64-bit) · ASIO audio interface</p>
+        </div>
+        <ul class="stats">
+          <li class="card"><span class="k">In a room</span><span class="v">16<small>people</small></span></li>
+          <li class="card"><span class="k">Audio</span><span class="v">24<small>-bit, uncompressed</small></span></li>
+          <li class="card"><span class="k">Connection</span><span class="v">P2P</span></li>
+          <li class="card"><span class="k">Encryption</span><span class="v">E2E</span></li>
+        </ul>
       </div>
-      <p class="meta"><span id="ver">Latest version</span> · Windows 10 / 11 (64-bit) · ASIO audio interface</p>
-      <figure class="screen">
-        <!-- the app in the page's light or dark (style.css shows the one) -->
-        <img class="shot-img shot-dark" src="/img/room-en-dark-1280.webp?v=f13e1fa5ca" srcset="/img/room-en-dark-1280.webp?v=f13e1fa5ca 1280w, /img/room-en-dark.webp?v=a52f311db1 2560w" sizes="(max-width: 1180px) calc(100vw - 32px), 1120px" width="2560" height="1600" alt="A gachi room: six cards, each showing a player's name, instrument, level, volume and pan, and latency" decoding="async">
-        <img class="shot-img shot-light" src="/img/room-en-light-1280.webp?v=4298c1ead0" srcset="/img/room-en-light-1280.webp?v=4298c1ead0 1280w, /img/room-en-light.webp?v=de59151ee7 2560w" sizes="(max-width: 1180px) calc(100vw - 32px), 1120px" width="2560" height="1600" alt="A gachi room: six cards, each showing a player's name, instrument, level, volume and pan, and latency" loading="lazy" decoding="async">
+      <figure class="window" style="margin-inline:0;margin-bottom:0">
+        <img class="shot-dark" src="/img/mixer-en-dark-1280.webp?v=d990a8cff3" srcset="/img/mixer-en-dark-1280.webp?v=d990a8cff3 1280w, /img/mixer-en-dark.webp?v=abf2443c67 2560w" sizes="(max-width: 1180px) calc(100vw - 48px), 1132px" width="2560" height="1600" alt="A gachi room in the mixer view: eight players' tracks with name plates, latency, level meters and volume faders" decoding="async">
+        <img class="shot-light" src="/img/mixer-en-light-1280.webp?v=f6a1e22c7c" srcset="/img/mixer-en-light-1280.webp?v=f6a1e22c7c 1280w, /img/mixer-en-light.webp?v=8e2a53ee40 2560w" sizes="(max-width: 1180px) calc(100vw - 48px), 1132px" width="2560" height="1600" alt="A gachi room in the mixer view: eight players' tracks with name plates, latency, level meters and volume faders" loading="lazy" decoding="async">
+      </figure>
+      <p class="window-cap"><span>Mixer view · a room of eight</span><span>Names and codes on screen are examples</span></p>
+    </div>
+  </section>
+
+  <section class="band views" id="views">
+    <div class="wrap views-in">
+      <div class="views-copy">
+        <div class="sec-head">
+          <p class="eyebrow">Two views</p>
+          <h2>A mixer for a wide window,<br>tracks for a narrow one</h2>
+          <p>The first view is picked to fit your window. After that, the app remembers the one you used last.</p>
+        </div>
+        <div class="seg" role="group" aria-label="View">
+          <button type="button" data-view="mixer" aria-pressed="false">Mixer</button>
+          <button type="button" data-view="tracks" aria-pressed="true">Tracks</button>
+        </div>
+        <ul class="points">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>A color for each track, in the order people join.</b> Drag a name plate to reorder, click it to change the color. Changes stay on your screen.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>Latency on every track.</b> Click it to see it split into their device, the network, the buffer and your device.</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>Tracks being recorded turn red.</b> You see at a glance who is being recorded.</span></li>
+        </ul>
+      </div>
+      <figure class="window" data-view="tracks" style="margin-inline:0;margin-bottom:0">
+        <img class="v-tracks shot-dark" src="/img/tracks-en-dark.webp?v=3a72675c3d" width="1240" height="1560" alt="Tracks view: six players, a row each, with name plates, meters, volume and pan knobs" loading="lazy" decoding="async">
+        <img class="v-tracks shot-light" src="/img/tracks-en-light.webp?v=c8cdc7aabb" width="1240" height="1560" alt="Tracks view: six players, a row each, with name plates, meters, volume and pan knobs" loading="lazy" decoding="async">
+        <img class="v-mixer shot-dark" src="/img/mixer-en-dark.webp?v=abf2443c67" width="2560" height="1600" alt="Mixer view: a vertical channel strip for each player" loading="lazy" decoding="async">
+        <img class="v-mixer shot-light" src="/img/mixer-en-light.webp?v=8e2a53ee40" width="2560" height="1600" alt="Mixer view: a vertical channel strip for each player" loading="lazy" decoding="async">
       </figure>
     </div>
   </section>
 
-  <!-- the numbers -->
-  <section class="specs">
-    <svg class="wave" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="wg" x1="0" x2="1"><stop offset="0" stop-color="var(--c1)"/><stop offset=".5" stop-color="var(--c2)"/><stop offset="1" stop-color="var(--c3)"/></linearGradient></defs><polyline points="0.0,60.0 5.5,59.9 10.9,60.1 16.4,59.7 21.8,60.0 27.3,59.8 32.7,58.9 38.2,60.0 43.6,58.0 49.1,59.6 54.5,57.2 60.0,56.9 65.5,59.3 70.9,63.3 76.4,55.8 81.8,56.6 87.3,61.7 92.7,66.3 98.2,61.1 103.6,58.4 109.1,67.3 114.5,53.0 120.0,65.5 125.5,56.8 130.9,54.6 136.4,54.3 141.8,57.1 147.3,64.9 152.7,54.9 158.2,61.4 163.6,62.5 169.1,57.5 174.5,61.0 180.0,49.6 185.5,48.4 190.9,51.4 196.4,65.8 201.8,57.4 207.3,52.8 212.7,63.6 218.2,57.9 223.6,50.7 229.1,74.3 234.5,69.9 240.0,47.0 245.5,63.8 250.9,61.3 256.4,78.6 261.8,71.1 267.3,50.1 272.7,81.5 278.2,43.7 283.6,56.6 289.1,70.1 294.5,46.7 300.0,59.6 305.5,42.8 310.9,66.4 316.4,70.5 321.8,63.1 327.3,76.8 332.7,51.0 338.2,70.3 343.6,65.4 349.1,64.9 354.5,57.1 360.0,84.3 365.5,93.6 370.9,57.9 376.4,73.5 381.8,22.8 387.3,77.3 392.7,72.7 398.2,102.1 403.6,87.0 409.1,42.5 414.5,51.1 420.0,72.6 425.5,26.2 430.9,57.4 436.4,39.0 441.8,37.1 447.3,34.8 452.7,74.8 458.2,39.9 463.6,46.3 469.1,54.0 474.5,81.4 480.0,34.5 485.5,56.7 490.9,63.4 496.4,88.7 501.8,85.7 507.3,91.3 512.7,39.8 518.2,51.9 523.6,45.9 529.1,99.6 534.5,108.2 540.0,22.9 545.5,25.7 550.9,32.0 556.4,32.9 561.8,58.5 567.3,68.4 572.7,38.9 578.2,18.5 583.6,53.6 589.1,50.4 594.5,64.6 600.0,89.4 605.5,71.8 610.9,60.9 616.4,67.0 621.8,70.5 627.3,32.7 632.7,85.6 638.2,78.9 643.6,86.9 649.1,82.8 654.5,51.2 660.0,51.2 665.5,23.8 670.9,72.8 676.4,16.6 681.8,16.0 687.3,29.9 692.7,25.0 698.2,43.6 703.6,14.9 709.1,11.2 714.5,27.3 720.0,24.5 725.5,48.6 730.9,22.8 736.4,87.3 741.8,67.7 747.3,37.9 752.7,45.4 758.2,51.5 763.6,52.8 769.1,40.5 774.5,77.9 780.0,85.6 785.5,58.2 790.9,59.1 796.4,35.7 801.8,35.4 807.3,49.7 812.7,43.8 818.2,83.7 823.6,34.6 829.1,23.2 834.5,95.5 840.0,62.2 845.5,32.1 850.9,63.4 856.4,24.2 861.8,62.1 867.3,93.2 872.7,83.8 878.2,72.0 883.6,46.5 889.1,53.1 894.5,44.1 900.0,71.9 905.5,61.3 910.9,70.5 916.4,54.0 921.8,50.7 927.3,70.2 932.7,75.8 938.2,71.6 943.6,70.4 949.1,71.2 954.5,68.7 960.0,49.6 965.5,60.7 970.9,54.1 976.4,40.4 981.8,40.1 987.3,50.6 992.7,49.9 998.2,67.9 1003.6,78.2 1009.1,58.0 1014.5,75.8 1020.0,76.5 1025.5,74.2 1030.9,56.1 1036.4,52.8 1041.8,53.7 1047.3,53.7 1052.7,54.5 1058.2,62.0 1063.6,65.9 1069.1,64.6 1074.5,59.7 1080.0,61.8 1085.5,63.3 1090.9,55.6 1096.4,61.6 1101.8,64.1 1107.3,62.8 1112.7,62.5 1118.2,59.8 1123.6,57.0 1129.1,62.6 1134.5,58.6 1140.0,62.3 1145.5,63.2 1150.9,59.4 1156.4,59.5 1161.8,61.9 1167.3,60.8 1172.7,59.2 1178.2,59.3 1183.6,59.6 1189.1,60.3 1194.5,60.1 1200.0,60.0"/></svg>
+  <section class="band" id="features" style="padding-top:0">
     <div class="wrap">
-      <ul class="spec-list">
-        <li><b>16</b><span>people in a room</span></li>
-        <li><b>24-bit</b><span>uncompressed audio</span></li>
-        <li><b>P2P</b><span>no server in between</span></li>
-        <li><b>E2E</b><span>end-to-end encrypted</span></li>
-      </ul>
+      <div class="sec-head">
+        <p class="eyebrow">Features</p>
+        <h2>Just what a jam needs, done right</h2>
+      </div>
+      <div class="bento">
+        <article class="card tile wide">
+          <span class="tag">P2P</span>
+          <h3>Direct, no server in between</h3>
+          <p>Sound goes straight between players with no relay server. It's sent uncompressed at 16 or 24 bits, and the buffer adjusts itself to the connection.</p>
+          <div class="demo">
+            <div class="panel">
+              <div class="lat-total"><b>14.8</b><span>ms · from Mia to me</span></div>
+              <div class="lat-bar" aria-hidden="true"><i style="flex:2.4;background:var(--seg-in)"></i><i style="flex:6.1;background:var(--seg-net)"></i><i style="flex:4;background:var(--seg-jit)"></i><i style="flex:2.3;background:var(--seg-out)"></i></div>
+              <ul class="legend">
+                <li><i style="background:var(--seg-in)"></i>Their device<span class="num">2.4</span></li>
+                <li><i style="background:var(--seg-net)"></i>Network<span class="num">6.1</span></li>
+                <li><i style="background:var(--seg-jit)"></i>Buffer<span class="num">4.0</span></li>
+                <li><i style="background:var(--seg-out)"></i>My device<span class="num">2.3</span></li>
+              </ul>
+            </div>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">Invite</span>
+          <h3>One code, up to 16 people</h3>
+          <p>Join with a six-character code, an invite link or a QR code.</p>
+          <div class="demo">
+            <div class="code mono" aria-label="Example room code K7M-Q2X"><span>K</span><span>7</span><span>M</span><em></em><span>Q</span><span>2</span><span>X</span></div>
+            <div class="chips"><span class="chip">Invite link</span><span class="chip">QR code</span></div>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">Record</span>
+          <h3>Per-track recording</h3>
+          <p>Each player is saved to their own file, along with the mix as you heard it.</p>
+          <div class="demo">
+            <ul class="radio panel">
+              <li>WAV 16bit</li>
+              <li class="on">WAV 24bit</li>
+              <li>WAV 32bit float</li>
+              <li>FLAC 24bit<small>lossless</small></li>
+            </ul>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">Metronome</span>
+          <h3>Everyone on the same beat</h3>
+          <p>Set the BPM, time signature and count-in, and the click sounds at the same moment for the whole room.</p>
+          <div class="demo">
+            <div class="panel">
+              <div class="metro"><span class="bpm">120<small>BPM</small></span><span class="beats" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span></div>
+              <div class="metro-row"><span class="chip mono">4/4</span><span class="chip">Count-in: 1 bar</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="card tile wide">
+          <span class="tag">VST3</span>
+          <h3>Works with your DAW</h3>
+          <p>Put the VST3 plugin at the end of a DAW track to jam with your effects on and hear the others mixed in right there. It adds no latency to your DAW.</p>
+          <div class="demo">
+            <div class="chain">
+              <span class="node">Guitar track<small>Amp · reverb</small></span>
+              <span class="arrow" aria-hidden="true">→</span>
+              <span class="node me">gachi VST3<small>Sends to the room, hears it back</small></span>
+              <span class="arrow" aria-hidden="true">→</span>
+              <span class="node">DAW output<small>You + everyone</small></span>
+            </div>
+          </div>
+        </article>
+        <article class="card tile">
+          <span class="tag">E2E</span>
+          <h3>End-to-end encrypted</h3>
+          <p>Only the people in the room can open the sound and chat. Room passwords are never sent to the server.</p>
+          <div class="demo">
+            <div class="panel">
+              <div class="safety"><span>3231</span><span>4173</span><span>8947</span></div>
+              <p class="safety-note">If everyone sees the same numbers, nobody is listening in between.</p>
+            </div>
+          </div>
+        </article>
+        <article class="card tile wide">
+          <span class="tag">Reconnect</span>
+          <h3>Drops out, carries on</h3>
+          <p>If the internet drops for a moment, you rejoin on your own. If the host leaves, the next person takes over as host.</p>
+          <div class="demo">
+            <ul class="nearby">
+              <li><i style="background:var(--warn)"></i><span>Connection lost for a moment. Rejoining…</span></li>
+              <li><i></i><b>Back in the room</b><span class="num">0:03</span></li>
+            </ul>
+          </div>
+        </article>
+        <article class="card tile wide">
+          <span class="tag">Nearby</span>
+          <h3>Rooms on the same router</h3>
+          <p>When a friend on the same router opens a room, it shows on your start screen. Click it to join, with no code to type.</p>
+          <div class="demo">
+            <ul class="nearby">
+              <li><i></i><b>Thursday practice</b><span class="num">2/4</span></li>
+              <li><i></i><b>Band rehearsal</b><span class="num">3/8</span></li>
+            </ul>
+          </div>
+        </article>
+      </div>
     </div>
   </section>
 
-  <!-- features, as a setlist -->
-  <section class="setlist" id="features">
+  <section class="band" id="start" style="padding-top:0">
     <div class="wrap">
-      <p class="kicker" aria-hidden="true">Setlist</p>
-      <h2>Just what a jam needs, done right</h2>
-      <ol class="tracks">
-        <li class="track">
-          <span class="no" aria-hidden="true">01</span>
-          <div class="tx"><h3>Direct, no server in between</h3><p>Sound goes straight between players with no relay server. It's sent uncompressed at 16 or 24 bits, and the buffer adjusts itself to the connection. For each person you can see where the delay comes from.</p></div>
-          <span class="tag" aria-hidden="true">P2P</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">02</span>
-          <div class="tx"><h3>Up to 16 people</h3><p>Join with a six-character code, an invite link or a QR code. If the host leaves, the next person takes over, and if the internet drops for a moment, you rejoin on your own.</p></div>
-          <span class="tag" aria-hidden="true">16</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">03</span>
-          <div class="tx"><h3>Per-track recording</h3><p>Each player is saved to their own WAV or FLAC file, along with the mix exactly as you heard it. Choose who gets recorded.</p></div>
-          <span class="tag" aria-hidden="true">WAV · FLAC</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">04</span>
-          <div class="tx"><h3>One metronome for everyone</h3><p>The whole room hears the click at the same moment. Set the BPM, time signature and count-in, and everyone hears it the same.</p></div>
-          <span class="tag" aria-hidden="true">BPM</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">05</span>
-          <div class="tx"><h3>Works with your DAW</h3><p>Put the VST3 plugin at the end of a DAW track to jam with your effects on and hear the others mixed in right there. It adds no latency to your DAW.</p></div>
-          <span class="tag" aria-hidden="true">VST3</span>
-        </li>
-        <li class="track">
-          <span class="no" aria-hidden="true">06</span>
-          <div class="tx"><h3>End-to-end encrypted</h3><p>Sound and chat are encrypted so only the people in the room can open them. Room passwords are never sent to the server.</p></div>
-          <span class="tag" aria-hidden="true">E2E</span>
-        </li>
-      </ol>
-    </div>
-  </section>
-
-  <!-- get started: a count-in -->
-  <section class="count" id="start">
-    <div class="wrap">
-      <p class="kicker" aria-hidden="true">Count-in</p>
-      <h2>Start in three steps</h2>
+      <div class="sec-head">
+        <p class="eyebrow">Get started</p>
+        <h2>Start in three steps</h2>
+      </div>
       <ol class="steps">
-        <li><span class="n" aria-hidden="true">1</span><h3>Install</h3><p>Run the installer, then pick your audio interface in Settings.</p></li>
-        <li><span class="n" aria-hidden="true">2</span><h3>Create a room</h3><p>Choose a name, create a room, and send the code or invite link to your friends.</p></li>
-        <li><span class="n" aria-hidden="true">3</span><h3>Play together</h3><p>When your friends join with the code, you hear each other right away.</p></li>
+        <li class="card"><span class="n">01</span><h3>Install</h3><p>Run the installer, then pick your audio interface in Settings.</p></li>
+        <li class="card"><span class="n">02</span><h3>Create a room</h3><p>Create a room and send the code or invite link to the people you play with.</p></li>
+        <li class="card"><span class="n">03</span><h3>Play together</h3><p>When your friends join with the code, you hear each other right away.</p></li>
       </ol>
-      <div class="rider">
-        <p class="kicker" aria-hidden="true">Tech rider</p>
+      <div class="card needs">
         <h3>What you need</h3>
         <ul>
           <li>Windows 10 / 11 (64-bit)</li>
@@ -196,16 +284,15 @@
     </div>
   </section>
 
-  <!-- open source: the liner notes -->
-  <section class="notes">
-    <div class="wrap notes-in">
-      <div>
-        <p class="kicker" aria-hidden="true">Liner notes</p>
+  <section class="band" style="padding-top:0">
+    <div class="wrap open-in">
+      <div class="sec-head">
+        <p class="eyebrow">Open source</p>
         <h2>All the code is out in the open</h2>
-        <p>The app, the VST3 plugin and the connection server are all on GitHub. Anyone can check how it works, change it, and run their own connection server. Licensed under GPLv3.</p>
-        <a class="link" href="https://github.com/aape133/gachi">github.com/aape133/gachi →</a>
+        <p>The app, the VST3 plugin and the connection server are all on GitHub. Anyone can check how it works, change it, and run their own connection server.</p>
+        <a href="https://github.com/aape133/gachi">github.com/aape133/gachi →</a>
       </div>
-      <dl class="credits">
+      <dl class="card credits">
         <div><dt>App</dt><dd>Rust · Tauri</dd></div>
         <div><dt>VST3 plugin</dt><dd>Rust</dd></div>
         <div><dt>Connection server</dt><dd>Cloudflare Workers</dd></div>
@@ -214,53 +301,71 @@
     </div>
   </section>
 
-  <!-- faq -->
-  <section class="faq" id="faq">
+  <section class="band" id="faq" style="padding-top:0">
     <div class="wrap narrow">
-      <p class="kicker" aria-hidden="true">Q &amp; A</p>
-      <h2>FAQ</h2>
-      <details>
-        <summary>How much delay is there?</summary>
-        <p>It depends on distance, your internet and your audio devices. Nearby, like within the same city, on wired internet, it's short enough to hear each other and play in time. The app splits each person's delay into their device, the network, the buffer and your own device, so you can see what to improve.</p>
-      </details>
-      <details>
-        <summary>Is it free?</summary>
-        <p>Yes. There are no ads, and all the source code is public.</p>
-      </details>
-      <details>
-        <summary>I can't connect</summary>
-        <p>gachi connects you directly, without a relay server. If both of you are on mobile hotspots, or on a network that blocks direct connections, like at work or school, it may not connect. The app then tells you why and what to try. If your router has no UPnP, forward the fixed port from the app's settings on your router.</p>
-      </details>
-      <details>
-        <summary>How is my privacy handled?</summary>
-        <p>Sound and chat travel encrypted and never pass through the server. The connection server only introduces you at the start and doesn't keep a record of who connected.</p>
-        <p>The app never shows other people's IP addresses, and its troubleshooting log keeps only part of an address. Still, to send sound straight to each other, the computers need each other's address, so someone using network analysis tools could find the IP addresses of people in the same room. Keep this in mind when playing with people you don't know.</p>
-      </details>
+      <div class="sec-head">
+        <p class="eyebrow">FAQ</p>
+        <h2>FAQ</h2>
+      </div>
+      <div class="faq-list">
+        <details class="card">
+          <summary>How much delay is there?</summary>
+          <p>It depends on distance, your internet and your audio devices. Nearby, like within the same city, on wired internet, it's short enough to hear each other and play in time. The app splits each person's delay into their device, the network, the buffer and your own device, so you can see what to improve.</p>
+        </details>
+        <details class="card">
+          <summary>Is it free?</summary>
+          <p>Yes. There are no ads, and all the source code is public.</p>
+        </details>
+        <details class="card">
+          <summary>I can't connect</summary>
+          <p>gachi connects you directly, without a relay server. If both of you are on mobile hotspots, or on a network that blocks direct connections, like at work or school, it may not connect. The app then tells you why and what to try. If your router has no UPnP, forward the fixed port from the app's settings on your router.</p>
+        </details>
+        <details class="card">
+          <summary>How is my privacy handled?</summary>
+          <p>Sound and chat travel encrypted and never pass through the server. The connection server only introduces you at the start and doesn't keep a record of who connected.</p>
+          <p>The app never shows other people's IP addresses, and its troubleshooting log keeps only part of an address. Still, to send sound straight to each other, the computers need each other's address, so someone using network analysis tools could find the IP addresses of people in the same room. Keep this in mind when playing with people you don't know.</p>
+        </details>
+      </div>
     </div>
   </section>
 
-  <!-- encore -->
-  <section class="encore">
-    <div class="lights" aria-hidden="true"><i class="beam b"></i><i class="haze"></i></div>
+  <section class="band final">
     <div class="wrap">
-      <p class="kicker" aria-hidden="true">Encore</p>
+      <p class="eyebrow">Encore</p>
       <h2>Start playing together</h2>
+      <div class="cta">
+        <a class="btn primary" data-dl="app" href="https://github.com/aape133/gachi/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn" data-dl="vst" href="https://github.com/aape133/gachi/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V14M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+          Get the VST3 plugin
+        </a>
+      </div>
+      <p class="meta"><span class="num" data-ver>Latest version</span> · Free · GPLv3</p>
     </div>
   </section>
 </main>
 
 <footer class="foot">
   <div class="wrap foot-in">
-    <div class="brand sm">
-      <svg class="mark" viewBox="0 0 30 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle cx="20" cy="10" r="8"/><path d="M15 3.76 A8 8 0 0 1 15 16.24 A8 8 0 0 1 15 3.76Z"/></svg>
-      gachi
+    <div class="foot-row">
+      <div class="brand sm">
+        <svg class="mark" viewBox="-5.6 -5.6 35.2 35.2" aria-hidden="true"><rect x="-5.6" y="-5.6" width="35.2" height="35.2" rx="9.6"/><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4"/></svg>
+        gachi
+      </div>
+      <p>Open source under <a href="https://github.com/aape133/gachi/blob/main/LICENSE">GPLv3</a> · <a href="https://github.com/aape133/gachi">GitHub</a> · <a href="https://github.com/aape133/gachi/releases">All releases</a></p>
     </div>
-    <p>Open source under <a href="https://github.com/aape133/gachi/blob/main/LICENSE">GPLv3</a> · <a href="https://github.com/aape133/gachi">GitHub</a> · <a href="https://github.com/aape133/gachi/releases">All releases</a></p>
     <p class="fine">gachi is free software provided “as is” under the GPLv3, without any warranty. You use it at your own risk and are responsible for how you use it. Keep backups of the recordings that matter to you.</p>
-    <p class="tm">ASIO® is a registered trademark of Steinberg Media Technologies GmbH. VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
+    <div class="compat">
+      <img src="/img/asio-compatible-bw.svg?v=eed7e2dbd5" alt="ASIO Compatible" width="78" height="72" loading="lazy">
+      <img src="/img/vst-compatible.svg?v=d1f44b0858" alt="VST Compatible" width="78" height="72" loading="lazy">
+      <p class="tm">ASIO® is a registered trademark of Steinberg Media Technologies GmbH.<br>VST® is a registered trademark of Steinberg Media Technologies GmbH.</p>
+    </div>
   </div>
 </footer>
 
-<script src="/main.js?v=20b530f1b9" defer></script>
+<script src="/main.js?v=e09ab05d1a" defer></script>
 </body>
 </html>

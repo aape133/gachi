@@ -105,7 +105,12 @@ fn newer_in(json: &[u8], current: &str) -> Option<Update> {
     }
     let tag = v["tag_name"].as_str()?;
     let theirs = numbers(tag)?;
-    if theirs <= numbers(current)? {
+    // a build made between releases ("0.7.0-dev") comes before the release of its numbers
+    let (ours, pre) = match current.split_once('-') {
+        Some((n, _)) => (numbers(n)?, true),
+        None => (numbers(current)?, false),
+    };
+    if theirs < ours || (theirs == ours && !pre) {
         return None;
     }
     // (written out again from the numbers: the tag's own text is never shown)
@@ -142,6 +147,9 @@ mod tests {
         let u = newer_in(rel("v0.1.1").as_bytes(), "0.1.0").unwrap();
         assert_eq!(u.version, "0.1.1");
         assert_eq!(newer_in(br#"{"tag_name":"v9.0.0","prerelease":true}"#, "0.1.0"), None);
+        // a build between releases: its own release is newer, the one before it is not
+        assert_eq!(newer_in(rel("v0.7.0").as_bytes(), "0.7.0-dev").unwrap().version, "0.7.0");
+        assert_eq!(newer_in(rel("v0.6.1").as_bytes(), "0.7.0-dev"), None);
         assert_eq!(newer_in(b"<html>", "0.1.0"), None);
         assert_eq!(newer_in(br#"{"message":"Not Found"}"#, "0.1.0"), None);
     }

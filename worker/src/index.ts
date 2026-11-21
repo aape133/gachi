@@ -468,6 +468,9 @@ export class Jam extends DurableObject<Env> {
     } catch {
       return this.fail(ws, "bad_request", "잘못된 요청이에요.");
     }
+    // (valid JSON that is no message: `null`, a number, a list. Reading `.t` of `null`
+    // threw, and the handler ended in an exception instead of an answer)
+    if (msg === null || typeof msg !== "object" || Array.isArray(msg)) return this.fail(ws, "bad_request", "잘못된 요청이에요.");
     const att = ws.deserializeAttachment() as Attachment;
     if (att.done) return;
     if (att.role === "host") {
@@ -555,7 +558,9 @@ export class Jam extends DurableObject<Env> {
         return;
       }
       case "admit": {
-        if (!att.open) return;
+        // (an answer names the request it answers: without a number it matched the first
+        // newcomer that had not asked yet)
+        if (!att.open || typeof msg.req !== "number") return;
         const joiner = this.ctx
           .getWebSockets("join")
           .find((j) => (j.deserializeAttachment() as Attachment)?.req === msg.req);
@@ -916,7 +921,11 @@ function invitePage(raw: string, accept: string | null): Response {
   return new Response(fill(PAGE).replaceAll("{CODE}", displayCode(code)), { headers });
 }
 
-const FONTS = `system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Yu Gothic UI", Meiryo, sans-serif`;
+// (single quotes: it also goes inside style="…" attributes, where a double quote would end it)
+const FONTS = `system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', 'Yu Gothic UI', Meiryo, sans-serif`;
+
+/** The logo as on the site: five bars, dark on a light tile (these pages are dark). */
+const LOGO = `<svg viewBox="-5.6 -5.6 35.2 35.2" width="40" height="40" aria-hidden="true" style="display:block;margin:0 auto 22px"><rect x="-5.6" y="-5.6" width="35.2" height="35.2" rx="9.6" fill="#e8e9ec"/><path d="M4 10v4M8 7v10M12 4.5v15M16 7v10M20 10v4" fill="none" stroke="#0b0c0e" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 
 const NOT_FOUND = {
   ko: ["페이지를 찾을 수 없어요", "gachi 첫 화면으로"],
@@ -929,8 +938,8 @@ function notFound(accept: string | null): Response {
   const lang = inviteLang(accept);
   const [text, home] = NOT_FOUND[lang];
   const page = `<!doctype html><html lang="${lang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>gachi</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<body style="font-family:${FONTS};background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0;text-align:center">
-<main><p style="font-size:18px;font-weight:600;margin:0 0 16px">${text}</p><a href="${lang === "ko" ? "/" : `/${lang}/`}" style="color:#b0a6ff">${home}</a></main></body></html>`;
+<body style="font-family:${FONTS};background:#0b0c0e;color:#e8e9ec;display:grid;place-items:center;height:100vh;margin:0;text-align:center">
+<main>${LOGO}<p style="font-size:18px;font-weight:600;margin:0 0 16px">${text}</p><a href="${lang === "ko" ? "/" : `/${lang}/`}" style="color:#c9d6ff">${home}</a></main></body></html>`;
   return new Response(page, {
     status: 404,
     headers: {
@@ -944,9 +953,9 @@ function notFound(accept: string | null): Response {
   });
 }
 
-const PAGE_NOT_FOUND = `<!doctype html><html lang="{LANG}"><meta charset="utf-8"><title>gachi</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<body style="font-family:${FONTS};background:#0c0d10;color:#e8e8ee;display:grid;place-items:center;height:100vh;margin:0">
-<p>{BAD}</p></body></html>`;
+const PAGE_NOT_FOUND = `<!doctype html><html lang="{LANG}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>gachi</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<body style="font-family:${FONTS};background:#0b0c0e;color:#e8e9ec;display:grid;place-items:center;height:100vh;margin:0;text-align:center">
+<main>${LOGO}<p>{BAD}</p></main></body></html>`;
 
 const PAGE = `<!doctype html>
 <html lang="{LANG}">
@@ -957,18 +966,19 @@ const PAGE = `<!doctype html>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
   :root { color-scheme: dark; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0c0d10; color: #e8e8ee;
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b0c0e; color: #e8e9ec;
          font-family: ${FONTS}; }
   main { text-align: center; padding: 32px 20px; max-width: 360px; }
   h1 { font-size: 18px; font-weight: 600; margin: 0 0 18px; }
-  .code { font: 700 40px ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .1em; margin: 6px 0 22px; }
-  a.btn { display: inline-block; padding: 12px 22px; border-radius: 10px; background: #8b7cff; color: #0c0d10;
+  .code { font: 700 40px "Cascadia Mono", ui-monospace, Consolas, monospace; letter-spacing: .1em; margin: 6px 0 22px; }
+  a.btn { display: inline-block; padding: 12px 22px; border-radius: 6px; background: #e8e9ec; color: #0b0c0e;
           font-weight: 700; text-decoration: none; }
-  p { color: #9a9aa8; font-size: 14px; line-height: 1.6; margin-top: 22px; }
+  p { color: #8b8f99; font-size: 14px; line-height: 1.6; margin-top: 22px; }
 </style>
 </head>
 <body>
 <main>
+  ${LOGO}
   <h1>{INVITED}</h1>
   <div class="code">{CODE}</div>
   <a class="btn" id="open" href="gachi://join/{CODE}">{OPEN}</a>

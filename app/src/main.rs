@@ -128,11 +128,11 @@ fn main_window(app: &tauri::AppHandle, gpu: bool, language: &str) -> tauri::Resu
     let builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("gachi")
         .inner_size(1280.0, 800.0)
-        // (as narrow as the home screen keeps "create" and "join" side by side: they stack
-        // below 761 px; 780 leaves room for display scaling's rounding. The room's top bar
-        // shows whole from 660. As low as the home screen shows whole with the recent room
-        // offered on it: 696 px, in every language)
-        .min_inner_size(780.0, 700.0)
+        // (the narrowest the screens are laid out for: below 1040 the room's top bar takes two
+        // lines, below 900 the track view stacks each row's meter over its volume; below 760 the
+        // home screen's two cards stack. 620 high: the mixer's strips still show their
+        // meters, faders and names, in every language)
+        .min_inner_size(600.0, 620.0)
         .initialization_script(gachi_lang::page_script(language))
         // shown once the page has the saved settings in it (`window_ready`): no empty
         // window, no page that changes under one's eyes as name, theme and devices arrive
@@ -257,7 +257,7 @@ fn main() {
             commands::play_test_tone,
             commands::set_recording,
             commands::open_recordings,
-            commands::set_ui_visible,
+            commands::take_levels,
             commands::open_logs,
             commands::open_repo,
             commands::window_ready,

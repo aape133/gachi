@@ -358,7 +358,12 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
     p.own_on.store(ui.own, Ordering::Relaxed);
     let app2 = app.clone();
     let task = tauri::async_runtime::spawn(async move {
-        let mut iv = tokio::time::interval(std::time::Duration::from_millis(33));
+        // (twice a second: the figures, and every fourth time the driver. The meters are asked
+        // for by the page, see `take_levels`; in DAW mode this runs for as long as the home
+        // screen is up, and woke 30 times a second to do nothing 14 times out of 15)
+        let mut iv = tokio::time::interval(std::time::Duration::from_millis(500));
+        // (the first tick comes at once: the device has not run a block yet)
+        iv.tick().await;
         let mut n = 0u32;
         let mut seen = (0u32, 0u32);
         let mut hung = false;
@@ -370,7 +375,7 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
             let guard = state.preview.lock().await;
             let Some(p) = guard.as_ref() else { return };
             let e = &p.engine;
-            if n.is_multiple_of(15) {
+            {
                 // the device's real format (ASIO: whatever its driver runs)
                 let (i, o) = e.real_buffers();
                 let _ = app2.emit(
@@ -391,7 +396,7 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
                 );
             }
             // a new rate/buffer in the driver panel, or the device stopped: reopen
-            if n.is_multiple_of(60) || n == 30 {
+            if n.is_multiple_of(4) || n == 2 {
                 match e.driver_check() {
                     // the driver hangs: reopening would hang too. Say so once
                     gachi_engine::DriverCheck::NoAnswer => {
@@ -414,11 +419,6 @@ fn open_preview(app: &AppHandle, settings: &Settings) -> Result<Preview, String>
                 tauri::async_runtime::spawn(restart_preview_after_change(app2.clone(), settings));
                 return;
             }
-            let inputs = e.input_meters.take(e.info.input_channels as usize);
-            let _ = app2.emit(
-                "levels",
-                json!({ "self": e.self_meter.take(), "master": e.master_meter.take(), "peers": {}, "inputs": inputs }),
-            );
         }
     });
     Ok(Preview { engine, task, probe: false })
@@ -595,13 +595,29 @@ pub async fn set_recording(app: AppHandle, on: bool) -> Result<Value, String> {
     }
 }
 
-/// The window cannot be seen (minimized): the meters are not sent meanwhile (30 a second,
-/// each waking the page for nothing). Told by the page as it is hidden and shown.
-pub static UI_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
+/// The meters since they were last asked for: the room's, else the settings screen's (its
+/// device open outside a room), else nothing.
+///
+/// Asked for by the page, about 30 times a second while it shows them, instead of sent to
+/// it: an event is a script run in the page, and WebView2 kept something of each one (in a
+/// room the page grew by some 30 KB a second, about 100 MB an hour). An answer to a command
+/// is not a script. A page that cannot be seen does not ask.
+///
+/// Never waits: with the room or the device busy (a tick of theirs, a device reopening)
+/// there is nothing this time, and the peaks stay for the next.
 #[tauri::command]
-pub fn set_ui_visible(visible: bool) {
-    UI_HIDDEN.store(!visible, Ordering::Relaxed);
+pub fn take_levels(state: State<'_, AppState>) -> Option<Value> {
+    if let Ok(guard) = state.session.try_lock() {
+        if let Some(s) = guard.as_ref() {
+            return Some(s.levels());
+        }
+    } else {
+        return None;
+    }
+    let guard = state.preview.try_lock().ok()?;
+    let e = &guard.as_ref()?.engine;
+    let inputs = e.input_meters.take(e.info.input_channels as usize);
+    Some(json!({ "self": e.self_meter.take(), "master": e.master_meter.take(), "peers": {}, "inputs": inputs }))
 }
 
 /// Opens the recordings folder in Explorer/Finder.

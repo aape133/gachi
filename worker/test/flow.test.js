@@ -115,6 +115,31 @@ test("host admits and rejects; the newcomer only ever talks to the Worker briefl
   host.close();
 });
 
+test("JSON that is no message is refused, and an answer without a request number reaches nobody", async () => {
+  const { host, code } = await openRoom();
+  // a newcomer that has not asked yet: an `admit` without `req` must not be taken as its
+  // answer (it was: the newcomer was welcomed and done with, and its request then ignored)
+  const waiting = await joiner(code);
+  host.send({ t: "admit", result: "accept", welcome: { sealed: "beef" } });
+  await sleep(300);
+  waiting.send(joinMsg());
+  assert.equal((await host.next()).t, "join_request", "it can still ask");
+  // `null` and a list parse, and are no messages
+  const a = await joiner(code);
+  a.ws.send("null");
+  assert.equal((await a.next())?.kind, "bad_request");
+  const b = await joiner(code);
+  b.ws.send("[1]");
+  assert.equal((await b.next())?.kind, "bad_request");
+  // the room is as it was
+  const c = await joiner(code);
+  c.send(joinMsg());
+  assert.equal((await host.next()).t, "join_request");
+  waiting.close();
+  c.close();
+  host.close();
+});
+
 test("a room for 32: open until the thirty-second is in; a bigger size is cut to 32", async () => {
   const { host, code } = await openRoom(32);
   host.send({ t: "capacity", max_peers: 32, members: 31 });
